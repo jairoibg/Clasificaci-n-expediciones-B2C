@@ -124,12 +124,79 @@ class OdooClient {
 
   async findPickingByTracking(tracking) {
     try {
-      const pickings = await this.execute('stock.picking', 'search_read', [[['carrier_tracking_ref', 'ilike', tracking]]], { 
+      // 1. Búsqueda exacta primero
+      let pickings = await this.execute('stock.picking', 'search_read', [[['carrier_tracking_ref', '=', tracking]]], { 
         fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin'], 
         limit: 1 
       });
-      return pickings[0] || null;
+      if (pickings.length > 0) return pickings[0];
+
+      // 2. Búsqueda con ilike (contiene)
+      pickings = await this.execute('stock.picking', 'search_read', [[['carrier_tracking_ref', 'ilike', tracking]]], { 
+        fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin'], 
+        limit: 1 
+      });
+      if (pickings.length > 0) return pickings[0];
+
+      // 3. Extraer posibles patrones del código escaneado y buscar
+      // El código de barras puede tener formato: %0078700116C2049311221802250
+      // Donde el tracking real es algo como: 6C20493112219
+      const patterns = this.extractTrackingPatterns(tracking);
+      for (const pattern of patterns) {
+        if (pattern.length >= 8) { // Mínimo 8 caracteres para evitar falsos positivos
+          pickings = await this.execute('stock.picking', 'search_read', [
+            [
+              ['carrier_tracking_ref', 'ilike', pattern],
+              ['state', '=', 'done'],
+              ['picking_type_code', '=', 'outgoing']
+            ]
+          ], { 
+            fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin'], 
+            limit: 1 
+          });
+          if (pickings.length > 0) {
+            console.log(`   🔍 Match parcial: "${pattern}" → ${pickings[0].carrier_tracking_ref}`);
+            return pickings[0];
+          }
+        }
+      }
+
+      return null;
     } catch { return null; }
+  }
+
+  // Extraer posibles patrones de tracking de un código de barras largo
+  extractTrackingPatterns(code) {
+    const patterns = [];
+    const clean = code.replace(/[^A-Z0-9]/gi, ''); // Quitar caracteres especiales como %
+    
+    // Buscar patrones comunes de transportistas
+    // CORREOS/Colissimo: Empieza con letras seguido de números (ej: 6C20493112219, PQ7L7H...)
+    const correos = clean.match(/[A-Z]{1,2}\d{10,}/gi);
+    if (correos) patterns.push(...correos);
+    
+    // Buscar secuencias de números largos (10+ dígitos)
+    const numeros = clean.match(/\d{10,}/g);
+    if (numeros) patterns.push(...numeros);
+    
+    // Buscar patrón específico de Colissimo: número que contiene "6C" o similar
+    const colissimo = clean.match(/\d*[A-Z]\d{8,}/gi);
+    if (colissimo) patterns.push(...colissimo);
+    
+    // También probar subcadenas del código (ventana deslizante)
+    // Para códigos como %0078700116C2049311221802250 extraer partes centrales
+    if (clean.length > 15) {
+      // Extraer parte central que podría ser el tracking
+      for (let i = 0; i <= clean.length - 12; i++) {
+        const sub = clean.substring(i, i + 13);
+        if (/[A-Z]/.test(sub) && /\d/.test(sub)) { // Debe tener letras y números
+          patterns.push(sub);
+        }
+      }
+    }
+    
+    // Eliminar duplicados y ordenar por longitud (más largos primero)
+    return [...new Set(patterns)].sort((a, b) => b.length - a.length);
   }
 
   async findPickingsByClientName(clientName, limit = 15) {
