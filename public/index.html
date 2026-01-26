@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Clasificador de Expediciones</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; min-height: 100vh; padding-bottom: 80px; }
+    
+    .header { background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+    .header h1 { font-size: 1.2rem; display: flex; align-items: center; gap: 8px; }
+    .header-stats { font-size: 0.85rem; opacity: 0.9; }
+    
+    .tabs { display: flex; background: white; border-bottom: 2px solid #e2e8f0; overflow-x: auto; }
+    .tab { flex: 1; min-width: 70px; padding: 10px 5px; text-align: center; cursor: pointer; border: none; background: none; font-size: 0.8rem; color: #64748b; transition: all 0.2s; }
+    .tab.active { color: #1a365d; border-bottom: 3px solid #1a365d; margin-bottom: -2px; font-weight: 600; }
+    .tab-icon { font-size: 1.2rem; display: block; margin-bottom: 2px; }
+    .tab-content { display: none; padding: 15px; }
+    .tab-content.active { display: block; }
+    
+    .section-title { font-size: 1rem; color: #475569; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    
+    .carrier-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px; }
+    .carrier-btn { padding: 15px 10px; border: 2px solid #e2e8f0; border-radius: 12px; background: white; cursor: pointer; transition: all 0.2s; text-align: center; position: relative; }
+    .carrier-btn:active { transform: scale(0.95); }
+    .carrier-btn.selected { border-color: #1a365d; background: #1a365d; color: white; }
+    .carrier-btn .carrier-name { font-weight: 600; font-size: 0.85rem; }
+    .carrier-btn .carrier-badge { position: absolute; top: -8px; right: -8px; background: #ef4444; color: white; font-size: 0.7rem; font-weight: bold; padding: 2px 6px; border-radius: 10px; min-width: 20px; }
+    
+    .scanner-section { background: white; border-radius: 12px; padding: 20px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .scanner-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .scanner-title { font-size: 1rem; color: #1a365d; display: flex; align-items: center; gap: 8px; }
+    .scanner-count { background: #1a365d; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.9rem; font-weight: bold; }
+    
+    .scan-input { width: 100%; padding: 15px; font-size: 1.1rem; border: 2px dashed #cbd5e1; border-radius: 10px; text-align: center; transition: all 0.2s; }
+    .scan-input:focus { outline: none; border-color: #1a365d; border-style: solid; background: #f8fafc; }
+    .scan-hint { text-align: center; color: #94a3b8; font-size: 0.85rem; margin-top: 8px; }
+    
+    .package-list { margin-top: 15px; max-height: 300px; overflow-y: auto; }
+    .package-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #f8fafc; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid #22c55e; }
+    .package-info { flex: 1; }
+    .package-tracking { font-weight: 600; font-size: 0.9rem; color: #1e293b; }
+    .package-details { font-size: 0.8rem; color: #64748b; margin-top: 2px; }
+    .package-order { color: #1a365d; font-weight: 500; }
+    .package-delete { background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer; padding: 5px; }
+    
+    .action-buttons { display: flex; gap: 10px; margin-top: 15px; }
+    .btn { flex: 1; padding: 15px; border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #1a365d; color: white; }
+    .btn-secondary { background: #e2e8f0; color: #475569; }
+    .btn-success { background: #22c55e; color: white; }
+    .btn-danger { background: #fee2e2; color: #dc2626; }
+    
+    .search-bar { display: flex; gap: 10px; margin-bottom: 15px; }
+    .search-bar input { flex: 1; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem; }
+    .search-bar button { padding: 12px 20px; }
+    
+    .date-filter { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; background: white; padding: 12px; border-radius: 10px; flex-wrap: wrap; }
+    .date-filter label { font-weight: 500; color: #475569; }
+    .date-filter input { padding: 8px 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem; }
+    
+    .carrier-group { background: white; border-radius: 12px; margin-bottom: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .carrier-group-header { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #1a365d; color: white; cursor: pointer; }
+    .carrier-group-header:hover { background: #2d4a7c; }
+    .carrier-group-title { font-weight: bold; font-size: 1.1rem; }
+    .carrier-group-stats { font-size: 0.85rem; opacity: 0.9; }
+    .carrier-group-arrow { transition: transform 0.2s; }
+    .carrier-group.expanded .carrier-group-arrow { transform: rotate(180deg); }
+    .carrier-group-content { display: none; padding: 15px; }
+    .carrier-group.expanded .carrier-group-content { display: block; }
+    
+    .status-section { margin-bottom: 15px; }
+    .status-title { font-size: 0.9rem; font-weight: 600; color: #64748b; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    
+    .pallet-card { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+    .pallet-card-header { display: flex; align-items: center; padding: 12px; background: #f8fafc; cursor: pointer; gap: 10px; flex-wrap: wrap; }
+    .pallet-card-header:hover { background: #f1f5f9; }
+    .pallet-checkbox { width: 20px; height: 20px; cursor: pointer; }
+    .pallet-id { font-weight: bold; font-family: monospace; flex: 1; min-width: 150px; }
+    .pallet-count { background: #e2e8f0; padding: 4px 10px; border-radius: 15px; font-size: 0.8rem; }
+    .pallet-time { font-size: 0.75rem; color: #64748b; }
+    .pallet-pickup-time { font-size: 0.75rem; color: #22c55e; font-weight: 500; }
+    .pallet-expand { background: none; border: none; font-size: 1.2rem; cursor: pointer; padding: 5px; }
+    .pallet-card-content { display: none; border-top: 1px solid #e2e8f0; padding: 12px; background: white; }
+    .pallet-card.expanded .pallet-card-content { display: block; }
+    .pallet-package { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem; flex-wrap: wrap; gap: 5px; }
+    .pallet-package:last-child { border-bottom: none; }
+    .pallet-package-tracking { font-family: monospace; font-weight: 500; }
+    .pallet-package-info { color: #64748b; }
+    .pallet-actions { display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0; flex-wrap: wrap; }
+    .pallet-actions .btn { padding: 8px 12px; font-size: 0.85rem; }
+    
+    .selection-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #1a365d; color: white; padding: 15px 20px; display: none; justify-content: space-between; align-items: center; z-index: 100; }
+    .selection-bar.show { display: flex; }
+    .selection-bar-info { font-size: 0.9rem; }
+    .selection-bar .btn { flex: none; padding: 10px 20px; }
+    
+    .document-card { background: white; border-radius: 12px; padding: 15px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .document-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px; }
+    .document-id { font-weight: bold; font-family: monospace; color: #1a365d; font-size: 0.9rem; }
+    .document-status { padding: 4px 10px; border-radius: 15px; font-size: 0.75rem; font-weight: 600; }
+    .document-status.signed { background: #d1fae5; color: #065f46; }
+    .document-status.pending { background: #fef3c7; color: #92400e; }
+    .document-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.85rem; color: #64748b; }
+    .document-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .document-actions .btn { padding: 8px 15px; font-size: 0.85rem; }
+    
+    .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; padding: 20px; }
+    .modal.show { display: flex; }
+    .modal-content { background: white; border-radius: 16px; padding: 25px; max-width: 400px; width: 100%; text-align: center; max-height: 90vh; overflow-y: auto; }
+    .modal-icon { font-size: 3rem; margin-bottom: 15px; }
+    .modal-title { font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; color: #1e293b; }
+    .modal-message { color: #64748b; margin-bottom: 20px; white-space: pre-line; }
+    .modal-buttons { display: flex; gap: 10px; }
+    .modal-buttons .btn { flex: 1; }
+    
+    .search-modal-content { max-width: 500px; text-align: left; }
+    .search-results { max-height: 300px; overflow-y: auto; }
+    .search-result-item { padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+    .search-result-item:hover { background: #f8fafc; border-color: #1a365d; }
+    .search-result-tracking { font-weight: bold; color: #1a365d; }
+    .search-result-info { font-size: 0.85rem; color: #64748b; margin-top: 4px; }
+    
+    .toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); padding: 12px 24px; border-radius: 25px; color: white; font-weight: 500; z-index: 300; opacity: 0; transition: opacity 0.3s; }
+    .toast.show { opacity: 1; }
+    .toast.success { background: #22c55e; }
+    .toast.error { background: #ef4444; }
+    .toast.warning { background: #f59e0b; }
+    
+    .config-section { background: white; border-radius: 12px; padding: 20px; margin-bottom: 15px; }
+    .config-title { font-weight: 600; margin-bottom: 15px; color: #1e293b; }
+    .config-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+    .config-item:last-child { border-bottom: none; }
+    .config-label { color: #64748b; }
+    .config-value { font-weight: 500; color: #1e293b; }
+    
+    .empty-state { text-align: center; padding: 40px 20px; color: #94a3b8; }
+    .empty-state-icon { font-size: 3rem; margin-bottom: 15px; }
+    
+    .pickup-summary { background: #f0fdf4; border: 2px solid #22c55e; border-radius: 10px; padding: 15px; margin-top: 15px; text-align: center; }
+    .pickup-summary .number { font-size: 2rem; font-weight: bold; color: #22c55e; }
+    .pickup-summary .label { color: #64748b; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>📦 Clasificador</h1>
+    <span class="header-stats" id="headerStats">0 paquetes</span>
+  </header>
+  
+  <div class="tabs">
+    <button class="tab active" data-tab="clasificar"><span class="tab-icon">📥</span>Clasificar</button>
+    <button class="tab" data-tab="palets"><span class="tab-icon">📦</span>Palets</button>
+    <button class="tab" data-tab="recogida"><span class="tab-icon">🚚</span>Recogida</button>
+    <button class="tab" data-tab="documentos"><span class="tab-icon">📋</span>Docs</button>
+    <button class="tab" data-tab="config"><span class="tab-icon">⚙️</span>Config</button>
+  </div>
+  
+  <!-- Tab: Clasificar -->
+  <div class="tab-content active" id="tab-clasificar">
+    <div class="section-title">🚚 Selecciona Transportista</div>
+    <div class="carrier-grid" id="carrierGrid"></div>
+    
+    <div class="scanner-section" id="scannerSection" style="display: none;">
+      <div class="scanner-header">
+        <div class="scanner-title">📦 Escaneando para <strong id="selectedCarrierName"></strong></div>
+        <div class="scanner-count" id="packageCount">0</div>
+      </div>
+      <input type="text" class="scan-input" id="scanInput" placeholder="Escanea o escribe tracking..." autocomplete="off">
+      <div class="scan-hint">Enfoca el cursor y escanea el código de barras</div>
+      <div class="package-list" id="packageList"></div>
+      <div class="action-buttons">
+        <button class="btn btn-secondary" id="clearSessionBtn">🗑️ Limpiar</button>
+        <button class="btn btn-primary" id="closePalletBtn" disabled>📦 Cerrar Palet</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Tab: Palets -->
+  <div class="tab-content" id="tab-palets">
+    <div class="search-bar">
+      <input type="text" id="globalSearch" placeholder="🔍 Buscar palet, tracking o pedido...">
+      <button class="btn btn-primary" onclick="doGlobalSearch()">Buscar</button>
+    </div>
+    <div class="date-filter">
+      <label>📅 Fecha:</label>
+      <input type="date" id="palletDateFilter">
+    </div>
+    <div id="palletsList"></div>
+  </div>
+  
+  <!-- Tab: Recogida -->
+  <div class="tab-content" id="tab-recogida">
+    <div class="section-title">🚚 Subida al Camión</div>
+    <p style="color: #64748b; margin-bottom: 15px; font-size: 0.9rem;">Selecciona transportista y escanea las etiquetas de los palets</p>
+    <div class="carrier-grid" id="pickupCarrierGrid"></div>
+    
+    <div class="scanner-section" id="pickupScannerSection" style="display: none;">
+      <div class="scanner-header">
+        <div class="scanner-title">🚚 Palets para <strong id="pickupCarrierName"></strong></div>
+        <div class="scanner-count" id="pickupPalletCount">0</div>
+      </div>
+      <input type="text" class="scan-input" id="pickupScanInput" placeholder="Escanea etiqueta del palet..." autocomplete="off">
+      <div class="scan-hint">Escanea el código de barras de la etiqueta del palet</div>
+      <div class="package-list" id="pickupPalletList"></div>
+      <div class="pickup-summary" id="pickupSummary" style="display: none;">
+        <div class="number" id="pickupTotalPackages">0</div>
+        <div class="label">envíos totales</div>
+      </div>
+      <div class="action-buttons">
+        <button class="btn btn-secondary" id="clearPickupBtn">🗑️ Limpiar</button>
+        <button class="btn btn-success" id="confirmPickupBtn" disabled>✅ Confirmar Recogida</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Tab: Documentos -->
+  <div class="tab-content" id="tab-documentos">
+    <div class="section-title">📋 Manifiestos de Recogida</div>
+    <div class="date-filter">
+      <label>📅 Fecha:</label>
+      <input type="date" id="docsDateFilter">
+      <button class="btn btn-secondary" onclick="loadDocuments()" style="padding: 8px 15px; flex: none;">🔄</button>
+    </div>
+    <div id="documentsList"></div>
+  </div>
+  
+  <!-- Tab: Config -->
+  <div class="tab-content" id="tab-config">
+    <div class="config-section">
+      <div class="config-title">🔗 Conexiones</div>
+      <div class="config-item"><span class="config-label">Odoo</span><span class="config-value" id="odooStatus">Verificando...</span></div>
+      <div class="config-item"><span class="config-label">Sendcloud</span><span class="config-value" id="sendcloudStatus">Verificando...</span></div>
+    </div>
+    <div class="config-section">
+      <div class="config-title">📊 Sesiones Activas</div>
+      <div id="activeSessions"></div>
+    </div>
+    <div class="config-section">
+      <div class="config-title">🔧 API URL</div>
+      <input type="text" id="apiUrlInput" class="scan-input" style="margin-bottom: 10px;">
+      <button class="btn btn-secondary" onclick="saveApiUrl()" style="width: 100%;">Guardar</button>
+    </div>
+  </div>
+  
+  <!-- Selection Bar -->
+  <div class="selection-bar" id="selectionBar">
+    <span class="selection-bar-info" id="selectionInfo">0 palets seleccionados</span>
+    <button class="btn btn-success" onclick="confirmPickupFromPalets()">🚚 Confirmar Recogida</button>
+  </div>
+  
+  <!-- Modals -->
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <div class="modal-icon" id="modalIcon">⚠️</div>
+      <div class="modal-title" id="modalTitle">Título</div>
+      <div class="modal-message" id="modalMessage">Mensaje</div>
+      <div class="modal-buttons"><button class="btn btn-primary" id="modalOkBtn">OK</button></div>
+    </div>
+  </div>
+  
+  <div class="modal" id="searchModal">
+    <div class="modal-content search-modal-content">
+      <div class="modal-title">🔍 Buscar por Cliente</div>
+      <div class="modal-message" id="searchErrorMessage"></div>
+      <div class="search-bar">
+        <input type="text" id="clientSearchInput" placeholder="Nombre del cliente...">
+        <button class="btn btn-primary" onclick="searchClient()">Buscar</button>
+      </div>
+      <div class="search-results" id="searchResults"></div>
+      <button class="btn btn-secondary" onclick="closeSearchModal()" style="width: 100%; margin-top: 15px;">Cancelar</button>
+    </div>
+  </div>
+  
+  <div class="modal" id="labelModal">
+    <div class="modal-content">
+      <div class="modal-icon">🏷️</div>
+      <div class="modal-title">Palet Creado</div>
+      <div class="modal-message" id="labelModalMessage"></div>
+      <div class="modal-buttons">
+        <button class="btn btn-secondary" onclick="closeLabelModal()">Cerrar</button>
+        <button class="btn btn-primary" id="printLabelBtn">🖨️ Imprimir Etiqueta</button>
+      </div>
+    </div>
+  </div>
+  
+  <div class="modal" id="globalSearchModal">
+    <div class="modal-content search-modal-content">
+      <div class="modal-title">🔍 Resultados de Búsqueda</div>
+      <div class="search-results" id="globalSearchResults"></div>
+      <button class="btn btn-secondary" onclick="closeGlobalSearchModal()" style="width: 100%; margin-top: 15px;">Cerrar</button>
+    </div>
+  </div>
+  
+  <div class="toast" id="toast"></div>
+  
+  <script>
+    const DEFAULT_API_URL = window.location.origin;
+    let API_URL = localStorage.getItem('apiUrl') || DEFAULT_API_URL;
+    const CARRIERS = ['ASENDIA', 'CORREOS', 'CTT', 'GLS', 'INPOST', 'SPRING'];
+    
+    const state = { selectedCarrier: null, packages: [], sessions: {}, palletsData: null, selectedPallets: new Set(), pickupCarrier: null, pickupPallets: [] };
+    
+    async function apiCall(endpoint, options = {}) {
+      const response = await fetch(`${API_URL}/api${endpoint}`, { headers: { 'Content-Type': 'application/json' }, ...options });
+      return response.json();
+    }
+    
+    // TABS
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
+        if (tab.dataset.tab === 'palets') loadPallets();
+        if (tab.dataset.tab === 'recogida') initPickupTab();
+        if (tab.dataset.tab === 'documentos') loadDocuments();
+        if (tab.dataset.tab === 'config') loadConfig();
+      });
+    });
+    
+    // CLASIFICAR
+    function renderCarriers() {
+      document.getElementById('carrierGrid').innerHTML = CARRIERS.map(c => `
+        <button class="carrier-btn ${state.selectedCarrier === c ? 'selected' : ''}" onclick="selectCarrier('${c}')">
+          ${state.sessions[c] > 0 ? `<span class="carrier-badge">${state.sessions[c]}</span>` : ''}
+          <div class="carrier-name">${c}</div>
+        </button>
+      `).join('');
+    }
+    
+    async function selectCarrier(carrier) {
+      state.selectedCarrier = carrier;
+      try { const r = await apiCall(`/session/${carrier}`); state.packages = r.packages || []; } catch { state.packages = []; }
+      renderCarriers();
+      document.getElementById('scannerSection').style.display = 'block';
+      document.getElementById('selectedCarrierName').textContent = carrier;
+      renderPackages();
+      setTimeout(() => document.getElementById('scanInput').focus(), 100);
+    }
+    
+    document.getElementById('scanInput').addEventListener('keypress', async (e) => {
+      if (e.key === 'Enter') { const t = e.target.value.trim(); if (t) { await scanPackage(t); e.target.value = ''; } }
+    });
+    
+    async function scanPackage(tracking) {
+      try {
+        const r = await apiCall('/scan', { method: 'POST', body: JSON.stringify({ tracking, expectedCarrier: state.selectedCarrier }) });
+        if (r.success) {
+          state.packages.push(r.package); state.sessions[state.selectedCarrier] = r.sessionCount;
+          renderPackages(); renderCarriers(); showToast(`✓ ${r.package.orderRef || tracking.slice(-8)}`, 'success'); playSound('success');
+        } else if (r.error === 'NO_ENCONTRADO' || r.error === 'NO_VERIFICADO') { showSearchModal(tracking, r.message); playSound('error');
+        } else if (r.error === 'TRANSPORTISTA_INCORRECTO') { showModal('🚫', `PAQUETE DE ${r.detectedCarrier}`, r.message); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]);
+        } else if (r.error === 'DUPLICADO') { showToast('⚠️ Ya escaneado', 'warning');
+        } else { showModal('⚠️', 'Error', r.message || 'Error'); playSound('error'); }
+      } catch { showToast('❌ Error de conexión', 'error'); }
+      document.getElementById('scanInput').focus();
+    }
+    
+    function renderPackages() {
+      const list = document.getElementById('packageList'), count = state.packages.length;
+      document.getElementById('packageCount').textContent = count;
+      document.getElementById('closePalletBtn').disabled = count === 0;
+      updateHeaderStats();
+      if (count === 0) { list.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div>No hay paquetes escaneados</div>'; return; }
+      list.innerHTML = [...state.packages].reverse().map(p => `
+        <div class="package-item"><div class="package-info"><div class="package-tracking">${p.tracking}</div><div class="package-details">${p.orderRef ? `<span class="package-order">📋 ${p.orderRef}</span> · ` : ''}${p.clientName || 'Sin cliente'}</div></div><button class="package-delete" onclick="deletePackage('${p.tracking}')">✕</button></div>
+      `).join('');
+    }
+    
+    async function deletePackage(t) {
+      try { await apiCall(`/session/${state.selectedCarrier}/package/${t}`, { method: 'DELETE' }); state.packages = state.packages.filter(p => p.tracking !== t); state.sessions[state.selectedCarrier] = state.packages.length; renderPackages(); renderCarriers(); showToast('Eliminado', 'warning'); } catch { showToast('Error', 'error'); }
+    }
+    
+    document.getElementById('closePalletBtn').addEventListener('click', async () => {
+      if (state.packages.length === 0) return;
+      try {
+        const r = await apiCall('/pallets', { method: 'POST', body: JSON.stringify({ carrier: state.selectedCarrier }) });
+        if (r.success) { showLabelModal(r.pallet); state.packages = []; state.sessions[state.selectedCarrier] = 0; renderPackages(); renderCarriers(); }
+        else { showModal('⚠️', 'Error', r.error); }
+      } catch { showModal('❌', 'Error', 'No se pudo crear'); }
+    });
+    
+    document.getElementById('clearSessionBtn').addEventListener('click', async () => {
+      if (state.packages.length === 0) return;
+      if (confirm(`¿Limpiar ${state.packages.length} paquetes?`)) {
+        await apiCall(`/session/${state.selectedCarrier}`, { method: 'DELETE' });
+        state.packages = []; state.sessions[state.selectedCarrier] = 0; renderPackages(); renderCarriers(); showToast('Limpiado', 'warning');
+      }
+    });
+    
+    // PALETS
+    document.getElementById('palletDateFilter').valueAsDate = new Date();
+    document.getElementById('palletDateFilter').addEventListener('change', loadPallets);
+    
+    async function loadPallets() {
+      const date = document.getElementById('palletDateFilter').value;
+      state.selectedPallets.clear(); updateSelectionBar();
+      try { const r = await apiCall(`/pallets?date=${date}`); state.palletsData = r; renderPallets(); } catch (e) { console.error(e); }
+    }
+    
+    function renderPallets() {
+      const container = document.getElementById('palletsList'), data = state.palletsData;
+      if (!data || Object.keys(data.carriers).length === 0) { container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📦</div>No hay palets</div>'; return; }
+      container.innerHTML = Object.entries(data.carriers).map(([carrier, info]) => `
+        <div class="carrier-group" id="group-${carrier}">
+          <div class="carrier-group-header" onclick="toggleCarrierGroup('${carrier}')">
+            <div><span class="carrier-group-title">${carrier}</span> <span class="carrier-group-stats">${info.total} palets · ${info.totalPackages} envíos</span></div>
+            <span class="carrier-group-arrow">▼</span>
+          </div>
+          <div class="carrier-group-content">
+            ${info.pending.length > 0 ? `<div class="status-section"><div class="status-title">⏳ Pendientes (${info.pending.length})</div>${info.pending.map(p => renderPalletCard(p, true)).join('')}</div>` : ''}
+            ${info.pickedUp.length > 0 ? `<div class="status-section"><div class="status-title">✅ Recogidos (${info.pickedUp.length})</div>${info.pickedUp.map(p => renderPalletCard(p, false)).join('')}</div>` : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    function renderPalletCard(p, canSelect) {
+      const time = new Date(p.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      const pickupTime = p.pickedUpAt ? new Date(p.pickedUpAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : null;
+      return `
+        <div class="pallet-card" id="pallet-${p.id}">
+          <div class="pallet-card-header">
+            ${canSelect ? `<input type="checkbox" class="pallet-checkbox" ${state.selectedPallets.has(p.id) ? 'checked' : ''} onclick="event.stopPropagation(); togglePalletSelection('${p.id}')">` : '<span style="width:20px;">✓</span>'}
+            <span class="pallet-id">${p.id}</span>
+            <span class="pallet-count">${p.totalPackages} envíos</span>
+            <span class="pallet-time">🕐 ${time}</span>
+            ${pickupTime ? `<span class="pallet-pickup-time">🚚 ${pickupTime}</span>` : ''}
+            <button class="pallet-expand" onclick="event.stopPropagation(); togglePalletExpand('${p.id}')">▶</button>
+          </div>
+          <div class="pallet-card-content">
+            ${p.packages.map(pkg => `<div class="pallet-package"><span class="pallet-package-tracking">${pkg.tracking}</span><span class="pallet-package-info">${pkg.orderRef || ''} · ${pkg.clientName || ''}</span></div>`).join('')}
+            <div class="pallet-actions">
+              <button class="btn btn-secondary" onclick="printLabel('${p.id}')">🏷️ Etiqueta</button>
+              ${canSelect ? `<button class="btn btn-danger" onclick="deletePallet('${p.id}')">🗑️ Eliminar</button>` : ''}
+              ${p.pickupId ? `<button class="btn btn-primary" onclick="openManifest('${p.pickupId}')">📋 Manifiesto</button>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    
+    function toggleCarrierGroup(c) { document.getElementById(`group-${c}`).classList.toggle('expanded'); }
+    function togglePalletExpand(id) { const card = document.getElementById(`pallet-${id}`); card.classList.toggle('expanded'); card.querySelector('.pallet-expand').textContent = card.classList.contains('expanded') ? '▼' : '▶'; }
+    function togglePalletSelection(id) { if (state.selectedPallets.has(id)) state.selectedPallets.delete(id); else state.selectedPallets.add(id); updateSelectionBar(); }
+    function updateSelectionBar() { const bar = document.getElementById('selectionBar'), count = state.selectedPallets.size; if (count > 0) { bar.classList.add('show'); document.getElementById('selectionInfo').textContent = `${count} palet${count > 1 ? 's' : ''} seleccionado${count > 1 ? 's' : ''}`; } else { bar.classList.remove('show'); } }
+    function printLabel(id) { window.open(`${API_URL}/api/pallets/${id}/label`, '_blank'); }
+    function openManifest(id) { window.open(`${API_URL}/api/manifest/${id}`, '_blank'); }
+    async function deletePallet(id) { if (!confirm(`¿Eliminar ${id}?`)) return; try { await apiCall(`/pallets/${id}`, { method: 'DELETE' }); showToast('Eliminado', 'warning'); loadPallets(); } catch { showToast('Error', 'error'); } }
+    
+    async function confirmPickupFromPalets() {
+      if (state.selectedPallets.size === 0) return;
+      const palletIds = [...state.selectedPallets];
+      const pallets = palletIds.map(id => { for (const [c, info] of Object.entries(state.palletsData.carriers)) { const f = [...info.pending, ...info.pickedUp].find(p => p.id === id); if (f) return { ...f, carrier: c }; } }).filter(Boolean);
+      const carriers = [...new Set(pallets.map(p => p.carrier))];
+      if (carriers.length > 1) { showModal('⚠️', 'Error', 'Selecciona palets de un solo transportista'); return; }
+      try {
+        const r = await apiCall('/pickup', { method: 'POST', body: JSON.stringify({ carrier: carriers[0], palletIds }) });
+        if (r.success) { window.open(`${API_URL}/api/manifest/${r.pickup.id}`, '_blank'); showToast('Recogida confirmada', 'success'); state.selectedPallets.clear(); updateSelectionBar(); loadPallets(); }
+        else { showModal('⚠️', 'Error', r.error); }
+      } catch { showModal('❌', 'Error', 'Error de conexión'); }
+    }
+    
+    // BÚSQUEDA
+    document.getElementById('globalSearch').addEventListener('keypress', (e) => { if (e.key === 'Enter') doGlobalSearch(); });
+    async function doGlobalSearch() {
+      const q = document.getElementById('globalSearch').value.trim();
+      if (q.length < 3) { showToast('Mínimo 3 caracteres', 'warning'); return; }
+      try { const r = await apiCall(`/search?q=${encodeURIComponent(q)}`); renderGlobalSearchResults(r); } catch { showToast('Error', 'error'); }
+    }
+    function renderGlobalSearchResults(data) {
+      const container = document.getElementById('globalSearchResults');
+      if (data.totalResults === 0) { container.innerHTML = '<div class="empty-state">No hay resultados</div>'; }
+      else {
+        let html = '';
+        if (data.results.pallets.length > 0) { html += '<div class="section-title">📦 Palets</div>' + data.results.pallets.map(p => `<div class="search-result-item" onclick="goToPallet('${p.id}')"><div class="search-result-tracking">${p.id}</div><div class="search-result-info">${p.carrier} · ${p.totalPackages} envíos · ${p.status === 'picked_up' ? '✅' : '⏳'}</div></div>`).join(''); }
+        if (data.results.packages.length > 0) { html += '<div class="section-title" style="margin-top:15px;">📋 Paquetes</div>' + data.results.packages.map(i => `<div class="search-result-item" onclick="goToPallet('${i.pallet.id}')"><div class="search-result-tracking">${i.package.tracking}</div><div class="search-result-info">Palet: ${i.pallet.id} · ${i.package.orderRef || ''}</div></div>`).join(''); }
+        if (data.results.pickups.length > 0) { html += '<div class="section-title" style="margin-top:15px;">🚚 Recogidas</div>' + data.results.pickups.map(p => `<div class="search-result-item" onclick="openManifest('${p.id}')"><div class="search-result-tracking">${p.id}</div><div class="search-result-info">${p.carrier} · ${p.totalPallets} palets</div></div>`).join(''); }
+        container.innerHTML = html;
+      }
+      document.getElementById('globalSearchModal').classList.add('show');
+    }
+    function goToPallet(id) { closeGlobalSearchModal(); const parts = id.split('-'); if (parts.length >= 2 && parts[1].length === 8) { const d = parts[1]; document.getElementById('palletDateFilter').value = `${d.substring(0,4)}-${d.substring(4,6)}-${d.substring(6,8)}`; } loadPallets(); }
+    function closeGlobalSearchModal() { document.getElementById('globalSearchModal').classList.remove('show'); }
+    
+    // RECOGIDA
+    function initPickupTab() { renderPickupCarriers(); }
+    function renderPickupCarriers() { document.getElementById('pickupCarrierGrid').innerHTML = CARRIERS.map(c => `<button class="carrier-btn ${state.pickupCarrier === c ? 'selected' : ''}" onclick="selectPickupCarrier('${c}')"><div class="carrier-name">${c}</div></button>`).join(''); }
+    function selectPickupCarrier(c) { state.pickupCarrier = c; state.pickupPallets = []; renderPickupCarriers(); document.getElementById('pickupScannerSection').style.display = 'block'; document.getElementById('pickupCarrierName').textContent = c; renderPickupPallets(); setTimeout(() => document.getElementById('pickupScanInput').focus(), 100); }
+    document.getElementById('pickupScanInput').addEventListener('keypress', async (e) => { if (e.key === 'Enter') { const id = e.target.value.trim().toUpperCase(); if (id) { await scanPalletForPickup(id); e.target.value = ''; } } });
+    async function scanPalletForPickup(id) {
+      if (state.pickupPallets.find(p => p.id === id)) { showToast('⚠️ Ya escaneado', 'warning'); return; }
+      try {
+        const r = await apiCall('/pickup/scan-pallet', { method: 'POST', body: JSON.stringify({ palletId: id, expectedCarrier: state.pickupCarrier }) });
+        if (r.success) { state.pickupPallets.push(r.pallet); renderPickupPallets(); showToast(`✓ ${id}`, 'success'); playSound('success'); }
+        else { showModal('⚠️', 'Error', r.message); playSound('error'); }
+      } catch { showToast('❌ Error', 'error'); }
+      document.getElementById('pickupScanInput').focus();
+    }
+    function renderPickupPallets() {
+      const list = document.getElementById('pickupPalletList'), count = state.pickupPallets.length, total = state.pickupPallets.reduce((s, p) => s + p.totalPackages, 0);
+      document.getElementById('pickupPalletCount').textContent = count;
+      document.getElementById('confirmPickupBtn').disabled = count === 0;
+      const summary = document.getElementById('pickupSummary');
+      if (count > 0) { summary.style.display = 'block'; document.getElementById('pickupTotalPackages').textContent = total; } else { summary.style.display = 'none'; }
+      if (count === 0) { list.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📦</div>Escanea palets</div>'; return; }
+      list.innerHTML = state.pickupPallets.map(p => `<div class="package-item" style="border-left-color:#3b82f6;"><div class="package-info"><div class="package-tracking">${p.id}</div><div class="package-details">${p.totalPackages} envíos</div></div><button class="package-delete" onclick="removePickupPallet('${p.id}')">✕</button></div>`).join('');
+    }
+    function removePickupPallet(id) { state.pickupPallets = state.pickupPallets.filter(p => p.id !== id); renderPickupPallets(); showToast('Eliminado', 'warning'); }
+    document.getElementById('clearPickupBtn').addEventListener('click', () => { if (state.pickupPallets.length === 0) return; if (confirm('¿Limpiar?')) { state.pickupPallets = []; renderPickupPallets(); } });
+    document.getElementById('confirmPickupBtn').addEventListener('click', async () => {
+      if (state.pickupPallets.length === 0) return;
+      try {
+        const r = await apiCall('/pickup', { method: 'POST', body: JSON.stringify({ carrier: state.pickupCarrier, palletIds: state.pickupPallets.map(p => p.id) }) });
+        if (r.success) { window.open(`${API_URL}/api/manifest/${r.pickup.id}`, '_blank'); showModal('✅', 'Recogida Confirmada', `${state.pickupPallets.length} palets\n${r.pickup.totalPackages} envíos`); state.pickupPallets = []; renderPickupPallets(); }
+        else { showModal('⚠️', 'Error', r.error); }
+      } catch { showModal('❌', 'Error', 'Error de conexión'); }
+    });
+    
+    // DOCUMENTOS
+    document.getElementById('docsDateFilter').valueAsDate = new Date();
+    async function loadDocuments() {
+      const date = document.getElementById('docsDateFilter').value;
+      try { const r = await apiCall(`/documents?date=${date}`); renderDocuments(r.documents); } catch (e) { console.error(e); }
+    }
+    function renderDocuments(docs) {
+      const container = document.getElementById('documentsList');
+      if (!docs || docs.length === 0) { container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div>No hay manifiestos</div>'; return; }
+      container.innerHTML = docs.map(d => {
+        const time = new Date(d.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        return `<div class="document-card">
+          <div class="document-header"><span class="document-id">${d.id}</span><span class="document-status ${d.isSigned ? 'signed' : 'pending'}">${d.isSigned ? '✅ Firmado' : '⏳ Pendiente'}</span></div>
+          <div class="document-info"><span>🚚 ${d.carrier}</span><span>🕐 ${time}</span><span>📦 ${d.totalPallets} palets</span><span>📋 ${d.totalPackages} envíos</span>${d.isSigned ? `<span>✍️ ${d.manifest.driverName}</span><span>🪪 ${d.manifest.driverDNI}</span>` : ''}</div>
+          <div class="document-actions"><button class="btn btn-primary" onclick="openManifest('${d.id}')">📋 Ver Manifiesto</button></div>
+        </div>`;
+      }).join('');
+    }
+    
+    // MODALS
+    function showModal(icon, title, message, onOk) {
+      document.getElementById('modalIcon').textContent = icon;
+      document.getElementById('modalTitle').textContent = title;
+      document.getElementById('modalMessage').textContent = message;
+      document.getElementById('modal').classList.add('show');
+      document.getElementById('modalOkBtn').onclick = () => { document.getElementById('modal').classList.remove('show'); if (onOk) onOk(); };
+    }
+    function showLabelModal(pallet) {
+      document.getElementById('labelModalMessage').textContent = `${pallet.id}\n${pallet.totalPackages} envíos`;
+      document.getElementById('labelModal').classList.add('show');
+      document.getElementById('printLabelBtn').onclick = () => window.open(`${API_URL}/api/pallets/${pallet.id}/label`, '_blank');
+    }
+    function closeLabelModal() { document.getElementById('labelModal').classList.remove('show'); }
+    function showSearchModal(tracking, message) {
+      document.getElementById('searchErrorMessage').textContent = message;
+      document.getElementById('searchModal').classList.add('show');
+      document.getElementById('clientSearchInput').value = '';
+      document.getElementById('searchResults').innerHTML = '';
+      setTimeout(() => document.getElementById('clientSearchInput').focus(), 100);
+    }
+    function closeSearchModal() { document.getElementById('searchModal').classList.remove('show'); document.getElementById('scanInput').focus(); }
+    async function searchClient() {
+      const name = document.getElementById('clientSearchInput').value.trim();
+      if (name.length < 3) { showToast('Mínimo 3 caracteres', 'warning'); return; }
+      try {
+        const r = await apiCall(`/search-client/${encodeURIComponent(name)}`);
+        const container = document.getElementById('searchResults');
+        if (r.count === 0) { container.innerHTML = '<div class="empty-state">No hay resultados</div>'; return; }
+        container.innerHTML = r.results.map(r => `<div class="search-result-item" onclick="selectSearchResult('${r.tracking}', ${r.id}, '${(r.origin || '').replace(/'/g, "\\'")}', '${(r.client || '').replace(/'/g, "\\'")}')"><div class="search-result-tracking">${r.tracking}</div><div class="search-result-info">📋 ${r.origin || 'Sin ref'} · ${r.client}</div></div>`).join('');
+      } catch { showToast('Error', 'error'); }
+    }
+    async function selectSearchResult(tracking, pickingId, orderRef, clientName) {
+      try {
+        const r = await apiCall('/add-tracking', { method: 'POST', body: JSON.stringify({ tracking, carrier: state.selectedCarrier, pickingId, orderRef, clientName }) });
+        if (r.success) { state.packages.push(r.package); state.sessions[state.selectedCarrier] = r.sessionCount; renderPackages(); renderCarriers(); closeSearchModal(); showToast(`✓ ${orderRef || tracking}`, 'success'); playSound('success'); }
+        else { showModal('🚫', 'Error', r.message); playSound('error'); }
+      } catch { showToast('Error', 'error'); }
+    }
+    document.getElementById('clientSearchInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') searchClient(); });
+    
+    // CONFIG
+    async function loadConfig() {
+      document.getElementById('apiUrlInput').value = API_URL;
+      try { const r = await apiCall('/test-odoo'); document.getElementById('odooStatus').textContent = r.success ? '✅ Conectado' : '❌ Error'; } catch { document.getElementById('odooStatus').textContent = '❌ Sin conexión'; }
+      try { const r = await apiCall('/test-sendcloud'); document.getElementById('sendcloudStatus').textContent = r.success ? '✅ Conectado' : '❌ Error'; } catch { document.getElementById('sendcloudStatus').textContent = '❌ Sin conexión'; }
+      try {
+        const r = await apiCall('/sessions');
+        const container = document.getElementById('activeSessions');
+        const sessions = Object.entries(r.sessions || {});
+        if (sessions.length === 0) { container.innerHTML = '<div style="color:#94a3b8;">No hay sesiones</div>'; }
+        else { container.innerHTML = sessions.map(([c, d]) => `<div class="config-item"><span class="config-label">${c}</span><span class="config-value">${d.count} paquetes</span></div>`).join(''); }
+      } catch { document.getElementById('activeSessions').innerHTML = '<div style="color:#ef4444;">Error</div>'; }
+    }
+    function saveApiUrl() { const url = document.getElementById('apiUrlInput').value.trim(); if (url) { API_URL = url; localStorage.setItem('apiUrl', url); showToast('Guardado', 'success'); loadConfig(); } }
+    
+    // UTILS
+    function showToast(msg, type = 'success') { const t = document.getElementById('toast'); t.textContent = msg; t.className = `toast ${type} show`; setTimeout(() => t.classList.remove('show'), 2500); }
+    function playSound(type) { try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.connect(gain); gain.connect(ctx.destination); if (type === 'success') { osc.frequency.value = 800; gain.gain.value = 0.3; osc.start(); setTimeout(() => osc.frequency.value = 1000, 100); setTimeout(() => osc.stop(), 200); } else { osc.frequency.value = 300; gain.gain.value = 0.3; osc.start(); setTimeout(() => osc.stop(), 300); } } catch {} }
+    function updateHeaderStats() { const total = Object.values(state.sessions).reduce((s, c) => s + c, 0); document.getElementById('headerStats').textContent = `${total} paquetes`; }
+    
+    // INIT
+    async function init() {
+      try { const r = await apiCall('/sessions'); state.sessions = {}; for (const [c, d] of Object.entries(r.sessions || {})) { state.sessions[c] = d.count; } } catch {}
+      renderCarriers(); updateHeaderStats();
+    }
+    init();
+  </script>
+</body>
+</html>
