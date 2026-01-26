@@ -199,11 +199,13 @@ class OdooClient {
     return [...new Set(patterns)].sort((a, b) => b.length - a.length);
   }
 
-  async findPickingsByClientName(clientName, limit = 15) {
+  async findPickingsByClientName(clientName, limit = 20) {
     try {
-      const fiveDaysAgo = new Date();
-      fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
-      const dateFilter = fiveDaysAgo.toISOString().split('T')[0];
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30); // Ampliar a 30 días
+      const dateFilter = thirtyDaysAgo.toISOString().split('T')[0];
+      
+      console.log(`   🔍 Buscando cliente: "${clientName}" (últimos 30 días)`);
       
       const pickings = await this.execute('stock.picking', 'search_read', [
         [
@@ -218,9 +220,41 @@ class OdooClient {
         order: 'scheduled_date desc',
         limit: limit
       });
+      
+      console.log(`   📋 Encontrados: ${pickings.length} resultados`);
       return pickings;
     } catch (err) {
-      console.error('Error buscando por cliente:', err.message);
+      console.error('   ❌ Error buscando por cliente:', err.message);
+      return [];
+    }
+  }
+
+  async findPickingsByOrderRef(orderRef, limit = 20) {
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const dateFilter = thirtyDaysAgo.toISOString().split('T')[0];
+      
+      console.log(`   🔍 Buscando pedido: "${orderRef}" (últimos 30 días)`);
+      
+      const pickings = await this.execute('stock.picking', 'search_read', [
+        [
+          ['origin', 'ilike', orderRef],
+          ['state', '=', 'done'],
+          ['picking_type_code', '=', 'outgoing'],
+          ['carrier_tracking_ref', '!=', false],
+          ['scheduled_date', '>=', dateFilter]
+        ]
+      ], { 
+        fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'manual_expedition_date'],
+        order: 'scheduled_date desc',
+        limit: limit
+      });
+      
+      console.log(`   📋 Encontrados: ${pickings.length} resultados`);
+      return pickings;
+    } catch (err) {
+      console.error('   ❌ Error buscando por pedido:', err.message);
       return [];
     }
   }
@@ -574,13 +608,36 @@ app.get('/api/detect-carrier/:tracking', async (req, res) => {
 });
 
 app.get('/api/search-client/:name', async (req, res) => {
-  const clientName = req.params.name.trim();
+  const searchTerm = req.params.name.trim();
   
-  if (clientName.length < 3) {
-    return res.status(400).json({ error: 'Nombre muy corto (mínimo 3 caracteres)' });
+  if (searchTerm.length < 3) {
+    return res.status(400).json({ error: 'Mínimo 3 caracteres' });
   }
   
-  const pickings = await odooClient.findPickingsByClientName(clientName);
+  console.log(`\n🔎 BÚSQUEDA: "${searchTerm}"`);
+  
+  // Determinar si es un número de pedido (empieza con DF, SO, etc.) o nombre de cliente
+  const isOrderRef = /^(DF|SO|PO|WH|S)\d/i.test(searchTerm);
+  
+  let pickings = [];
+  
+  if (isOrderRef) {
+    // Buscar por número de pedido
+    pickings = await odooClient.findPickingsByOrderRef(searchTerm);
+  } else {
+    // Buscar por nombre de cliente
+    pickings = await odooClient.findPickingsByClientName(searchTerm);
+  }
+  
+  // Si no hay resultados, intentar el otro tipo de búsqueda
+  if (pickings.length === 0) {
+    console.log(`   ⚠️ Sin resultados, intentando búsqueda alternativa...`);
+    if (isOrderRef) {
+      pickings = await odooClient.findPickingsByClientName(searchTerm);
+    } else {
+      pickings = await odooClient.findPickingsByOrderRef(searchTerm);
+    }
+  }
   
   const results = pickings.map(p => ({
     id: p.id,
@@ -592,8 +649,10 @@ app.get('/api/search-client/:name', async (req, res) => {
     expedited: !!p.manual_expedition_date
   }));
   
+  console.log(`   ✅ Devolviendo ${results.length} resultados`);
+  
   res.json({ 
-    query: clientName,
+    query: searchTerm,
     count: results.length,
     results 
   });
