@@ -794,124 +794,16 @@ app.get('/api/pallets/:id', (req, res) => {
 
 app.delete('/api/pallets/:id', (req, res) => {
   const palletId = req.params.id;
-  const pallet = database.pallets[palletId];
   
-  if (!pallet) {
+  if (!database.pallets[palletId]) {
     return res.status(404).json({ error: 'Palet no encontrado' });
-  }
-  
-  // Si el palet estaba recogido, actualizar la recogida asociada
-  if (pallet.status === 'picked_up' && pallet.pickupId) {
-    const pickup = database.pickups[pallet.pickupId];
-    if (pickup) {
-      // Quitar este palet de la recogida
-      pickup.palletIds = pickup.palletIds.filter(id => id !== palletId);
-      pickup.pallets = pickup.pallets.filter(p => p.id !== palletId);
-      pickup.totalPallets = pickup.pallets.length;
-      pickup.totalPackages = pickup.pallets.reduce((sum, p) => sum + p.totalPackages, 0);
-      
-      // Si la recogida se quedó sin palets, eliminarla también
-      if (pickup.palletIds.length === 0) {
-        console.log(`   🗑️ Recogida ${pallet.pickupId} eliminada (sin palets)`);
-        // Eliminar manifiesto asociado si existe
-        if (database.manifests[pallet.pickupId]) {
-          delete database.manifests[pallet.pickupId];
-        }
-        delete database.pickups[pallet.pickupId];
-      }
-    }
   }
   
   delete database.pallets[palletId];
   saveData();
-  console.log(`\n🗑️ PALET ELIMINADO: ${palletId} (status: ${pallet.status})`);
+  console.log(`\n🗑️ PALET ELIMINADO: ${palletId}`);
   
   res.json({ success: true, message: `Palet ${palletId} eliminado` });
-});
-
-// Deshacer recogida (volver palets a estado pendiente)
-app.post('/api/pickup/:id/undo', (req, res) => {
-  const pickupId = req.params.id;
-  const pickup = database.pickups[pickupId];
-  
-  if (!pickup) {
-    return res.status(404).json({ error: 'Recogida no encontrada' });
-  }
-  
-  // Volver todos los palets a estado pendiente
-  for (const palletId of pickup.palletIds) {
-    const pallet = database.pallets[palletId];
-    if (pallet) {
-      pallet.status = 'pending';
-      delete pallet.pickupId;
-      delete pallet.pickedUpAt;
-    }
-  }
-  
-  // Eliminar manifiesto si existe
-  if (database.manifests[pickupId]) {
-    delete database.manifests[pickupId];
-  }
-  
-  // Eliminar la recogida
-  delete database.pickups[pickupId];
-  saveData();
-  
-  console.log(`\n↩️ RECOGIDA DESHECHA: ${pickupId} - ${pickup.palletIds.length} palets vueltos a pendiente`);
-  
-  res.json({ 
-    success: true, 
-    message: `Recogida deshecha. ${pickup.palletIds.length} palets vueltos a estado pendiente.`
-  });
-});
-
-// Eliminar recogida completamente (con sus palets)
-app.delete('/api/pickup/:id', (req, res) => {
-  const pickupId = req.params.id;
-  const pickup = database.pickups[pickupId];
-  
-  if (!pickup) {
-    return res.status(404).json({ error: 'Recogida no encontrada' });
-  }
-  
-  const deletePallets = req.query.deletePallets === 'true';
-  
-  if (deletePallets) {
-    // Eliminar también los palets
-    for (const palletId of pickup.palletIds) {
-      if (database.pallets[palletId]) {
-        delete database.pallets[palletId];
-        console.log(`   🗑️ Palet ${palletId} eliminado`);
-      }
-    }
-  } else {
-    // Solo volver palets a pendiente
-    for (const palletId of pickup.palletIds) {
-      const pallet = database.pallets[palletId];
-      if (pallet) {
-        pallet.status = 'pending';
-        delete pallet.pickupId;
-        delete pallet.pickedUpAt;
-      }
-    }
-  }
-  
-  // Eliminar manifiesto si existe
-  if (database.manifests[pickupId]) {
-    delete database.manifests[pickupId];
-  }
-  
-  delete database.pickups[pickupId];
-  saveData();
-  
-  console.log(`\n🗑️ RECOGIDA ELIMINADA: ${pickupId}`);
-  
-  res.json({ 
-    success: true, 
-    message: deletePallets 
-      ? `Recogida y ${pickup.palletIds.length} palets eliminados`
-      : `Recogida eliminada. Palets vueltos a estado pendiente.`
-  });
 });
 
 // Etiqueta de palet
@@ -967,7 +859,7 @@ app.get('/api/pallets/:id/label', (req, res) => {
       </div>
     </div>
     <div class="datetime">📅 ${dateStr} &nbsp; 🕐 ${timeStr}</div>
-    <div class="footer">Illice Brands Group - White Division</div>
+    <div class="footer">ILLICE INTERNACIONAL S.A.</div>
   </div>
   <div class="no-print" style="margin-top: 20px; text-align: center;">
     <button onclick="window.print()" style="padding: 10px 30px; font-size: 16px; cursor: pointer;">🖨️ Imprimir</button>
@@ -1162,8 +1054,7 @@ app.get('/api/manifest/:pickupId', (req, res) => {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: Arial, sans-serif; padding: 20px; max-width: 210mm; margin: 0 auto; }
     .header { border-bottom: 3px solid #000; padding-bottom: 15px; margin-bottom: 20px; }
-    .company { font-size: 22px; font-weight: bold; }
-    .company-address { font-size: 12px; color: #666; margin-top: 5px; }
+    .company { font-size: 24px; font-weight: bold; }
     .title { font-size: 20px; margin-top: 10px; color: #333; }
     .carrier-badge { display: inline-block; background: #000; color: #fff; padding: 8px 20px; font-size: 18px; font-weight: bold; margin-top: 10px; }
     .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; padding: 15px; background: #f5f5f5; }
@@ -1207,40 +1098,28 @@ app.get('/api/manifest/:pickupId', (req, res) => {
       .signature-canvas { display: none; }
     }
     
-    .action-buttons {
-      position: fixed; bottom: 20px; right: 20px;
-      display: flex; gap: 10px; z-index: 100;
+    .print-btn { 
+      position: fixed; bottom: 20px; right: 20px; 
+      padding: 15px 30px; background: #000; color: #fff; 
+      border: none; font-size: 16px; cursor: pointer; z-index: 100;
     }
-    .action-btn { 
-      padding: 15px 25px; background: #000; color: #fff; 
-      border: none; font-size: 16px; cursor: pointer; border-radius: 8px;
-    }
-    .action-btn:hover { background: #333; }
-    .action-btn.download { background: #2563eb; }
-    .action-btn.download:hover { background: #1d4ed8; }
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
-  <div class="action-buttons no-print">
-    <button class="action-btn" onclick="window.print()">🖨️ Imprimir</button>
-    <button class="action-btn download" onclick="downloadPDF()">📥 Descargar PDF</button>
+  <button class="print-btn no-print" onclick="window.print()">🖨️ Imprimir</button>
+  
+  <div class="header">
+    <div class="company">ILLICE INTERNACIONAL S.A.</div>
+    <div class="title">MANIFIESTO DE RECOGIDA</div>
+    <div class="carrier-badge">${pickup.carrier}</div>
   </div>
   
-  <div id="manifest-content">
-    <div class="header">
-      <div class="company">Illice Brands Group - White Division</div>
-      <div class="company-address">📍 Calle Moros y Cristianos 10, Albatera, España</div>
-      <div class="title">MANIFIESTO DE RECOGIDA</div>
-      <div class="carrier-badge">${pickup.carrier}</div>
+  <div class="info-grid">
+    <div class="info-item">
+      <div class="label">FECHA</div>
+      <div class="value">${dateStr}</div>
     </div>
-    
-    <div class="info-grid">
-      <div class="info-item">
-        <div class="label">FECHA</div>
-        <div class="value">${dateStr}</div>
-      </div>
-      <div class="info-item">
+    <div class="info-item">
       <div class="label">HORA</div>
       <div class="value">${timeStr}</div>
     </div>
@@ -1268,7 +1147,6 @@ app.get('/api/manifest/:pickupId', (req, res) => {
   ${palletsHtml}
   
   ${signatureSection}
-  </div>
   
   <script>
     // Signature pad logic
@@ -1411,25 +1289,6 @@ app.get('/api/manifest/:pickupId', (req, res) => {
     if (document.getElementById('warehouseSignature')) {
       initCanvas('warehouseSignature');
       initCanvas('driverSignature');
-    }
-    
-    // Función para descargar PDF
-    function downloadPDF() {
-      const element = document.getElementById('manifest-content');
-      const opt = {
-        margin: 10,
-        filename: 'Manifiesto_${pickup.id}.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      };
-      
-      // Ocultar botones temporalmente
-      document.querySelector('.action-buttons').style.display = 'none';
-      
-      html2pdf().set(opt).from(element).save().then(() => {
-        document.querySelector('.action-buttons').style.display = 'flex';
-      });
     }
   </script>
 </body>
