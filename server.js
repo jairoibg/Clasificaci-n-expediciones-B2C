@@ -28,6 +28,46 @@ const CONFIG = {
 // Archivo de persistencia
 const DATA_FILE = path.join(__dirname, 'data.json');
 
+// Archivo de caché de Sendcloud
+const SENDCLOUD_CACHE_FILE = path.join(__dirname, 'sendcloud-cache.json');
+let sendcloudCache = { parcels: {} };
+
+// Cargar caché de Sendcloud al iniciar
+function loadSendcloudCache() {
+  try {
+    if (fs.existsSync(SENDCLOUD_CACHE_FILE)) {
+      const data = fs.readFileSync(SENDCLOUD_CACHE_FILE, 'utf8');
+      sendcloudCache = JSON.parse(data);
+      console.log(`📦 Caché Sendcloud cargada: ${Object.keys(sendcloudCache.parcels).length} envíos`);
+      console.log(`   Última sync: ${sendcloudCache.lastSync || 'desconocida'}`);
+    } else {
+      console.log('⚠️ No hay caché de Sendcloud (ejecuta: node sync-sendcloud.js)');
+    }
+  } catch (err) {
+    console.error('Error cargando caché Sendcloud:', err.message);
+  }
+}
+
+// Buscar en caché local
+function findInSendcloudCache(tracking) {
+  if (!tracking || !sendcloudCache.parcels) return null;
+  
+  // Búsqueda exacta
+  if (sendcloudCache.parcels[tracking]) {
+    return sendcloudCache.parcels[tracking];
+  }
+  
+  // Búsqueda insensible a mayúsculas
+  const trackingUpper = tracking.toUpperCase();
+  for (const [key, value] of Object.entries(sendcloudCache.parcels)) {
+    if (key.toUpperCase() === trackingUpper) {
+      return value;
+    }
+  }
+  
+  return null;
+}
+
 // Servir frontend estático (carpeta public en Railway)
 const FRONTEND_DIR = path.join(__dirname, 'public');
 app.use(express.static(FRONTEND_DIR));
@@ -90,6 +130,7 @@ function saveData() {
 
 // Cargar al iniciar
 loadData();
+loadSendcloudCache();
 
 // ============================================
 // CLIENTE ODOO
@@ -359,10 +400,19 @@ async function getCarrierFromTracking(tracking) {
     return { carrier: null, picking: null, source: 'not_found' };
   }
 
-  // IMPORTANTE: Usar el tracking de Odoo para consultar Sendcloud, no el escaneado
+  // IMPORTANTE: Usar el tracking de Odoo, no el escaneado
   const odooTracking = picking.carrier_tracking_ref;
   console.log(`   📍 Tracking Odoo: ${odooTracking}`);
   
+  // 1. Buscar primero en caché local (rápido)
+  const cached = findInSendcloudCache(odooTracking);
+  if (cached && cached.carrier) {
+    console.log(`   ⚡ Encontrado en caché: ${cached.carrier}`);
+    return { carrier: cached.carrier, picking, source: 'cache' };
+  }
+  
+  // 2. Si no está en caché, consultar Sendcloud API (lento, fallback)
+  console.log(`   🌐 No en caché, consultando Sendcloud API...`);
   const sendcloudData = await sendcloudClient.getParcelByTracking(odooTracking);
   
   if (sendcloudData && sendcloudData.carrier_code) {
