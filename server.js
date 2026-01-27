@@ -359,7 +359,11 @@ async function getCarrierFromTracking(tracking) {
     return { carrier: null, picking: null, source: 'not_found' };
   }
 
-  const sendcloudData = await sendcloudClient.getParcelByTracking(tracking);
+  // IMPORTANTE: Usar el tracking de Odoo para consultar Sendcloud, no el escaneado
+  const odooTracking = picking.carrier_tracking_ref;
+  console.log(`   📍 Tracking Odoo: ${odooTracking}`);
+  
+  const sendcloudData = await sendcloudClient.getParcelByTracking(odooTracking);
   
   if (sendcloudData && sendcloudData.carrier_code) {
     const carrier = sendcloudClient.normalizeCarrier(sendcloudData.carrier_code);
