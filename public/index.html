@@ -439,8 +439,9 @@
             ${p.packages.map(pkg => `<div class="pallet-package"><span class="pallet-package-tracking">${pkg.tracking}</span><span class="pallet-package-info">${pkg.orderRef || ''} · ${pkg.clientName || ''}</span></div>`).join('')}
             <div class="pallet-actions">
               <button class="btn btn-secondary" onclick="printLabel('${p.id}')">🏷️ Etiqueta</button>
-              ${canSelect ? `<button class="btn btn-danger" onclick="deletePallet('${p.id}')">🗑️ Eliminar</button>` : ''}
+              <button class="btn btn-danger" onclick="deletePallet('${p.id}', ${!canSelect})">🗑️ Eliminar</button>
               ${p.pickupId ? `<button class="btn btn-primary" onclick="openManifest('${p.pickupId}')">📋 Manifiesto</button>` : ''}
+              ${p.pickupId ? `<button class="btn btn-secondary" onclick="undoPickup('${p.pickupId}')">↩️ Deshacer recogida</button>` : ''}
             </div>
           </div>
         </div>
@@ -453,7 +454,25 @@
     function updateSelectionBar() { const bar = document.getElementById('selectionBar'), count = state.selectedPallets.size; if (count > 0) { bar.classList.add('show'); document.getElementById('selectionInfo').textContent = `${count} palet${count > 1 ? 's' : ''} seleccionado${count > 1 ? 's' : ''}`; } else { bar.classList.remove('show'); } }
     function printLabel(id) { window.open(`${API_URL}/api/pallets/${id}/label`, '_blank'); }
     function openManifest(id) { window.open(`${API_URL}/api/manifest/${id}`, '_blank'); }
-    async function deletePallet(id) { if (!confirm(`¿Eliminar ${id}?`)) return; try { await apiCall(`/pallets/${id}`, { method: 'DELETE' }); showToast('Eliminado', 'warning'); loadPallets(); } catch { showToast('Error', 'error'); } }
+    async function deletePallet(id, isPickedUp) { 
+      const msg = isPickedUp 
+        ? `¿Eliminar ${id}?\n\nEste palet ya fue recogido. Se actualizará la recogida asociada.` 
+        : `¿Eliminar ${id}?`;
+      if (!confirm(msg)) return; 
+      try { 
+        await apiCall(`/pallets/${id}`, { method: 'DELETE' }); 
+        showToast('Palet eliminado', 'warning'); 
+        loadPallets(); 
+      } catch { showToast('Error', 'error'); } 
+    }
+    async function undoPickup(pickupId) {
+      if (!confirm(`¿Deshacer la recogida ${pickupId}?\n\nLos palets volverán a estado "pendiente".`)) return;
+      try {
+        const r = await apiCall(`/pickup/${pickupId}/undo`, { method: 'POST' });
+        if (r.success) { showToast('Recogida deshecha', 'warning'); loadPallets(); }
+        else { showModal('⚠️', 'Error', r.error || 'Error al deshacer'); }
+      } catch { showToast('Error de conexión', 'error'); }
+    }
     
     async function confirmPickupFromPalets() {
       if (state.selectedPallets.size === 0) return;
@@ -572,8 +591,15 @@
         const r = await apiCall(`/search-client/${encodeURIComponent(name)}`);
         const container = document.getElementById('searchResults');
         if (r.count === 0) { container.innerHTML = '<div class="empty-state">No hay resultados</div>'; return; }
-        container.innerHTML = r.results.map(r => `<div class="search-result-item" onclick="selectSearchResult('${r.tracking}', ${r.id}, '${(r.origin || '').replace(/'/g, "\\'")}', '${(r.client || '').replace(/'/g, "\\'")}')"><div class="search-result-tracking">${r.tracking}</div><div class="search-result-info">📋 ${r.origin || 'Sin ref'} · ${r.client}</div></div>`).join('');
+        // Guardar resultados en variable global para acceso desde onclick
+        window.searchResultsData = r.results;
+        container.innerHTML = r.results.map((item, idx) => `<div class="search-result-item" onclick="selectSearchResultByIndex(${idx})"><div class="search-result-tracking">${item.tracking}</div><div class="search-result-info">📋 ${item.origin || 'Sin ref'} · ${item.client}</div></div>`).join('');
       } catch { showToast('Error', 'error'); }
+    }
+    function selectSearchResultByIndex(idx) {
+      const item = window.searchResultsData[idx];
+      if (!item) return;
+      selectSearchResult(item.tracking, item.id, item.origin || '', item.client || '');
     }
     async function selectSearchResult(tracking, pickingId, orderRef, clientName) {
       try {
@@ -581,6 +607,7 @@
         if (r.success) { state.packages.push(r.package); state.sessions[state.selectedCarrier] = r.sessionCount; renderPackages(); renderCarriers(); closeSearchModal(); showToast(`✓ ${orderRef || tracking}`, 'success'); playSound('success'); }
         else { showModal('🚫', 'Error', r.message); playSound('error'); }
       } catch { showToast('Error', 'error'); }
+    }
     }
     document.getElementById('clientSearchInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') searchClient(); });
     
