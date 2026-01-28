@@ -148,7 +148,7 @@ async function runSync() {
 
 // Programador de sync (6:00 y 14:00)
 function setupScheduledSync() {
-  const SYNC_HOURS = [6, 14];
+  const SYNC_HOURS = [0, 6, 10, 12, 14];
   
   setInterval(() => {
     const now = new Date();
@@ -161,7 +161,7 @@ function setupScheduledSync() {
     }
   }, 60000);
   
-  console.log(`⏰ Sync programado para las ${SYNC_HOURS.join(':00 y ')}:00`);
+  console.log(`⏰ Sync programado para las ${SYNC_HOURS.join(':00, ')}:00`);
 }
 
 // ============================================
