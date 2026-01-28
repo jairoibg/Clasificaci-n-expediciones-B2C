@@ -11610,6 +11610,980 @@
       "status": "picked_up",
       "pickupId": "CORREOS-REC-20260125-001",
       "pickedUpAt": "2026-01-25T02:12:29.289Z"
+    },
+    "CTT-20260127-001": {
+      "id": "CTT-20260127-001",
+      "carrier": "CTT",
+      "packages": [
+        {
+          "tracking": "0003010003019701434708001",
+          "orderRef": "DF1068978EU",
+          "clientName": "Nuno Oliveira, Nuno Oliveira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701442710001",
+          "orderRef": "DF1069133EU",
+          "clientName": "Inês Sousa Coelho, Inês Sousa Coelho",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701442848001",
+          "orderRef": "DF1069647EU",
+          "clientName": "Ana Rita Palhão, Ana Rita Palhão",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701425535001",
+          "orderRef": "DF1068377EU",
+          "clientName": "Ângela Machado, Ângela Machado",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701450760001",
+          "orderRef": "DF1067829EU",
+          "clientName": "Sofia Andrade, Nelson Andrade",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434771001",
+          "orderRef": "DF1069284EU",
+          "clientName": "Diana Sa, Diana Sa",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434774001",
+          "orderRef": "DF1069313EU",
+          "clientName": "Joana Pinto, Joana Pinto",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426457001",
+          "orderRef": "DF1069312EU",
+          "clientName": "Anabela Faria, Anabela Faria",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701451755001",
+          "orderRef": "DF1069502EU",
+          "clientName": "Erika Zambrano, Erika Zambrano",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426453001",
+          "orderRef": "DF1069225EU",
+          "clientName": "Débora Mota, Débora Mota",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701433557001",
+          "orderRef": "DF1068146EU",
+          "clientName": "Alberto Lebres, Alberto Lebres",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426459001",
+          "orderRef": "DF1069324EU",
+          "clientName": "Sara Sá, Sara Sá",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701442712001",
+          "orderRef": "DF1069239EU",
+          "clientName": "Inês Medeiros, Inês Medeiros",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701460672001",
+          "orderRef": "DF1068922EU",
+          "clientName": "Pedro Raposeira, Pedro Raposeira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701460871001",
+          "orderRef": "DF1069472EU",
+          "clientName": "Fatima Mota, Fatima Mota",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418711001",
+          "orderRef": "DF1069403EU",
+          "clientName": "Flávio Andrade, Flávio Andrade",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434766001",
+          "orderRef": "DF1069094EU",
+          "clientName": "david bastos, david bastos",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418699001",
+          "orderRef": "DF1069054EU",
+          "clientName": "Andreia Nunes, Andreia Nunes",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701451762001",
+          "orderRef": "DF1069563EU",
+          "clientName": "Inês Cunha, Inês Cunha",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434768001",
+          "orderRef": "DF1069163EU",
+          "clientName": "Ana Valongo Valongo, Ana Valongo Valongo",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701451763001",
+          "orderRef": "DF1069567EU",
+          "clientName": "Maria Silva, Maria Silva",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418958001",
+          "orderRef": "DF1069694EU",
+          "clientName": "Andreia Rodrigues, Andreia Rodrigues",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426469001",
+          "orderRef": "DF1069491EU",
+          "clientName": "Manuel Cruz, Manuel Cruz",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701460883001",
+          "orderRef": "DF1069525EU",
+          "clientName": "Felícia Lopes, Felícia Lopes",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434449001",
+          "orderRef": "DF1068723EU",
+          "clientName": "Ana Isabel Babo, Ana Isabel Babo",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434988001",
+          "orderRef": "DF1069674EU",
+          "clientName": "Inês Moura, Inês Moura",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418701001",
+          "orderRef": "DF1069088EU",
+          "clientName": "Margarida Menezes, Maria Margarida Menezes",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701470391001",
+          "orderRef": "DF1068820EU",
+          "clientName": "João Freitas, João Freitas",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426400001",
+          "orderRef": "DF1069039EU",
+          "clientName": "Nicole Vicente, Nicole Colaço Vicente",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701460644001",
+          "orderRef": "DF1068881EU",
+          "clientName": "Nuno Ribeiro, Nuno Ribeiro",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418731001",
+          "orderRef": "DF1069548EU",
+          "clientName": "Daniel Macedo, Daniel Macedo",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426454001",
+          "orderRef": "DF1069252EU",
+          "clientName": "Luis Rodrigues, Luis Rodrigues",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434773001",
+          "orderRef": "DF1069302EU",
+          "clientName": "Sara Ferreira, Sara Ferreira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434772001",
+          "orderRef": "DF1069290EU",
+          "clientName": "Duarte Pinheiro, Maria Rodrigues",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701442713001",
+          "orderRef": "DF1069272EU",
+          "clientName": "Sergio Costa, Sérgio Costa",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701442714001",
+          "orderRef": "DF1069370EU",
+          "clientName": "Mariana Lopes, Mariana Lopes",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701425257001",
+          "orderRef": "DF1067556EU",
+          "clientName": "Sofia Marques, Sofia Marques",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701409559001",
+          "orderRef": "DF1067634EU",
+          "clientName": "Sonia Teixeira, Sonia Teixeira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701442178001",
+          "orderRef": "DF1068537EU",
+          "clientName": "João Esteves, João Esteves",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426450001",
+          "orderRef": "DF1069122EU",
+          "clientName": "Sabores de Sintra - AC Joaquim de Almeida Patricia Camacho",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701451712001",
+          "orderRef": "DF1068945EU",
+          "clientName": "Débora Rodrigues, Débora Rodrigues",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701417439001",
+          "orderRef": "DF1067260EU",
+          "clientName": "Joao Maria Oliveira, Joao Maria Oliveira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701425251001",
+          "orderRef": "DF1067374EU",
+          "clientName": "Rosa Couto, Rosa Couto",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701433547001",
+          "orderRef": "DF1067748EU",
+          "clientName": "Alice Coelho, Alice Coelho",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426456001",
+          "orderRef": "DF1069295EU",
+          "clientName": "Rita Barbosa, Rita Barbosa",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418702001",
+          "orderRef": "DF1069099EU",
+          "clientName": "Maria Elisa Santos, Maria Elisa Santos",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426452001",
+          "orderRef": "DF1069169EU",
+          "clientName": "Angela Paraiso, Angela Paraíso",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418703001",
+          "orderRef": "DF1069112EU",
+          "clientName": "Renata Rodrigues, Renata Rodrigues",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701435028001",
+          "orderRef": "DF1069699EU",
+          "clientName": "Melanie Santos Oliveira, Melanie Oliveira Oliveira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418585001",
+          "orderRef": "DF1068914EU",
+          "clientName": "Karoliny Oliveira, Karoliny Oliveira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701441701001",
+          "orderRef": "DF1066838EU",
+          "clientName": "Paula Abreu, Paula Abreu",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701425541001",
+          "orderRef": "DF1068381EU",
+          "clientName": "Daniela Matos, Daniela Matos",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418706001",
+          "orderRef": "DF1069216EU",
+          "clientName": "Claudia Telles, Claudia Telles",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701451752001",
+          "orderRef": "DF1069355EU",
+          "clientName": "Hélder Rodrigues, Helder Rodrigues",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701425269001",
+          "orderRef": "DF1067896EU",
+          "clientName": "Maria Barbosa, Maria Barbosa",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701409749001",
+          "orderRef": "DF1067803EU",
+          "clientName": "Mariana Luz, Mariana Luz",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701425255001",
+          "orderRef": "DF1067543EU",
+          "clientName": "Paula Azevedo, Paula Azevedo",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701460880001",
+          "orderRef": "DF1069509EU",
+          "clientName": "Rubina Silva, Rubina Silva",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701460241001",
+          "orderRef": "DF1068340EU",
+          "clientName": "Vitor Coelho, Vitor Coelho",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701425268001",
+          "orderRef": "DF1067873EU",
+          "clientName": "Filomena Bravo De Oliveira, Filomena Bravo De Oliveira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701417448001",
+          "orderRef": "DF1067617EU",
+          "clientName": "Servant 516101129, Anastasiia Kurash",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418554001",
+          "orderRef": "DF1068884EU",
+          "clientName": "Lígia Maria da Silva Nora, Lígia Maria da Silva Nora",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434767001",
+          "orderRef": "DF1069095EU",
+          "clientName": "Maria Dias, Maria Dias",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701425250001",
+          "orderRef": "DF1067331EU",
+          "clientName": "Afonso Bizarro, Afonso Bizarro",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701425889001",
+          "orderRef": "DF1068545EU",
+          "clientName": "Lucia Silva, Lucia Silva",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701433548001",
+          "orderRef": "DF1067750EU",
+          "clientName": "Ana Luísa Silva, Ana Luísa Silva",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701460261001",
+          "orderRef": "DF1068369EU",
+          "clientName": "Patrícia Pacheco, Patrícia Pacheco",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434786001",
+          "orderRef": "DF1069495EU",
+          "clientName": "Anabela Carvalho, Anabela Carvalho",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701433824001",
+          "orderRef": "DF1068358EU",
+          "clientName": "Lucie Nogueira, Lucie Nogueira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701425256001",
+          "orderRef": "DF1067548EU",
+          "clientName": "Kelly Baia, Kelly Baia",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701417461001",
+          "orderRef": "DF1068104EU",
+          "clientName": "Daniela Oliveira, Daniela Oliveira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701433545001",
+          "orderRef": "DF1067627EU",
+          "clientName": "Sandra Mira, Sandra Mira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701442661001",
+          "orderRef": "DF1068935EU",
+          "clientName": "Karen Rey Alvarez, Karen Rey Alvarez",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426448001",
+          "orderRef": "DF1069055EU",
+          "clientName": "Patrícia Cerqueira, Patrícia Cerqueira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418705001",
+          "orderRef": "DF1069159EU",
+          "clientName": "Cátia Macedo, Cátia Macedo",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701460671001",
+          "orderRef": "DF1068900EU",
+          "clientName": "Laura Silva, Laura Silva",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701442678001",
+          "orderRef": "DF1069034EU",
+          "clientName": "Andrea Domingues, Andrea Domingues",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701433528001",
+          "orderRef": "DF1067119EU",
+          "clientName": "Cristiana Lopes, Cristiana Lopes",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701409407001",
+          "orderRef": "DF1064485EU",
+          "clientName": "Beatriz Serra Lopes, Beatriz Lopes",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701460253001",
+          "orderRef": "DF1068345EU",
+          "clientName": "Marina Correia, Marina Correia",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426458001",
+          "orderRef": "DF1069322EU",
+          "clientName": "Eleia Prazeres, Eleia Prazeres",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426684001",
+          "orderRef": "CO495720",
+          "clientName": "Catarina Fradique, Catarina Fradique",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418704001",
+          "orderRef": "DF1069145EU",
+          "clientName": "Rita Costa, Ana Rita Costa",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426449001",
+          "orderRef": "DF1069107EU",
+          "clientName": "DVTKB, LDA, DVTKB, LDA",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701442190001",
+          "orderRef": "DF1068574EU",
+          "clientName": "Cláudia Luís, Cláudia Luís",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701409555001",
+          "orderRef": "DF1067184EU",
+          "clientName": "Arlinda F. Cardoso, Arlinda F. Cardoso",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426575001",
+          "orderRef": "DF1069612EU",
+          "clientName": "Ana Isabel Coimbra, Ana Isabel Coimbra",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701451567001",
+          "orderRef": "DF1068774EU",
+          "clientName": "Catarina Coelho, Catarina Coelho",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701460641001",
+          "orderRef": "DF1068862EU",
+          "clientName": "Marisa Marques da Costa, Marisa Marques da Costa",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418730001",
+          "orderRef": "DF1069506EU",
+          "clientName": "Fradelis Marin, Fradelis Marin",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426471001",
+          "orderRef": "DF1069558EU",
+          "clientName": "Joana Alves Costa, Joana Costa",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434792001",
+          "orderRef": "DF1069526EU",
+          "clientName": "Mário Teles, Mário Teles",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701433526001",
+          "orderRef": "DF1067048EU",
+          "clientName": "Sofia Silva, Sofia Silva",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426451001",
+          "orderRef": "DF1069127EU",
+          "clientName": "Eva Duarte, Eva Duarte",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418734001",
+          "orderRef": "DF1069553EU",
+          "clientName": "PORTUGEN ENERGIA SA Conceição Vieira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434789001",
+          "orderRef": "DF1069513EU",
+          "clientName": "Madalena Sá Dias, Madalena Sá-Dias",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701417452001",
+          "orderRef": "DF1067849EU",
+          "clientName": "Patricia Costa, Patrícia Costa",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701409540001",
+          "orderRef": "DF1067035EU",
+          "clientName": "Patricia Rebelo, Patricia Rebelo",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701417455001",
+          "orderRef": "DF1067973EU",
+          "clientName": "Catarina Menano, Catarina Menano",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701442720001",
+          "orderRef": "DF1069543EU",
+          "clientName": "Rute Primo, Rute Mesquita Martins",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701425265001",
+          "orderRef": "DF1067823EU",
+          "clientName": "Ângela Firmino, Ângela Firmino",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701442730001",
+          "orderRef": "DF1069569EU",
+          "clientName": "Joao Correia, Correia Correia",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418335001",
+          "orderRef": "DF1068670EU",
+          "clientName": "Lídia Adelaide Moreira Teles, Lídia Adelaide Moreira Teles",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701433535001",
+          "orderRef": "DF1067320EU",
+          "clientName": "João Fonte, João Fonte",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701433552001",
+          "orderRef": "DF1067928EU",
+          "clientName": "Maria Elisabete Rodrigues, Maria Elisabete Gonçalves Rodrigues",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701470326001",
+          "orderRef": "DF1068632EU",
+          "clientName": "Andreia Soares OMCMUT, Andreia Soares OMCMUT",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426460001",
+          "orderRef": "DF1069385EU",
+          "clientName": "Marta Pinto, Marta Pinto",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701418733001",
+          "orderRef": "DF1069552EU",
+          "clientName": "Catia Mesquita, Catia Mesquita",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701442673001",
+          "orderRef": "DF1068999EU",
+          "clientName": "Márcio Roque, Márcio Roque",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701460870001",
+          "orderRef": "DF1069465EU",
+          "clientName": "Cláudia Abreu, Claudia MayaTavares de Abreu",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701417441001",
+          "orderRef": "DF1067285EU",
+          "clientName": "Ana Oliveira, Ana Oliveira",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426379001",
+          "orderRef": "DF1068958EU",
+          "clientName": "Elisabete F L Fernandes, Elisabete Fernandes",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701451730001",
+          "orderRef": "DF1069040EU",
+          "clientName": "Catarina Araújo, Catarina Araújo",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701451889001",
+          "orderRef": "DF1069639EU",
+          "clientName": "Cátia Cestinho, Cátia Cestinho",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701434780001",
+          "orderRef": "DF1069478EU",
+          "clientName": "Nídia Marques, Nídia Marques",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701426690001",
+          "orderRef": "DF1069714EU",
+          "clientName": "Cláudia Duarte Saraiva, Cláudia Duarte Saraiva",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701451649001",
+          "orderRef": "DF1068835EU",
+          "clientName": "Cristina Cristina Vaz, Cristina Maria Ferreira Vaz",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701433836001",
+          "orderRef": "DF1068380EU",
+          "clientName": "142876674, Maria Carvalho",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701460877001",
+          "orderRef": "DF1069484EU",
+          "clientName": "Telma Laureano, Telma Laureano",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        },
+        {
+          "tracking": "0003010003019701409548001",
+          "orderRef": "DF1067407EU",
+          "clientName": "Ines Ferra, Ines Santos",
+          "pickingId": null,
+          "scannedAt": "2026-01-27T15:00:00.000Z"
+        }
+      ],
+      "trackings": [
+        "0003010003019701434708001",
+        "0003010003019701442710001",
+        "0003010003019701442848001",
+        "0003010003019701425535001",
+        "0003010003019701450760001",
+        "0003010003019701434771001",
+        "0003010003019701434774001",
+        "0003010003019701426457001",
+        "0003010003019701451755001",
+        "0003010003019701426453001",
+        "0003010003019701433557001",
+        "0003010003019701426459001",
+        "0003010003019701442712001",
+        "0003010003019701460672001",
+        "0003010003019701460871001",
+        "0003010003019701418711001",
+        "0003010003019701434766001",
+        "0003010003019701418699001",
+        "0003010003019701451762001",
+        "0003010003019701434768001",
+        "0003010003019701451763001",
+        "0003010003019701418958001",
+        "0003010003019701426469001",
+        "0003010003019701460883001",
+        "0003010003019701434449001",
+        "0003010003019701434988001",
+        "0003010003019701418701001",
+        "0003010003019701470391001",
+        "0003010003019701426400001",
+        "0003010003019701460644001",
+        "0003010003019701418731001",
+        "0003010003019701426454001",
+        "0003010003019701434773001",
+        "0003010003019701434772001",
+        "0003010003019701442713001",
+        "0003010003019701442714001",
+        "0003010003019701425257001",
+        "0003010003019701409559001",
+        "0003010003019701442178001",
+        "0003010003019701426450001",
+        "0003010003019701451712001",
+        "0003010003019701417439001",
+        "0003010003019701425251001",
+        "0003010003019701433547001",
+        "0003010003019701426456001",
+        "0003010003019701418702001",
+        "0003010003019701426452001",
+        "0003010003019701418703001",
+        "0003010003019701435028001",
+        "0003010003019701418585001",
+        "0003010003019701441701001",
+        "0003010003019701425541001",
+        "0003010003019701418706001",
+        "0003010003019701451752001",
+        "0003010003019701425269001",
+        "0003010003019701409749001",
+        "0003010003019701425255001",
+        "0003010003019701460880001",
+        "0003010003019701460241001",
+        "0003010003019701425268001",
+        "0003010003019701417448001",
+        "0003010003019701418554001",
+        "0003010003019701434767001",
+        "0003010003019701425250001",
+        "0003010003019701425889001",
+        "0003010003019701433548001",
+        "0003010003019701460261001",
+        "0003010003019701434786001",
+        "0003010003019701433824001",
+        "0003010003019701425256001",
+        "0003010003019701417461001",
+        "0003010003019701433545001",
+        "0003010003019701442661001",
+        "0003010003019701426448001",
+        "0003010003019701418705001",
+        "0003010003019701460671001",
+        "0003010003019701442678001",
+        "0003010003019701433528001",
+        "0003010003019701409407001",
+        "0003010003019701460253001",
+        "0003010003019701426458001",
+        "0003010003019701426684001",
+        "0003010003019701418704001",
+        "0003010003019701426449001",
+        "0003010003019701442190001",
+        "0003010003019701409555001",
+        "0003010003019701426575001",
+        "0003010003019701451567001",
+        "0003010003019701460641001",
+        "0003010003019701418730001",
+        "0003010003019701426471001",
+        "0003010003019701434792001",
+        "0003010003019701433526001",
+        "0003010003019701426451001",
+        "0003010003019701418734001",
+        "0003010003019701434789001",
+        "0003010003019701417452001",
+        "0003010003019701409540001",
+        "0003010003019701417455001",
+        "0003010003019701442720001",
+        "0003010003019701425265001",
+        "0003010003019701442730001",
+        "0003010003019701418335001",
+        "0003010003019701433535001",
+        "0003010003019701433552001",
+        "0003010003019701470326001",
+        "0003010003019701426460001",
+        "0003010003019701418733001",
+        "0003010003019701442673001",
+        "0003010003019701460870001",
+        "0003010003019701417441001",
+        "0003010003019701426379001",
+        "0003010003019701451730001",
+        "0003010003019701451889001",
+        "0003010003019701434780001",
+        "0003010003019701426690001",
+        "0003010003019701451649001",
+        "0003010003019701433836001",
+        "0003010003019701460877001",
+        "0003010003019701409548001"
+      ],
+      "totalPackages": 120,
+      "createdAt": "2026-01-27T15:09:00.000Z",
+      "date": "2026-01-27",
+      "status": "picked_up",
+      "pickupId": "CTT-REC-20260127-001",
+      "pickedUpAt": "2026-01-27T15:20:51.000Z"
     }
   },
   "pickups": {
@@ -19748,6 +20722,995 @@
       "date": "2026-01-25",
       "status": "signed",
       "signedAt": "2026-01-25T02:13:29.577Z"
+    },
+    "CTT-REC-20260127-001": {
+      "id": "CTT-REC-20260127-001",
+      "carrier": "CTT",
+      "palletIds": [
+        "CTT-20260127-001"
+      ],
+      "pallets": [
+        {
+          "id": "CTT-20260127-001",
+          "carrier": "CTT",
+          "packages": [
+            {
+              "tracking": "0003010003019701434708001",
+              "orderRef": "DF1068978EU",
+              "clientName": "Nuno Oliveira, Nuno Oliveira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701442710001",
+              "orderRef": "DF1069133EU",
+              "clientName": "Inês Sousa Coelho, Inês Sousa Coelho",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701442848001",
+              "orderRef": "DF1069647EU",
+              "clientName": "Ana Rita Palhão, Ana Rita Palhão",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701425535001",
+              "orderRef": "DF1068377EU",
+              "clientName": "Ângela Machado, Ângela Machado",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701450760001",
+              "orderRef": "DF1067829EU",
+              "clientName": "Sofia Andrade, Nelson Andrade",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434771001",
+              "orderRef": "DF1069284EU",
+              "clientName": "Diana Sa, Diana Sa",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434774001",
+              "orderRef": "DF1069313EU",
+              "clientName": "Joana Pinto, Joana Pinto",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426457001",
+              "orderRef": "DF1069312EU",
+              "clientName": "Anabela Faria, Anabela Faria",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701451755001",
+              "orderRef": "DF1069502EU",
+              "clientName": "Erika Zambrano, Erika Zambrano",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426453001",
+              "orderRef": "DF1069225EU",
+              "clientName": "Débora Mota, Débora Mota",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701433557001",
+              "orderRef": "DF1068146EU",
+              "clientName": "Alberto Lebres, Alberto Lebres",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426459001",
+              "orderRef": "DF1069324EU",
+              "clientName": "Sara Sá, Sara Sá",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701442712001",
+              "orderRef": "DF1069239EU",
+              "clientName": "Inês Medeiros, Inês Medeiros",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701460672001",
+              "orderRef": "DF1068922EU",
+              "clientName": "Pedro Raposeira, Pedro Raposeira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701460871001",
+              "orderRef": "DF1069472EU",
+              "clientName": "Fatima Mota, Fatima Mota",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418711001",
+              "orderRef": "DF1069403EU",
+              "clientName": "Flávio Andrade, Flávio Andrade",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434766001",
+              "orderRef": "DF1069094EU",
+              "clientName": "david bastos, david bastos",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418699001",
+              "orderRef": "DF1069054EU",
+              "clientName": "Andreia Nunes, Andreia Nunes",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701451762001",
+              "orderRef": "DF1069563EU",
+              "clientName": "Inês Cunha, Inês Cunha",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434768001",
+              "orderRef": "DF1069163EU",
+              "clientName": "Ana Valongo Valongo, Ana Valongo Valongo",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701451763001",
+              "orderRef": "DF1069567EU",
+              "clientName": "Maria Silva, Maria Silva",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418958001",
+              "orderRef": "DF1069694EU",
+              "clientName": "Andreia Rodrigues, Andreia Rodrigues",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426469001",
+              "orderRef": "DF1069491EU",
+              "clientName": "Manuel Cruz, Manuel Cruz",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701460883001",
+              "orderRef": "DF1069525EU",
+              "clientName": "Felícia Lopes, Felícia Lopes",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434449001",
+              "orderRef": "DF1068723EU",
+              "clientName": "Ana Isabel Babo, Ana Isabel Babo",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434988001",
+              "orderRef": "DF1069674EU",
+              "clientName": "Inês Moura, Inês Moura",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418701001",
+              "orderRef": "DF1069088EU",
+              "clientName": "Margarida Menezes, Maria Margarida Menezes",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701470391001",
+              "orderRef": "DF1068820EU",
+              "clientName": "João Freitas, João Freitas",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426400001",
+              "orderRef": "DF1069039EU",
+              "clientName": "Nicole Vicente, Nicole Colaço Vicente",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701460644001",
+              "orderRef": "DF1068881EU",
+              "clientName": "Nuno Ribeiro, Nuno Ribeiro",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418731001",
+              "orderRef": "DF1069548EU",
+              "clientName": "Daniel Macedo, Daniel Macedo",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426454001",
+              "orderRef": "DF1069252EU",
+              "clientName": "Luis Rodrigues, Luis Rodrigues",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434773001",
+              "orderRef": "DF1069302EU",
+              "clientName": "Sara Ferreira, Sara Ferreira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434772001",
+              "orderRef": "DF1069290EU",
+              "clientName": "Duarte Pinheiro, Maria Rodrigues",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701442713001",
+              "orderRef": "DF1069272EU",
+              "clientName": "Sergio Costa, Sérgio Costa",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701442714001",
+              "orderRef": "DF1069370EU",
+              "clientName": "Mariana Lopes, Mariana Lopes",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701425257001",
+              "orderRef": "DF1067556EU",
+              "clientName": "Sofia Marques, Sofia Marques",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701409559001",
+              "orderRef": "DF1067634EU",
+              "clientName": "Sonia Teixeira, Sonia Teixeira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701442178001",
+              "orderRef": "DF1068537EU",
+              "clientName": "João Esteves, João Esteves",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426450001",
+              "orderRef": "DF1069122EU",
+              "clientName": "Sabores de Sintra - AC Joaquim de Almeida Patricia Camacho",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701451712001",
+              "orderRef": "DF1068945EU",
+              "clientName": "Débora Rodrigues, Débora Rodrigues",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701417439001",
+              "orderRef": "DF1067260EU",
+              "clientName": "Joao Maria Oliveira, Joao Maria Oliveira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701425251001",
+              "orderRef": "DF1067374EU",
+              "clientName": "Rosa Couto, Rosa Couto",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701433547001",
+              "orderRef": "DF1067748EU",
+              "clientName": "Alice Coelho, Alice Coelho",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426456001",
+              "orderRef": "DF1069295EU",
+              "clientName": "Rita Barbosa, Rita Barbosa",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418702001",
+              "orderRef": "DF1069099EU",
+              "clientName": "Maria Elisa Santos, Maria Elisa Santos",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426452001",
+              "orderRef": "DF1069169EU",
+              "clientName": "Angela Paraiso, Angela Paraíso",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418703001",
+              "orderRef": "DF1069112EU",
+              "clientName": "Renata Rodrigues, Renata Rodrigues",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701435028001",
+              "orderRef": "DF1069699EU",
+              "clientName": "Melanie Santos Oliveira, Melanie Oliveira Oliveira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418585001",
+              "orderRef": "DF1068914EU",
+              "clientName": "Karoliny Oliveira, Karoliny Oliveira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701441701001",
+              "orderRef": "DF1066838EU",
+              "clientName": "Paula Abreu, Paula Abreu",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701425541001",
+              "orderRef": "DF1068381EU",
+              "clientName": "Daniela Matos, Daniela Matos",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418706001",
+              "orderRef": "DF1069216EU",
+              "clientName": "Claudia Telles, Claudia Telles",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701451752001",
+              "orderRef": "DF1069355EU",
+              "clientName": "Hélder Rodrigues, Helder Rodrigues",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701425269001",
+              "orderRef": "DF1067896EU",
+              "clientName": "Maria Barbosa, Maria Barbosa",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701409749001",
+              "orderRef": "DF1067803EU",
+              "clientName": "Mariana Luz, Mariana Luz",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701425255001",
+              "orderRef": "DF1067543EU",
+              "clientName": "Paula Azevedo, Paula Azevedo",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701460880001",
+              "orderRef": "DF1069509EU",
+              "clientName": "Rubina Silva, Rubina Silva",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701460241001",
+              "orderRef": "DF1068340EU",
+              "clientName": "Vitor Coelho, Vitor Coelho",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701425268001",
+              "orderRef": "DF1067873EU",
+              "clientName": "Filomena Bravo De Oliveira, Filomena Bravo De Oliveira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701417448001",
+              "orderRef": "DF1067617EU",
+              "clientName": "Servant 516101129, Anastasiia Kurash",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418554001",
+              "orderRef": "DF1068884EU",
+              "clientName": "Lígia Maria da Silva Nora, Lígia Maria da Silva Nora",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434767001",
+              "orderRef": "DF1069095EU",
+              "clientName": "Maria Dias, Maria Dias",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701425250001",
+              "orderRef": "DF1067331EU",
+              "clientName": "Afonso Bizarro, Afonso Bizarro",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701425889001",
+              "orderRef": "DF1068545EU",
+              "clientName": "Lucia Silva, Lucia Silva",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701433548001",
+              "orderRef": "DF1067750EU",
+              "clientName": "Ana Luísa Silva, Ana Luísa Silva",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701460261001",
+              "orderRef": "DF1068369EU",
+              "clientName": "Patrícia Pacheco, Patrícia Pacheco",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434786001",
+              "orderRef": "DF1069495EU",
+              "clientName": "Anabela Carvalho, Anabela Carvalho",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701433824001",
+              "orderRef": "DF1068358EU",
+              "clientName": "Lucie Nogueira, Lucie Nogueira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701425256001",
+              "orderRef": "DF1067548EU",
+              "clientName": "Kelly Baia, Kelly Baia",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701417461001",
+              "orderRef": "DF1068104EU",
+              "clientName": "Daniela Oliveira, Daniela Oliveira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701433545001",
+              "orderRef": "DF1067627EU",
+              "clientName": "Sandra Mira, Sandra Mira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701442661001",
+              "orderRef": "DF1068935EU",
+              "clientName": "Karen Rey Alvarez, Karen Rey Alvarez",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426448001",
+              "orderRef": "DF1069055EU",
+              "clientName": "Patrícia Cerqueira, Patrícia Cerqueira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418705001",
+              "orderRef": "DF1069159EU",
+              "clientName": "Cátia Macedo, Cátia Macedo",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701460671001",
+              "orderRef": "DF1068900EU",
+              "clientName": "Laura Silva, Laura Silva",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701442678001",
+              "orderRef": "DF1069034EU",
+              "clientName": "Andrea Domingues, Andrea Domingues",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701433528001",
+              "orderRef": "DF1067119EU",
+              "clientName": "Cristiana Lopes, Cristiana Lopes",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701409407001",
+              "orderRef": "DF1064485EU",
+              "clientName": "Beatriz Serra Lopes, Beatriz Lopes",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701460253001",
+              "orderRef": "DF1068345EU",
+              "clientName": "Marina Correia, Marina Correia",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426458001",
+              "orderRef": "DF1069322EU",
+              "clientName": "Eleia Prazeres, Eleia Prazeres",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426684001",
+              "orderRef": "CO495720",
+              "clientName": "Catarina Fradique, Catarina Fradique",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418704001",
+              "orderRef": "DF1069145EU",
+              "clientName": "Rita Costa, Ana Rita Costa",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426449001",
+              "orderRef": "DF1069107EU",
+              "clientName": "DVTKB, LDA, DVTKB, LDA",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701442190001",
+              "orderRef": "DF1068574EU",
+              "clientName": "Cláudia Luís, Cláudia Luís",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701409555001",
+              "orderRef": "DF1067184EU",
+              "clientName": "Arlinda F. Cardoso, Arlinda F. Cardoso",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426575001",
+              "orderRef": "DF1069612EU",
+              "clientName": "Ana Isabel Coimbra, Ana Isabel Coimbra",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701451567001",
+              "orderRef": "DF1068774EU",
+              "clientName": "Catarina Coelho, Catarina Coelho",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701460641001",
+              "orderRef": "DF1068862EU",
+              "clientName": "Marisa Marques da Costa, Marisa Marques da Costa",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418730001",
+              "orderRef": "DF1069506EU",
+              "clientName": "Fradelis Marin, Fradelis Marin",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426471001",
+              "orderRef": "DF1069558EU",
+              "clientName": "Joana Alves Costa, Joana Costa",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434792001",
+              "orderRef": "DF1069526EU",
+              "clientName": "Mário Teles, Mário Teles",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701433526001",
+              "orderRef": "DF1067048EU",
+              "clientName": "Sofia Silva, Sofia Silva",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426451001",
+              "orderRef": "DF1069127EU",
+              "clientName": "Eva Duarte, Eva Duarte",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418734001",
+              "orderRef": "DF1069553EU",
+              "clientName": "PORTUGEN ENERGIA SA Conceição Vieira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434789001",
+              "orderRef": "DF1069513EU",
+              "clientName": "Madalena Sá Dias, Madalena Sá-Dias",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701417452001",
+              "orderRef": "DF1067849EU",
+              "clientName": "Patricia Costa, Patrícia Costa",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701409540001",
+              "orderRef": "DF1067035EU",
+              "clientName": "Patricia Rebelo, Patricia Rebelo",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701417455001",
+              "orderRef": "DF1067973EU",
+              "clientName": "Catarina Menano, Catarina Menano",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701442720001",
+              "orderRef": "DF1069543EU",
+              "clientName": "Rute Primo, Rute Mesquita Martins",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701425265001",
+              "orderRef": "DF1067823EU",
+              "clientName": "Ângela Firmino, Ângela Firmino",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701442730001",
+              "orderRef": "DF1069569EU",
+              "clientName": "Joao Correia, Correia Correia",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418335001",
+              "orderRef": "DF1068670EU",
+              "clientName": "Lídia Adelaide Moreira Teles, Lídia Adelaide Moreira Teles",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701433535001",
+              "orderRef": "DF1067320EU",
+              "clientName": "João Fonte, João Fonte",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701433552001",
+              "orderRef": "DF1067928EU",
+              "clientName": "Maria Elisabete Rodrigues, Maria Elisabete Gonçalves Rodrigues",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701470326001",
+              "orderRef": "DF1068632EU",
+              "clientName": "Andreia Soares OMCMUT, Andreia Soares OMCMUT",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426460001",
+              "orderRef": "DF1069385EU",
+              "clientName": "Marta Pinto, Marta Pinto",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701418733001",
+              "orderRef": "DF1069552EU",
+              "clientName": "Catia Mesquita, Catia Mesquita",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701442673001",
+              "orderRef": "DF1068999EU",
+              "clientName": "Márcio Roque, Márcio Roque",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701460870001",
+              "orderRef": "DF1069465EU",
+              "clientName": "Cláudia Abreu, Claudia MayaTavares de Abreu",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701417441001",
+              "orderRef": "DF1067285EU",
+              "clientName": "Ana Oliveira, Ana Oliveira",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426379001",
+              "orderRef": "DF1068958EU",
+              "clientName": "Elisabete F L Fernandes, Elisabete Fernandes",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701451730001",
+              "orderRef": "DF1069040EU",
+              "clientName": "Catarina Araújo, Catarina Araújo",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701451889001",
+              "orderRef": "DF1069639EU",
+              "clientName": "Cátia Cestinho, Cátia Cestinho",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701434780001",
+              "orderRef": "DF1069478EU",
+              "clientName": "Nídia Marques, Nídia Marques",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701426690001",
+              "orderRef": "DF1069714EU",
+              "clientName": "Cláudia Duarte Saraiva, Cláudia Duarte Saraiva",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701451649001",
+              "orderRef": "DF1068835EU",
+              "clientName": "Cristina Cristina Vaz, Cristina Maria Ferreira Vaz",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701433836001",
+              "orderRef": "DF1068380EU",
+              "clientName": "142876674, Maria Carvalho",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701460877001",
+              "orderRef": "DF1069484EU",
+              "clientName": "Telma Laureano, Telma Laureano",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            },
+            {
+              "tracking": "0003010003019701409548001",
+              "orderRef": "DF1067407EU",
+              "clientName": "Ines Ferra, Ines Santos",
+              "pickingId": null,
+              "scannedAt": "2026-01-27T15:00:00.000Z"
+            }
+          ],
+          "trackings": [
+            "0003010003019701434708001",
+            "0003010003019701442710001",
+            "0003010003019701442848001",
+            "0003010003019701425535001",
+            "0003010003019701450760001",
+            "0003010003019701434771001",
+            "0003010003019701434774001",
+            "0003010003019701426457001",
+            "0003010003019701451755001",
+            "0003010003019701426453001",
+            "0003010003019701433557001",
+            "0003010003019701426459001",
+            "0003010003019701442712001",
+            "0003010003019701460672001",
+            "0003010003019701460871001",
+            "0003010003019701418711001",
+            "0003010003019701434766001",
+            "0003010003019701418699001",
+            "0003010003019701451762001",
+            "0003010003019701434768001",
+            "0003010003019701451763001",
+            "0003010003019701418958001",
+            "0003010003019701426469001",
+            "0003010003019701460883001",
+            "0003010003019701434449001",
+            "0003010003019701434988001",
+            "0003010003019701418701001",
+            "0003010003019701470391001",
+            "0003010003019701426400001",
+            "0003010003019701460644001",
+            "0003010003019701418731001",
+            "0003010003019701426454001",
+            "0003010003019701434773001",
+            "0003010003019701434772001",
+            "0003010003019701442713001",
+            "0003010003019701442714001",
+            "0003010003019701425257001",
+            "0003010003019701409559001",
+            "0003010003019701442178001",
+            "0003010003019701426450001",
+            "0003010003019701451712001",
+            "0003010003019701417439001",
+            "0003010003019701425251001",
+            "0003010003019701433547001",
+            "0003010003019701426456001",
+            "0003010003019701418702001",
+            "0003010003019701426452001",
+            "0003010003019701418703001",
+            "0003010003019701435028001",
+            "0003010003019701418585001",
+            "0003010003019701441701001",
+            "0003010003019701425541001",
+            "0003010003019701418706001",
+            "0003010003019701451752001",
+            "0003010003019701425269001",
+            "0003010003019701409749001",
+            "0003010003019701425255001",
+            "0003010003019701460880001",
+            "0003010003019701460241001",
+            "0003010003019701425268001",
+            "0003010003019701417448001",
+            "0003010003019701418554001",
+            "0003010003019701434767001",
+            "0003010003019701425250001",
+            "0003010003019701425889001",
+            "0003010003019701433548001",
+            "0003010003019701460261001",
+            "0003010003019701434786001",
+            "0003010003019701433824001",
+            "0003010003019701425256001",
+            "0003010003019701417461001",
+            "0003010003019701433545001",
+            "0003010003019701442661001",
+            "0003010003019701426448001",
+            "0003010003019701418705001",
+            "0003010003019701460671001",
+            "0003010003019701442678001",
+            "0003010003019701433528001",
+            "0003010003019701409407001",
+            "0003010003019701460253001",
+            "0003010003019701426458001",
+            "0003010003019701426684001",
+            "0003010003019701418704001",
+            "0003010003019701426449001",
+            "0003010003019701442190001",
+            "0003010003019701409555001",
+            "0003010003019701426575001",
+            "0003010003019701451567001",
+            "0003010003019701460641001",
+            "0003010003019701418730001",
+            "0003010003019701426471001",
+            "0003010003019701434792001",
+            "0003010003019701433526001",
+            "0003010003019701426451001",
+            "0003010003019701418734001",
+            "0003010003019701434789001",
+            "0003010003019701417452001",
+            "0003010003019701409540001",
+            "0003010003019701417455001",
+            "0003010003019701442720001",
+            "0003010003019701425265001",
+            "0003010003019701442730001",
+            "0003010003019701418335001",
+            "0003010003019701433535001",
+            "0003010003019701433552001",
+            "0003010003019701470326001",
+            "0003010003019701426460001",
+            "0003010003019701418733001",
+            "0003010003019701442673001",
+            "0003010003019701460870001",
+            "0003010003019701417441001",
+            "0003010003019701426379001",
+            "0003010003019701451730001",
+            "0003010003019701451889001",
+            "0003010003019701434780001",
+            "0003010003019701426690001",
+            "0003010003019701451649001",
+            "0003010003019701433836001",
+            "0003010003019701460877001",
+            "0003010003019701409548001"
+          ],
+          "totalPackages": 120,
+          "createdAt": "2026-01-27T15:09:00.000Z",
+          "date": "2026-01-27",
+          "status": "picked_up",
+          "pickupId": "CTT-REC-20260127-001",
+          "pickedUpAt": "2026-01-27T15:20:51.000Z"
+        }
+      ],
+      "totalPackages": 120,
+      "totalPallets": 1,
+      "createdAt": "2026-01-27T15:20:51.000Z",
+      "date": "2026-01-27",
+      "status": "signed",
+      "signedAt": "2026-01-27T15:20:51.000Z"
     }
   },
   "manifests": {
@@ -19804,6 +21767,15 @@
       "driverDNI": "",
       "driverSignature": "",
       "signedAt": "2026-01-25T02:13:29.577Z"
+    },
+    "CTT-REC-20260127-001": {
+      "pickupId": "CTT-REC-20260127-001",
+      "warehouseName": "Alex",
+      "warehouseSignature": "",
+      "driverName": "Jesus",
+      "driverDNI": "02737934Z",
+      "driverSignature": "",
+      "signedAt": "2026-01-27T15:20:51.000Z"
     }
   }
 }
