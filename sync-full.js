@@ -57,9 +57,10 @@ function normalizeCarrier(carrierCode) {
   return CARRIER_MAP[normalized] || carrierCode.toUpperCase();
 }
 
-// Archivos de salida
-const INDEX_FILE = path.join(__dirname, 'tracking-index.json');
-const SENDCLOUD_CACHE = path.join(__dirname, 'sendcloud-cache.json');
+// Archivos de salida - usar Volume si está disponible
+const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
+const INDEX_FILE = path.join(VOLUME_PATH, 'tracking-index.json');
+const SENDCLOUD_CACHE = path.join(VOLUME_PATH, 'sendcloud-cache.json');
 
 // ============================================
 // CLIENTE ODOO
