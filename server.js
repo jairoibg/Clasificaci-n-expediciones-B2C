@@ -3,6 +3,7 @@ const cors = require('cors');
 const xmlrpc = require('xmlrpc');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 const app = express();
 app.use(cors());
@@ -25,39 +26,166 @@ const CONFIG = {
   }
 };
 
-// Archivo de persistencia
-const DATA_FILE = path.join(__dirname, 'data.json');
+// Archivos de persistencia (con soporte para Railway Volumes)
+const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
+const DATA_FILE = path.join(VOLUME_PATH, 'data.json');
+const SENDCLOUD_CACHE_FILE = path.join(VOLUME_PATH, 'sendcloud-cache.json');
+const TRACKING_INDEX_FILE = path.join(VOLUME_PATH, 'tracking-index.json');
 
-// Archivo de caché de Sendcloud
-const SENDCLOUD_CACHE_FILE = path.join(__dirname, 'sendcloud-cache.json');
+// Caché de Sendcloud (legacy)
 let sendcloudCache = { parcels: {} };
 
-// Cargar caché de Sendcloud al iniciar
+// ============================================
+// ÍNDICE DE TRACKING PRE-CALCULADO (NUEVO)
+// ============================================
+let trackingIndex = {
+  lastSync: null,
+  totalOdoo: 0,
+  totalSendcloud: 0,
+  matched: 0,
+  byTracking: {},
+  byCarrier: {}
+};
+
+// Cargar índice desde archivo
+function loadTrackingIndex() {
+  try {
+    if (fs.existsSync(TRACKING_INDEX_FILE)) {
+      const data = fs.readFileSync(TRACKING_INDEX_FILE, 'utf8');
+      trackingIndex = JSON.parse(data);
+      const age = trackingIndex.lastSync 
+        ? Math.round((Date.now() - new Date(trackingIndex.lastSync).getTime()) / 60000)
+        : 'N/A';
+      console.log(`📊 Índice cargado: ${trackingIndex.matched} coincidencias (hace ${age} min)`);
+      return true;
+    }
+  } catch (err) {
+    console.error('⚠️ Error cargando índice:', err.message);
+  }
+  console.log('📊 Sin índice previo - se regenerará');
+  return false;
+}
+
+// Buscar en el índice pre-calculado
+function findInTrackingIndex(tracking) {
+  const clean = tracking.trim().toUpperCase();
+  
+  // Búsqueda directa O(1)
+  if (trackingIndex.byTracking[clean]) {
+    return trackingIndex.byTracking[clean];
+  }
+  
+  // Para CTT/SPRING: buscar por sufijo (últimos 7-10 dígitos)
+  if (clean.length >= 7 && clean.length <= 15) {
+    for (const [indexTracking, data] of Object.entries(trackingIndex.byTracking)) {
+      if ((data.carrier === 'CTT' || data.carrier === 'SPRING') && 
+          indexTracking.endsWith(clean)) {
+        console.log(`   🔍 Match por sufijo: ${clean} → ${indexTracking}`);
+        return data;
+      }
+    }
+  }
+  
+  return null;
+}
+
+// ============================================
+// AUTO-SYNC: Regenerar índice
+// ============================================
+let syncInProgress = false;
+let lastSyncAttempt = null;
+
+async function runSync() {
+  if (syncInProgress) {
+    console.log('⏳ Sync ya en progreso, saltando...');
+    return false;
+  }
+  
+  const syncScript = path.join(__dirname, 'sync-full.js');
+  if (!fs.existsSync(syncScript)) {
+    console.log('⚠️ sync-full.js no encontrado, saltando sync');
+    return false;
+  }
+  
+  syncInProgress = true;
+  lastSyncAttempt = new Date().toISOString();
+  console.log(`\n🔄 Iniciando sync completo... (${lastSyncAttempt})`);
+  
+  return new Promise((resolve) => {
+    const child = spawn('node', [syncScript], {
+      cwd: __dirname,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    
+    child.stdout.on('data', (data) => {
+      const lines = data.toString().split('\n').filter(l => l.trim());
+      lines.forEach(line => console.log(`   ${line}`));
+    });
+    
+    child.stderr.on('data', (data) => {
+      console.error(`   ❌ ${data.toString()}`);
+    });
+    
+    child.on('close', (code) => {
+      syncInProgress = false;
+      if (code === 0) {
+        console.log('✅ Sync completado exitosamente');
+        loadTrackingIndex();
+        resolve(true);
+      } else {
+        console.log(`❌ Sync falló con código ${code}`);
+        resolve(false);
+      }
+    });
+    
+    child.on('error', (err) => {
+      syncInProgress = false;
+      console.error('❌ Error ejecutando sync:', err.message);
+      resolve(false);
+    });
+  });
+}
+
+// Programador de sync (6:00 y 14:00)
+function setupScheduledSync() {
+  const SYNC_HOURS = [6, 14];
+  
+  setInterval(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    
+    if (SYNC_HOURS.includes(hour) && minute === 0) {
+      console.log(`\n⏰ Sync programado (${hour}:00)`);
+      runSync();
+    }
+  }, 60000);
+  
+  console.log(`⏰ Sync programado para las ${SYNC_HOURS.join(':00 y ')}:00`);
+}
+
+// ============================================
+// CACHÉ SENDCLOUD (legacy, para compatibilidad)
+// ============================================
 function loadSendcloudCache() {
   try {
     if (fs.existsSync(SENDCLOUD_CACHE_FILE)) {
       const data = fs.readFileSync(SENDCLOUD_CACHE_FILE, 'utf8');
       sendcloudCache = JSON.parse(data);
-      console.log(`📦 Caché Sendcloud cargada: ${Object.keys(sendcloudCache.parcels).length} envíos`);
-      console.log(`   Última sync: ${sendcloudCache.lastSync || 'desconocida'}`);
-    } else {
-      console.log('⚠️ No hay caché de Sendcloud (ejecuta: node sync-sendcloud.js)');
+      console.log(`📦 Caché Sendcloud cargada: ${Object.keys(sendcloudCache.parcels || {}).length} envíos`);
     }
   } catch (err) {
     console.error('Error cargando caché Sendcloud:', err.message);
   }
 }
 
-// Buscar en caché local
 function findInSendcloudCache(tracking) {
   if (!tracking || !sendcloudCache.parcels) return null;
   
-  // Búsqueda exacta
   if (sendcloudCache.parcels[tracking]) {
     return sendcloudCache.parcels[tracking];
   }
   
-  // Búsqueda insensible a mayúsculas
   const trackingUpper = tracking.toUpperCase();
   for (const [key, value] of Object.entries(sendcloudCache.parcels)) {
     if (key.toUpperCase() === trackingUpper) {
@@ -103,23 +231,34 @@ let database = {
   activeSessions: {},
   pallets: {},
   pickups: {},
-  manifests: {} // Manifiestos firmados
+  manifests: {}
 };
 
-// Cargar datos al iniciar
 function loadData() {
   try {
+    // Intentar cargar desde Volume primero
     if (fs.existsSync(DATA_FILE)) {
       const data = fs.readFileSync(DATA_FILE, 'utf8');
       database = JSON.parse(data);
-      console.log('📂 Datos cargados desde archivo');
+      console.log('📂 Datos cargados desde Volume');
+      return;
+    }
+
+    // Si no existe en Volume, cargar desde carpeta del código (GitHub)
+    const fallbackFile = path.join(__dirname, 'data.json');
+    if (fs.existsSync(fallbackFile)) {
+      const data = fs.readFileSync(fallbackFile, 'utf8');
+      database = JSON.parse(data);
+      console.log('📂 Datos cargados desde GitHub (primera vez)');
+      // Guardar en Volume para próximas veces
+      saveData();
+      console.log('💾 Datos copiados al Volume');
     }
   } catch (err) {
     console.error('Error cargando datos:', err.message);
   }
 }
 
-// Guardar datos
 function saveData() {
   try {
     fs.writeFileSync(DATA_FILE, JSON.stringify(database, null, 2));
@@ -180,11 +319,9 @@ class OdooClient {
       if (pickings.length > 0) return pickings[0];
 
       // 3. Extraer posibles patrones del código escaneado y buscar
-      // El código de barras puede tener formato: %0078700116C2049311221802250
-      // Donde el tracking real es algo como: 6C20493112219
       const patterns = this.extractTrackingPatterns(tracking);
       for (const pattern of patterns) {
-        if (pattern.length >= 8) { // Mínimo 8 caracteres para evitar falsos positivos
+        if (pattern.length >= 8) {
           pickings = await this.execute('stock.picking', 'search_read', [
             [
               ['carrier_tracking_ref', 'ilike', pattern],
@@ -206,46 +343,36 @@ class OdooClient {
     } catch { return null; }
   }
 
-  // Extraer posibles patrones de tracking de un código de barras largo
   extractTrackingPatterns(code) {
     const patterns = [];
-    const clean = code.replace(/[^A-Z0-9]/gi, ''); // Quitar caracteres especiales como %
+    const clean = code.replace(/[^A-Z0-9]/gi, '');
     
     console.log(`   🔍 Extrayendo patrones de: ${clean} (${clean.length} chars)`);
     
-    // Buscar patrones comunes de transportistas
-    // CORREOS/Colissimo: Empieza con letras seguido de números (ej: 6C20493112219, PQ7L7H...)
     const correos = clean.match(/[A-Z]{1,2}\d{10,}/gi);
     if (correos) patterns.push(...correos);
     
-    // Buscar secuencias de números largos (10+ dígitos)
     const numeros = clean.match(/\d{10,}/g);
     if (numeros) patterns.push(...numeros);
     
-    // Buscar patrón específico de Colissimo: número que contiene "6C" o similar
     const colissimo = clean.match(/\d*[A-Z]\d{8,}/gi);
     if (colissimo) patterns.push(...colissimo);
     
-    // Para códigos largos numéricos (como CTT), probar PREFIJOS de diferentes tamaños
-    // Esto es clave: el escáner puede añadir sufijos, así que buscamos con el INICIO del código
     if (clean.length > 15 && /^\d+$/.test(clean)) {
-      // Probar prefijos desde 20 caracteres hasta 12 (de más largo a más corto)
       for (let len = Math.min(clean.length - 2, 22); len >= 12; len--) {
         patterns.push(clean.substring(0, len));
       }
     }
     
-    // También probar subcadenas del código (ventana deslizante) para códigos con letras
     if (clean.length > 15) {
       for (let i = 0; i <= clean.length - 12; i++) {
         const sub = clean.substring(i, i + 13);
-        if (/[A-Z]/.test(sub) && /\d/.test(sub)) { // Debe tener letras y números
+        if (/[A-Z]/.test(sub) && /\d/.test(sub)) {
           patterns.push(sub);
         }
       }
     }
     
-    // Eliminar duplicados y ordenar por longitud (más largos primero)
     const uniquePatterns = [...new Set(patterns)].sort((a, b) => b.length - a.length);
     console.log(`   📋 Patrones a probar: ${uniquePatterns.slice(0, 5).join(', ')}${uniquePatterns.length > 5 ? '...' : ''}`);
     return uniquePatterns;
@@ -254,7 +381,7 @@ class OdooClient {
   async findPickingsByClientName(clientName, limit = 20) {
     try {
       const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30); // Ampliar a 30 días
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const dateFilter = thirtyDaysAgo.toISOString().split('T')[0];
       
       console.log(`   🔍 Buscando cliente: "${clientName}" (últimos 30 días)`);
@@ -393,37 +520,62 @@ function clearSession(carrier) {
   saveData();
 }
 
+// FUNCIÓN OPTIMIZADA: Buscar transportista usando índice + fallback
 async function getCarrierFromTracking(tracking) {
+  const startTime = Date.now();
+  
+  // PASO 1: Buscar en índice pre-calculado (instantáneo)
+  const indexResult = findInTrackingIndex(tracking);
+  if (indexResult) {
+    const elapsed = Date.now() - startTime;
+    console.log(`   ⚡ Índice: ${indexResult.carrier} (${elapsed}ms)`);
+    return {
+      carrier: indexResult.carrier,
+      picking: {
+        id: indexResult.pickingId,
+        name: indexResult.pickingName,
+        carrier_tracking_ref: indexResult.odooTracking,
+        origin: indexResult.orderRef,
+        partner_id: [null, indexResult.clientName]
+      },
+      source: 'index',
+      elapsed
+    };
+  }
+  
+  // PASO 2: Fallback a Odoo (lento pero necesario para nuevos pedidos)
+  console.log(`   🔍 No en índice, buscando en Odoo...`);
   const picking = await odooClient.findPickingByTracking(tracking);
   
   if (!picking) {
     return { carrier: null, picking: null, source: 'not_found' };
   }
 
-  // IMPORTANTE: Usar el tracking de Odoo, no el escaneado
   const odooTracking = picking.carrier_tracking_ref;
   console.log(`   📍 Tracking Odoo: ${odooTracking}`);
   
-  // 1. Buscar primero en caché local (rápido)
+  // Buscar en caché Sendcloud
   const cached = findInSendcloudCache(odooTracking);
   if (cached && cached.carrier) {
-    console.log(`   ⚡ Encontrado en caché: ${cached.carrier}`);
-    return { carrier: cached.carrier, picking, source: 'cache' };
+    const elapsed = Date.now() - startTime;
+    console.log(`   ⚡ Caché: ${cached.carrier} (${elapsed}ms)`);
+    return { carrier: cached.carrier, picking, source: 'cache', elapsed };
   }
   
-  // 2. Si no está en caché, consultar Sendcloud API (lento, fallback)
-  console.log(`   🌐 No en caché, consultando Sendcloud API...`);
+  // Consultar Sendcloud API (lento, último recurso)
+  console.log(`   🌐 Consultando Sendcloud API...`);
   const sendcloudData = await sendcloudClient.getParcelByTracking(odooTracking);
   
   if (sendcloudData && sendcloudData.carrier_code) {
     const carrier = sendcloudClient.normalizeCarrier(sendcloudData.carrier_code);
-    return { carrier, picking, source: 'sendcloud' };
+    const elapsed = Date.now() - startTime;
+    console.log(`   🌐 Sendcloud: ${carrier} (${elapsed}ms)`);
+    return { carrier, picking, source: 'sendcloud', elapsed };
   }
 
   return { carrier: null, picking, source: 'no_sendcloud' };
 }
 
-// Generar ID de recogida legible
 function generatePickupId(carrier) {
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
@@ -437,7 +589,12 @@ function generatePickupId(carrier) {
 // ============================================
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    indexLoaded: !!trackingIndex.lastSync,
+    indexMatched: trackingIndex.matched
+  });
 });
 
 app.get('/api/carriers', (req, res) => {
@@ -472,6 +629,46 @@ app.get('/api/test-sendcloud', async (req, res) => {
   } catch (error) {
     res.json({ success: false, error: error.message });
   }
+});
+
+// ============================================
+// ENDPOINTS ÍNDICE (NUEVOS)
+// ============================================
+
+app.get('/api/index-stats', (req, res) => {
+  const age = trackingIndex.lastSync 
+    ? Math.round((Date.now() - new Date(trackingIndex.lastSync).getTime()) / 60000)
+    : null;
+    
+  res.json({
+    lastSync: trackingIndex.lastSync,
+    ageMinutes: age,
+    totalOdoo: trackingIndex.totalOdoo,
+    totalSendcloud: trackingIndex.totalSendcloud,
+    matched: trackingIndex.matched,
+    unmatched: trackingIndex.unmatched || 0,
+    byCarrier: trackingIndex.byCarrier || {},
+    syncInProgress,
+    lastSyncAttempt
+  });
+});
+
+app.post('/api/reload-index', async (req, res) => {
+  if (syncInProgress) {
+    return res.json({ success: false, message: 'Sync ya en progreso' });
+  }
+  
+  console.log('🔄 Recarga de índice solicitada manualmente');
+  const success = await runSync();
+  
+  res.json({
+    success,
+    message: success ? 'Índice regenerado' : 'Error regenerando índice',
+    stats: {
+      lastSync: trackingIndex.lastSync,
+      matched: trackingIndex.matched
+    }
+  });
 });
 
 // ============================================
@@ -530,7 +727,7 @@ app.delete('/api/session/:carrier/package/:tracking', (req, res) => {
 });
 
 // ============================================
-// ESCANEO
+// ESCANEO (OPTIMIZADO CON ÍNDICE)
 // ============================================
 
 app.post('/api/scan', async (req, res) => {
@@ -596,14 +793,16 @@ app.post('/api/scan', async (req, res) => {
   
   addPackageToSession(expected, packageData);
   
-  console.log(`   ✅ ${det.carrier} | Pedido: ${packageData.orderRef} | Cliente: ${packageData.clientName}`);
+  console.log(`   ✅ ${det.carrier} | ${det.source} | ${det.elapsed || '?'}ms | Pedido: ${packageData.orderRef} | Cliente: ${packageData.clientName}`);
   
   res.json({ 
     success: true, 
     tracking: clean, 
     detectedCarrier: det.carrier,
     package: packageData,
-    sessionCount: getSession(expected).packages.length
+    sessionCount: getSession(expected).packages.length,
+    source: det.source,
+    responseTime: det.elapsed
   });
 });
 
@@ -681,20 +880,16 @@ app.get('/api/search-client/:name', async (req, res) => {
   
   console.log(`\n🔎 BÚSQUEDA: "${searchTerm}"`);
   
-  // Determinar si es un número de pedido (empieza con DF, SO, etc.) o nombre de cliente
   const isOrderRef = /^(DF|SO|PO|WH|S)\d/i.test(searchTerm);
   
   let pickings = [];
   
   if (isOrderRef) {
-    // Buscar por número de pedido
     pickings = await odooClient.findPickingsByOrderRef(searchTerm);
   } else {
-    // Buscar por nombre de cliente
     pickings = await odooClient.findPickingsByClientName(searchTerm);
   }
   
-  // Si no hay resultados, intentar el otro tipo de búsqueda
   if (pickings.length === 0) {
     console.log(`   ⚠️ Sin resultados, intentando búsqueda alternativa...`);
     if (isOrderRef) {
@@ -740,12 +935,10 @@ app.get('/api/search', (req, res) => {
     pickups: []
   };
   
-  // Buscar en palets
   for (const pallet of Object.values(database.pallets)) {
     if (pallet.id.toUpperCase().includes(query)) {
       results.pallets.push(pallet);
     } else {
-      // Buscar en paquetes del palet
       const matchingPkg = pallet.packages.find(p => 
         p.tracking.toUpperCase().includes(query) || 
         (p.orderRef && p.orderRef.toUpperCase().includes(query))
@@ -756,7 +949,6 @@ app.get('/api/search', (req, res) => {
     }
   }
   
-  // Buscar en recogidas
   for (const pickup of Object.values(database.pickups)) {
     if (pickup.id.toUpperCase().includes(query)) {
       results.pickups.push(pickup);
@@ -869,16 +1061,13 @@ app.delete('/api/pallets/:id', (req, res) => {
   if (pallet.status === 'picked_up' && pallet.pickupId) {
     const pickup = database.pickups[pallet.pickupId];
     if (pickup) {
-      // Quitar este palet de la recogida
       pickup.palletIds = pickup.palletIds.filter(id => id !== palletId);
       pickup.pallets = pickup.pallets.filter(p => p.id !== palletId);
       pickup.totalPallets = pickup.pallets.length;
       pickup.totalPackages = pickup.pallets.reduce((sum, p) => sum + p.totalPackages, 0);
       
-      // Si la recogida se quedó sin palets, eliminarla también
       if (pickup.palletIds.length === 0) {
         console.log(`   🗑️ Recogida ${pallet.pickupId} eliminada (sin palets)`);
-        // Eliminar manifiesto asociado si existe
         if (database.manifests[pallet.pickupId]) {
           delete database.manifests[pallet.pickupId];
         }
@@ -892,91 +1081,6 @@ app.delete('/api/pallets/:id', (req, res) => {
   console.log(`\n🗑️ PALET ELIMINADO: ${palletId} (status: ${pallet.status})`);
   
   res.json({ success: true, message: `Palet ${palletId} eliminado` });
-});
-
-// Deshacer recogida (volver palets a estado pendiente)
-app.post('/api/pickup/:id/undo', (req, res) => {
-  const pickupId = req.params.id;
-  const pickup = database.pickups[pickupId];
-  
-  if (!pickup) {
-    return res.status(404).json({ error: 'Recogida no encontrada' });
-  }
-  
-  // Volver todos los palets a estado pendiente
-  for (const palletId of pickup.palletIds) {
-    const pallet = database.pallets[palletId];
-    if (pallet) {
-      pallet.status = 'pending';
-      delete pallet.pickupId;
-      delete pallet.pickedUpAt;
-    }
-  }
-  
-  // Eliminar manifiesto si existe
-  if (database.manifests[pickupId]) {
-    delete database.manifests[pickupId];
-  }
-  
-  // Eliminar la recogida
-  delete database.pickups[pickupId];
-  saveData();
-  
-  console.log(`\n↩️ RECOGIDA DESHECHA: ${pickupId} - ${pickup.palletIds.length} palets vueltos a pendiente`);
-  
-  res.json({ 
-    success: true, 
-    message: `Recogida deshecha. ${pickup.palletIds.length} palets vueltos a estado pendiente.`
-  });
-});
-
-// Eliminar recogida completamente (con sus palets)
-app.delete('/api/pickup/:id', (req, res) => {
-  const pickupId = req.params.id;
-  const pickup = database.pickups[pickupId];
-  
-  if (!pickup) {
-    return res.status(404).json({ error: 'Recogida no encontrada' });
-  }
-  
-  const deletePallets = req.query.deletePallets === 'true';
-  
-  if (deletePallets) {
-    // Eliminar también los palets
-    for (const palletId of pickup.palletIds) {
-      if (database.pallets[palletId]) {
-        delete database.pallets[palletId];
-        console.log(`   🗑️ Palet ${palletId} eliminado`);
-      }
-    }
-  } else {
-    // Solo volver palets a pendiente
-    for (const palletId of pickup.palletIds) {
-      const pallet = database.pallets[palletId];
-      if (pallet) {
-        pallet.status = 'pending';
-        delete pallet.pickupId;
-        delete pallet.pickedUpAt;
-      }
-    }
-  }
-  
-  // Eliminar manifiesto si existe
-  if (database.manifests[pickupId]) {
-    delete database.manifests[pickupId];
-  }
-  
-  delete database.pickups[pickupId];
-  saveData();
-  
-  console.log(`\n🗑️ RECOGIDA ELIMINADA: ${pickupId}`);
-  
-  res.json({ 
-    success: true, 
-    message: deletePallets 
-      ? `Recogida y ${pickup.palletIds.length} palets eliminados`
-      : `Recogida eliminada. Palets vueltos a estado pendiente.`
-  });
 });
 
 // Etiqueta de palet
@@ -1110,7 +1214,7 @@ app.post('/api/pickup', async (req, res) => {
     totalPallets: pallets.length,
     createdAt: now.toISOString(),
     date: now.toISOString().split('T')[0],
-    status: 'pending_signature' // Pendiente de firma
+    status: 'pending_signature'
   };
   
   saveData();
@@ -1123,11 +1227,89 @@ app.post('/api/pickup', async (req, res) => {
   });
 });
 
+// Deshacer recogida
+app.post('/api/pickup/:id/undo', (req, res) => {
+  const pickupId = req.params.id;
+  const pickup = database.pickups[pickupId];
+  
+  if (!pickup) {
+    return res.status(404).json({ error: 'Recogida no encontrada' });
+  }
+  
+  for (const palletId of pickup.palletIds) {
+    const pallet = database.pallets[palletId];
+    if (pallet) {
+      pallet.status = 'pending';
+      delete pallet.pickupId;
+      delete pallet.pickedUpAt;
+    }
+  }
+  
+  if (database.manifests[pickupId]) {
+    delete database.manifests[pickupId];
+  }
+  
+  delete database.pickups[pickupId];
+  saveData();
+  
+  console.log(`\n↩️ RECOGIDA DESHECHA: ${pickupId} - ${pickup.palletIds.length} palets vueltos a pendiente`);
+  
+  res.json({ 
+    success: true, 
+    message: `Recogida deshecha. ${pickup.palletIds.length} palets vueltos a estado pendiente.`
+  });
+});
+
+// Eliminar recogida
+app.delete('/api/pickup/:id', (req, res) => {
+  const pickupId = req.params.id;
+  const pickup = database.pickups[pickupId];
+  
+  if (!pickup) {
+    return res.status(404).json({ error: 'Recogida no encontrada' });
+  }
+  
+  const deletePallets = req.query.deletePallets === 'true';
+  
+  if (deletePallets) {
+    for (const palletId of pickup.palletIds) {
+      if (database.pallets[palletId]) {
+        delete database.pallets[palletId];
+        console.log(`   🗑️ Palet ${palletId} eliminado`);
+      }
+    }
+  } else {
+    for (const palletId of pickup.palletIds) {
+      const pallet = database.pallets[palletId];
+      if (pallet) {
+        pallet.status = 'pending';
+        delete pallet.pickupId;
+        delete pallet.pickedUpAt;
+      }
+    }
+  }
+  
+  if (database.manifests[pickupId]) {
+    delete database.manifests[pickupId];
+  }
+  
+  delete database.pickups[pickupId];
+  saveData();
+  
+  console.log(`\n🗑️ RECOGIDA ELIMINADA: ${pickupId}`);
+  
+  res.json({ 
+    success: true, 
+    message: deletePallets 
+      ? `Recogida y ${pickup.palletIds.length} palets eliminados`
+      : `Recogida eliminada. Palets vueltos a estado pendiente.`
+  });
+});
+
 // ============================================
 // MANIFIESTOS
 // ============================================
 
-// Obtener manifiesto interactivo (para firmar)
 app.get('/api/manifest/:pickupId', (req, res) => {
   const pickup = database.pickups[req.params.pickupId];
   
@@ -1306,37 +1488,36 @@ app.get('/api/manifest/:pickupId', (req, res) => {
         <div class="value">${dateStr}</div>
       </div>
       <div class="info-item">
-      <div class="label">HORA</div>
-      <div class="value">${timeStr}</div>
+        <div class="label">HORA</div>
+        <div class="value">${timeStr}</div>
+      </div>
+      <div class="info-item">
+        <div class="label">ID RECOGIDA</div>
+        <div class="value">${pickup.id}</div>
+      </div>
+      <div class="info-item">
+        <div class="label">TRANSPORTISTA</div>
+        <div class="value">${pickup.carrier}</div>
+      </div>
     </div>
-    <div class="info-item">
-      <div class="label">ID RECOGIDA</div>
-      <div class="value">${pickup.id}</div>
+    
+    <div class="summary">
+      <div class="summary-item">
+        <div class="number">${pickup.totalPallets}</div>
+        <div class="text">PALETS</div>
+      </div>
+      <div class="summary-item">
+        <div class="number">${pickup.totalPackages}</div>
+        <div class="text">ENVÍOS TOTALES</div>
+      </div>
     </div>
-    <div class="info-item">
-      <div class="label">TRANSPORTISTA</div>
-      <div class="value">${pickup.carrier}</div>
-    </div>
-  </div>
-  
-  <div class="summary">
-    <div class="summary-item">
-      <div class="number">${pickup.totalPallets}</div>
-      <div class="text">PALETS</div>
-    </div>
-    <div class="summary-item">
-      <div class="number">${pickup.totalPackages}</div>
-      <div class="text">ENVÍOS TOTALES</div>
-    </div>
-  </div>
-  
-  ${palletsHtml}
-  
-  ${signatureSection}
+    
+    ${palletsHtml}
+    
+    ${signatureSection}
   </div>
   
   <script>
-    // Signature pad logic
     const canvases = {};
     const contexts = {};
     
@@ -1347,7 +1528,6 @@ app.get('/api/manifest/:pickupId', (req, res) => {
       canvases[id] = canvas;
       contexts[id] = canvas.getContext('2d');
       
-      // Set canvas size
       canvas.width = canvas.offsetWidth;
       canvas.height = canvas.offsetHeight;
       
@@ -1472,13 +1652,11 @@ app.get('/api/manifest/:pickupId', (req, res) => {
       }
     }
     
-    // Initialize canvases
     if (document.getElementById('warehouseSignature')) {
       initCanvas('warehouseSignature');
       initCanvas('driverSignature');
     }
     
-    // Función para descargar PDF
     function downloadPDF() {
       const element = document.getElementById('manifest-content');
       const opt = {
@@ -1489,7 +1667,6 @@ app.get('/api/manifest/:pickupId', (req, res) => {
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
       
-      // Ocultar botones temporalmente
       document.querySelector('.action-buttons').style.display = 'none';
       
       html2pdf().set(opt).from(element).save().then(() => {
@@ -1503,7 +1680,6 @@ app.get('/api/manifest/:pickupId', (req, res) => {
   res.send(html);
 });
 
-// Firmar manifiesto
 app.post('/api/manifest/:pickupId/sign', (req, res) => {
   const pickupId = req.params.pickupId;
   const pickup = database.pickups[pickupId];
@@ -1553,10 +1729,8 @@ app.get('/api/documents', (req, res) => {
     pickups = pickups.filter(p => p.date === dateFilter);
   }
   
-  // Ordenar por fecha descendente
   pickups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   
-  // Añadir info de firma
   const documents = pickups.map(p => ({
     ...p,
     manifest: database.manifests[p.id] || null,
@@ -1583,6 +1757,10 @@ app.get('/api/stats', (req, res) => {
     }
   }
   
+  const indexAge = trackingIndex.lastSync 
+    ? Math.round((Date.now() - new Date(trackingIndex.lastSync).getTime()) / 60000)
+    : null;
+  
   res.json({
     totalPallets: todayPallets.length,
     totalPackages: todayPallets.reduce((sum, p) => sum + p.totalPackages, 0),
@@ -1590,7 +1768,12 @@ app.get('/api/stats', (req, res) => {
     palletsPending: todayPallets.filter(p => p.status === 'pending').length,
     palletsPickedUp: todayPallets.filter(p => p.status === 'picked_up').length,
     totalPickups: todayPickups.length,
-    signedManifests: todayPickups.filter(p => database.manifests[p.id]).length
+    signedManifests: todayPickups.filter(p => database.manifests[p.id]).length,
+    index: {
+      loaded: !!trackingIndex.lastSync,
+      matched: trackingIndex.matched,
+      ageMinutes: indexAge
+    }
   });
 });
 
@@ -1601,14 +1784,20 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════════╗
-║  📦 CLASIFICADOR DE EXPEDICIONES v8.0                         ║
-║  🔗 Sendcloud + Odoo | Persistencia | Firmas Digitales        ║
+║  📦 CLASIFICADOR DE EXPEDICIONES v9.0                         ║
+║  🔗 Sendcloud + Odoo | Índice Pre-calculado | Auto-Sync       ║
 ╠═══════════════════════════════════════════════════════════════╣
 ║  🌐 Puerto: ${PORT}                                              ║
 ║  🏷️  Etiqueta: /api/pallets/{id}/label                        ║
 ║  📋 Manifiesto: /api/manifest/{pickupId}                      ║
+║  📊 Índice: /api/index-stats                                  ║
+║  🔄 Recargar: POST /api/reload-index                          ║
 ╚═══════════════════════════════════════════════════════════════╝`);
   
+  // Cargar índice existente
+  const indexLoaded = loadTrackingIndex();
+  
+  // Conectar Odoo
   try {
     const uid = await odooClient.authenticate();
     console.log(`✅ Odoo conectado (UID: ${uid})`);
@@ -1619,4 +1808,22 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🔑 Sendcloud configurado`);
   console.log(`📊 Palets en memoria: ${Object.keys(database.pallets).length}`);
   console.log(`📋 Recogidas en memoria: ${Object.keys(database.pickups).length}`);
+  
+  // Configurar sync programado (6:00 y 14:00)
+  setupScheduledSync();
+  
+  // Auto-sync al iniciar (después de 10 segundos)
+  if (!indexLoaded || !trackingIndex.lastSync) {
+    console.log('\n⏳ Auto-sync programado en 10 segundos...');
+    setTimeout(() => {
+      console.log('\n🚀 Ejecutando auto-sync inicial...');
+      runSync();
+    }, 10000);
+  } else {
+    const ageHours = (Date.now() - new Date(trackingIndex.lastSync).getTime()) / 3600000;
+    if (ageHours > 4) {
+      console.log(`\n⏳ Índice antiguo (${Math.round(ageHours)}h), auto-sync en 10 segundos...`);
+      setTimeout(() => runSync(), 10000);
+    }
+  }
 });
