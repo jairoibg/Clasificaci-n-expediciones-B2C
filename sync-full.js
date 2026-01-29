@@ -100,17 +100,28 @@ class OdooClient {
 
     console.log(`   📅 Buscando OUTs desde: ${dateFilter}`);
 
-    const pickings = await this.execute('stock.picking', 'search_read', [
-      [
-        ['state', '=', 'done'],
-        ['picking_type_code', '=', 'outgoing'],
-        ['carrier_tracking_ref', '!=', false],
-        ['scheduled_date', '>=', dateFilter]
-      ]
-    ], {
-      fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date'],
+    // Dominio simplificado y corregido:
+    // (name ilike 'out' OR origin ilike 'out')
+    // AND state in ['done', 'assigned', 'confirmed', 'waiting']
+    // AND sale_id.team_id ilike 'shopify'
+    // AND location_dest_id ilike 'customer'
+    // AND scheduled_date >= dateFilter
+    // AND carrier_tracking_ref != false
+    const domain = [
+      "|", ["name", "ilike", "out"], ["origin", "ilike", "out"],
+      ["state", "in", ["done", "assigned", "confirmed", "waiting"]],
+      ["sale_id.team_id", "ilike", "shopify"],
+      ["location_dest_id", "ilike", "customer"],
+      ["scheduled_date", ">=", dateFilter],
+      ["carrier_tracking_ref", "!=", false]
+    ];
+
+    console.log(`   🔍 Dominio: OUTs Shopify B2C con tracking, últimos ${daysBack} días`);
+
+    const pickings = await this.execute('stock.picking', 'search_read', [domain], {
+      fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state'],
       order: 'scheduled_date desc',
-      limit: 10000
+      limit: 15000
     });
 
     return pickings;
@@ -334,7 +345,8 @@ async function sync() {
       pickingName: picking.name,
       orderRef: picking.origin || '',
       clientName: picking.partner_id ? picking.partner_id[1] : '',
-      odooTracking: odooTracking
+      odooTracking: odooTracking,
+      state: picking.state
     };
 
     // Primero intentar coincidencia exacta
