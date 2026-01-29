@@ -520,39 +520,61 @@ const sendcloudClient = new SendcloudClient(CONFIG.sendcloud);
 
 function getSession(carrier, palletId = null) {
   const carrierUpper = carrier.toUpperCase();
+  
+  // Inicializar si no existe
   if (!database.activeSessions[carrierUpper]) {
-    database.activeSessions[carrierUpper] = { pallets: [] };
+    database.activeSessions[carrierUpper] = { packages: [], lastUpdate: null };
   }
   
-  // Si no se especifica palletId, devolver el primer palet o crear uno legacy
-  if (!palletId) {
-    if (database.activeSessions[carrierUpper].pallets.length === 0) {
-      // Compatibilidad: migrar estructura antigua
-      if (database.activeSessions[carrierUpper].packages) {
-        database.activeSessions[carrierUpper].pallets.push({
-          id: 'legacy',
-          name: 'Palet activo',
-          packages: database.activeSessions[carrierUpper].packages,
-          lastUpdate: database.activeSessions[carrierUpper].lastUpdate || new Date().toISOString()
-        });
-        delete database.activeSessions[carrierUpper].packages;
-        delete database.activeSessions[carrierUpper].lastUpdate;
-      }
+  const session = database.activeSessions[carrierUpper];
+  
+  // ESTRUCTURA VIEJA: tiene .packages directamente
+  if (session.packages && !session.pallets) {
+    return {
+      id: 'legacy',
+      name: 'Palet activo',
+      packages: session.packages,
+      lastUpdate: session.lastUpdate
+    };
+  }
+  
+  // ESTRUCTURA NUEVA: tiene .pallets
+  if (session.pallets) {
+    if (!palletId) {
+      return session.pallets[0] || null;
     }
-    return database.activeSessions[carrierUpper].pallets[0] || null;
+    return session.pallets.find(p => p.id === palletId) || null;
   }
   
-  // Buscar palet específico
-  return database.activeSessions[carrierUpper].pallets.find(p => p.id === palletId) || null;
+  return null;
 }
 
 function getOrCreateSessionPallet(carrier, palletId, palletName) {
   const carrierUpper = carrier.toUpperCase();
+  
+  // Inicializar si no existe
   if (!database.activeSessions[carrierUpper]) {
-    database.activeSessions[carrierUpper] = { pallets: [] };
+    database.activeSessions[carrierUpper] = { packages: [], lastUpdate: null };
   }
   
-  let pallet = database.activeSessions[carrierUpper].pallets.find(p => p.id === palletId);
+  const session = database.activeSessions[carrierUpper];
+  
+  // ESTRUCTURA VIEJA: usar packages directamente
+  if (session.packages && !session.pallets) {
+    return {
+      id: 'legacy',
+      name: 'Palet activo',
+      packages: session.packages,
+      lastUpdate: session.lastUpdate
+    };
+  }
+  
+  // ESTRUCTURA NUEVA: buscar o crear palet
+  if (!session.pallets) {
+    session.pallets = [];
+  }
+  
+  let pallet = session.pallets.find(p => p.id === palletId);
   if (!pallet) {
     pallet = {
       id: palletId,
@@ -560,13 +582,34 @@ function getOrCreateSessionPallet(carrier, palletId, palletName) {
       packages: [],
       lastUpdate: new Date().toISOString()
     };
-    database.activeSessions[carrierUpper].pallets.push(pallet);
+    session.pallets.push(pallet);
     saveData();
   }
   return pallet;
 }
 
 function addPackageToSession(carrier, packageData, palletId, palletName) {
+  const carrierUpper = carrier.toUpperCase();
+  
+  // Inicializar si no existe
+  if (!database.activeSessions[carrierUpper]) {
+    database.activeSessions[carrierUpper] = { packages: [], lastUpdate: null };
+  }
+  
+  const session = database.activeSessions[carrierUpper];
+  
+  // ESTRUCTURA VIEJA
+  if (session.packages && !session.pallets) {
+    const exists = session.packages.find(p => p.tracking === packageData.tracking);
+    if (exists) return { added: false, reason: 'duplicate' };
+    
+    session.packages.push(packageData);
+    session.lastUpdate = new Date().toISOString();
+    saveData();
+    return { added: true };
+  }
+  
+  // ESTRUCTURA NUEVA
   const pallet = getOrCreateSessionPallet(carrier, palletId, palletName);
   const exists = pallet.packages.find(p => p.tracking === packageData.tracking);
   if (exists) return { added: false, reason: 'duplicate' };
