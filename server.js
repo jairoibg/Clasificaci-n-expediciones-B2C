@@ -68,20 +68,49 @@ function loadTrackingIndex() {
 
 // Buscar en el índice pre-calculado
 function findInTrackingIndex(tracking) {
-  const clean = tracking.trim().toUpperCase();
+  const clean = tracking.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   
   // Búsqueda directa O(1)
   if (trackingIndex.byTracking[clean]) {
     return trackingIndex.byTracking[clean];
   }
   
-  // Para CTT/SPRING: buscar por sufijo (últimos 7-10 dígitos)
+  // Búsqueda por tracking de Odoo (para ASENDIA que tiene tracking corto)
+  if (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[clean]) {
+    return trackingIndex.byOdooTracking[clean];
+  }
+  
+  // Para CTT/SPRING: buscar por sufijo (código escaneado corto, tracking largo)
   if (clean.length >= 7 && clean.length <= 15) {
     for (const [indexTracking, data] of Object.entries(trackingIndex.byTracking)) {
       if ((data.carrier === 'CTT' || data.carrier === 'SPRING') && 
           indexTracking.endsWith(clean)) {
         console.log(`   🔍 Match por sufijo: ${clean} → ${indexTracking}`);
         return data;
+      }
+    }
+  }
+  
+  // Para ASENDIA/CTT/SPRING: buscar si el código escaneado CONTIENE el tracking de Odoo
+  // O si hay coincidencia parcial de al menos 10 caracteres
+  if (clean.length > 15 && trackingIndex.byOdooTracking) {
+    for (const [odooTrack, data] of Object.entries(trackingIndex.byOdooTracking)) {
+      if (['ASENDIA', 'CTT', 'SPRING'].includes(data.carrier)) {
+        // Coincidencia completa
+        if (clean.includes(odooTrack)) {
+          console.log(`   🔍 Match por contenido: ${clean} contiene ${odooTrack}`);
+          return data;
+        }
+        // Coincidencia parcial: buscar si los primeros 10+ caracteres del tracking Odoo están en el escaneado
+        if (odooTrack.length >= 10) {
+          for (let len = odooTrack.length - 1; len >= 10; len--) {
+            const partial = odooTrack.substring(0, len);
+            if (clean.includes(partial)) {
+              console.log(`   🔍 Match parcial: ${clean} contiene ${partial} (${len}/${odooTrack.length} chars)`);
+              return data;
+            }
+          }
+        }
       }
     }
   }
@@ -489,34 +518,89 @@ const sendcloudClient = new SendcloudClient(CONFIG.sendcloud);
 // FUNCIONES AUXILIARES
 // ============================================
 
-function getSession(carrier) {
+function getSession(carrier, palletId = null) {
   const carrierUpper = carrier.toUpperCase();
   if (!database.activeSessions[carrierUpper]) {
-    database.activeSessions[carrierUpper] = {
+    database.activeSessions[carrierUpper] = { pallets: [] };
+  }
+  
+  // Si no se especifica palletId, devolver el primer palet o crear uno legacy
+  if (!palletId) {
+    if (database.activeSessions[carrierUpper].pallets.length === 0) {
+      // Compatibilidad: migrar estructura antigua
+      if (database.activeSessions[carrierUpper].packages) {
+        database.activeSessions[carrierUpper].pallets.push({
+          id: 'legacy',
+          name: 'Palet activo',
+          packages: database.activeSessions[carrierUpper].packages,
+          lastUpdate: database.activeSessions[carrierUpper].lastUpdate || new Date().toISOString()
+        });
+        delete database.activeSessions[carrierUpper].packages;
+        delete database.activeSessions[carrierUpper].lastUpdate;
+      }
+    }
+    return database.activeSessions[carrierUpper].pallets[0] || null;
+  }
+  
+  // Buscar palet específico
+  return database.activeSessions[carrierUpper].pallets.find(p => p.id === palletId) || null;
+}
+
+function getOrCreateSessionPallet(carrier, palletId, palletName) {
+  const carrierUpper = carrier.toUpperCase();
+  if (!database.activeSessions[carrierUpper]) {
+    database.activeSessions[carrierUpper] = { pallets: [] };
+  }
+  
+  let pallet = database.activeSessions[carrierUpper].pallets.find(p => p.id === palletId);
+  if (!pallet) {
+    pallet = {
+      id: palletId,
+      name: palletName || 'Sin nombre',
       packages: [],
       lastUpdate: new Date().toISOString()
     };
+    database.activeSessions[carrierUpper].pallets.push(pallet);
+    saveData();
   }
-  return database.activeSessions[carrierUpper];
+  return pallet;
 }
 
-function addPackageToSession(carrier, packageData) {
-  const session = getSession(carrier);
-  const exists = session.packages.find(p => p.tracking === packageData.tracking);
+function addPackageToSession(carrier, packageData, palletId, palletName) {
+  const pallet = getOrCreateSessionPallet(carrier, palletId, palletName);
+  const exists = pallet.packages.find(p => p.tracking === packageData.tracking);
   if (exists) return { added: false, reason: 'duplicate' };
   
-  session.packages.push(packageData);
-  session.lastUpdate = new Date().toISOString();
+  pallet.packages.push(packageData);
+  pallet.lastUpdate = new Date().toISOString();
   saveData();
-  return { added: true };
+  return { added: true, pallet };
 }
 
-function clearSession(carrier) {
+function clearSession(carrier, palletId = null) {
   const carrierUpper = carrier.toUpperCase();
-  database.activeSessions[carrierUpper] = {
-    packages: [],
-    lastUpdate: new Date().toISOString()
-  };
+  if (!database.activeSessions[carrierUpper]) return;
+  
+  if (palletId) {
+    // Limpiar solo un palet específico
+    const pallet = database.activeSessions[carrierUpper].pallets.find(p => p.id === palletId);
+    if (pallet) {
+      pallet.packages = [];
+      pallet.lastUpdate = new Date().toISOString();
+    }
+  } else {
+    // Limpiar todos los palets
+    database.activeSessions[carrierUpper] = { pallets: [] };
+  }
+  saveData();
+}
+
+function removeSessionPallet(carrier, palletId) {
+  const carrierUpper = carrier.toUpperCase();
+  if (!database.activeSessions[carrierUpper]) return;
+  
+  database.activeSessions[carrierUpper].pallets = 
+    database.activeSessions[carrierUpper].pallets.filter(p => p.id !== palletId);
   saveData();
 }
 
@@ -681,9 +765,9 @@ app.get('/api/session/:carrier', (req, res) => {
   
   res.json({
     carrier,
-    packages: session.packages,
-    count: session.packages.length,
-    lastUpdate: session.lastUpdate
+    packages: session ? session.packages : [],
+    count: session ? session.packages.length : 0,
+    lastUpdate: session ? session.lastUpdate : null
   });
 });
 
@@ -692,15 +776,109 @@ app.get('/api/sessions', (req, res) => {
   
   for (const carrier of CARRIERS) {
     const session = database.activeSessions[carrier];
-    if (session && session.packages.length > 0) {
-      sessions[carrier] = {
-        count: session.packages.length,
-        lastUpdate: session.lastUpdate
-      };
+    if (session && session.pallets) {
+      const totalPackages = session.pallets.reduce((sum, p) => sum + p.packages.length, 0);
+      if (totalPackages > 0) {
+        sessions[carrier] = {
+          count: totalPackages,
+          pallets: session.pallets.length,
+          lastUpdate: session.pallets[0]?.lastUpdate || null
+        };
+      }
+    } else if (session && session.packages) {
+      // Compatibilidad con estructura antigua
+      if (session.packages.length > 0) {
+        sessions[carrier] = {
+          count: session.packages.length,
+          lastUpdate: session.lastUpdate
+        };
+      }
     }
   }
   
   res.json({ sessions });
+});
+
+// Listar palets activos de un transportista
+app.get('/api/sessions/:carrier/pallets', (req, res) => {
+  const carrier = req.params.carrier.toUpperCase();
+  if (!database.activeSessions[carrier]) {
+    database.activeSessions[carrier] = { pallets: [] };
+  }
+  
+  // Migrar estructura antigua si existe
+  if (database.activeSessions[carrier].packages) {
+    const oldPackages = database.activeSessions[carrier].packages;
+    if (oldPackages.length > 0) {
+      database.activeSessions[carrier].pallets = [{
+        id: 'legacy',
+        name: 'Palet activo',
+        packages: oldPackages,
+        lastUpdate: database.activeSessions[carrier].lastUpdate
+      }];
+    } else {
+      database.activeSessions[carrier].pallets = [];
+    }
+    delete database.activeSessions[carrier].packages;
+    delete database.activeSessions[carrier].lastUpdate;
+    saveData();
+  }
+  
+  const pallets = database.activeSessions[carrier].pallets || [];
+  
+  res.json({
+    carrier,
+    pallets: pallets.map(p => ({
+      id: p.id,
+      name: p.name,
+      packages: p.packages,
+      count: p.packages.length,
+      lastActivity: p.lastUpdate
+    }))
+  });
+});
+
+// Crear nuevo palet activo
+app.post('/api/sessions/:carrier/pallets', (req, res) => {
+  const carrier = req.params.carrier.toUpperCase();
+  const { name } = req.body;
+  
+  if (!name) {
+    return res.status(400).json({ error: 'Nombre requerido' });
+  }
+  
+  if (!database.activeSessions[carrier]) {
+    database.activeSessions[carrier] = { pallets: [] };
+  }
+  
+  const palletId = `pal_${Date.now()}`;
+  const newPallet = {
+    id: palletId,
+    name: name,
+    packages: [],
+    lastUpdate: new Date().toISOString()
+  };
+  
+  database.activeSessions[carrier].pallets.push(newPallet);
+  saveData();
+  
+  console.log(`\n📦 NUEVO PALET ACTIVO: ${carrier} - ${name} (${palletId})`);
+  
+  res.json({
+    success: true,
+    palletId: palletId,
+    pallet: newPallet
+  });
+});
+
+// Eliminar palet activo
+app.delete('/api/sessions/:carrier/pallets/:palletId', (req, res) => {
+  const carrier = req.params.carrier.toUpperCase();
+  const palletId = req.params.palletId;
+  
+  removeSessionPallet(carrier, palletId);
+  
+  res.json({ success: true, message: `Palet ${palletId} eliminado` });
 });
 
 app.delete('/api/session/:carrier', (req, res) => {
@@ -714,6 +892,10 @@ app.delete('/api/session/:carrier/package/:tracking', (req, res) => {
   const tracking = req.params.tracking.toUpperCase();
   
   const session = getSession(carrier);
+  if (!session) {
+    return res.json({ success: false, message: 'Sesión no encontrada' });
+  }
+  
   const initialLength = session.packages.length;
   session.packages = session.packages.filter(p => p.tracking !== tracking);
   
@@ -731,7 +913,7 @@ app.delete('/api/session/:carrier/package/:tracking', (req, res) => {
 // ============================================
 
 app.post('/api/scan', async (req, res) => {
-  const { tracking, expectedCarrier } = req.body;
+  const { tracking, expectedCarrier, palletId, palletName } = req.body;
   if (!tracking || !expectedCarrier) return res.status(400).json({ error: 'Faltan datos' });
 
   const clean = tracking.trim().toUpperCase();
@@ -739,16 +921,32 @@ app.post('/api/scan', async (req, res) => {
   
   console.log(`\n📦 SCAN: ${clean} → ${expected}`);
   
-  const session = getSession(expected);
-  const alreadyScanned = session.packages.find(p => p.tracking === clean);
+  // Verificar duplicado en TODOS los palets activos del transportista
+  const carrierPallets = database.activeSessions[expected]?.pallets || [];
+  let alreadyScanned = null;
+  let foundInPallet = null;
+
+  for (const pallet of carrierPallets) {
+    const found = pallet.packages.find(p => p.tracking === clean);
+    if (found) {
+      alreadyScanned = found;
+      foundInPallet = pallet.name;
+      break;
+    }
+  }
+
   if (alreadyScanned) {
     return res.json({
       success: false,
       error: 'DUPLICADO',
-      message: `Este paquete ya está escaneado`,
+      message: `Este paquete ya está en el palet "${foundInPallet}"`,
       tracking: clean
     });
   }
+
+  const activePalletId = palletId || `pal_${Date.now()}`;
+  const activePalletName = palletName || 'Sin nombre';
+  const session = getOrCreateSessionPallet(expected, activePalletId, activePalletName);
   
   const det = await getCarrierFromTracking(clean);
   
@@ -791,7 +989,9 @@ app.post('/api/scan', async (req, res) => {
     scannedAt: new Date().toISOString()
   };
   
-  addPackageToSession(expected, packageData);
+  addPackageToSession(expected, packageData, activePalletId, activePalletName);
+  
+  const pallet = getSession(expected, activePalletId);
   
   console.log(`   ✅ ${det.carrier} | ${det.source} | ${det.elapsed || '?'}ms | Pedido: ${packageData.orderRef} | Cliente: ${packageData.clientName}`);
   
@@ -800,7 +1000,7 @@ app.post('/api/scan', async (req, res) => {
     tracking: clean, 
     detectedCarrier: det.carrier,
     package: packageData,
-    sessionCount: getSession(expected).packages.length,
+    sessionCount: pallet ? pallet.packages.length : 1,
     source: det.source,
     responseTime: det.elapsed
   });
@@ -816,8 +1016,10 @@ app.post('/api/add-tracking', async (req, res) => {
   const clean = tracking.trim().toUpperCase();
   const carrierUpper = carrier.toUpperCase();
   
-  const session = getSession(carrierUpper);
-  const alreadyScanned = session.packages.find(p => p.tracking === clean);
+  const activePalletId = `pal_${Date.now()}`;
+  const activePalletName = 'Sin nombre';
+  const currentPallet = getOrCreateSessionPallet(carrierUpper, activePalletId, activePalletName);
+  const alreadyScanned = currentPallet.packages.find(p => p.tracking === clean);
   if (alreadyScanned) {
     return res.json({
       success: false,
@@ -846,14 +1048,16 @@ app.post('/api/add-tracking', async (req, res) => {
     addedManually: true
   };
   
-  addPackageToSession(carrierUpper, packageData);
+  addPackageToSession(carrierUpper, packageData, activePalletId, activePalletName);
+  
+  const updatedPallet = getSession(carrierUpper, activePalletId);
   
   res.json({
     success: true,
     tracking: clean,
     carrier: carrierUpper,
     package: packageData,
-    sessionCount: getSession(carrierUpper).packages.length
+    sessionCount: updatedPallet ? updatedPallet.packages.length : 1
   });
 });
 
@@ -967,27 +1171,28 @@ app.get('/api/search', (req, res) => {
 // ============================================
 
 app.post('/api/pallets', (req, res) => {
-  const { carrier } = req.body;
+  const { carrier, palletId, palletName } = req.body;
   
   if (!carrier) {
     return res.status(400).json({ error: 'Carrier requerido' });
   }
   
   const carrierUpper = carrier.toUpperCase();
-  const session = getSession(carrierUpper);
+  const session = palletId ? getSession(carrierUpper, palletId) : getSession(carrierUpper);
   
-  if (session.packages.length === 0) {
+  if (!session || session.packages.length === 0) {
     return res.status(400).json({ error: 'No hay paquetes para crear el palet' });
   }
   
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
   const count = Object.keys(database.pallets).filter(id => id.startsWith(`${carrierUpper}-${dateStr}`)).length + 1;
-  const palletId = `${carrierUpper}-${dateStr}-${String(count).padStart(3, '0')}`;
+  const newPalletId = `${carrierUpper}-${dateStr}-${String(count).padStart(3, '0')}`;
   
   const pallet = {
-    id: palletId,
+    id: newPalletId,
     carrier: carrierUpper,
+    palletName: palletName || session.name || null,
     packages: [...session.packages],
     trackings: session.packages.map(p => p.tracking),
     totalPackages: session.packages.length,
@@ -996,8 +1201,14 @@ app.post('/api/pallets', (req, res) => {
     status: 'pending'
   };
   
-  database.pallets[palletId] = pallet;
-  clearSession(carrierUpper);
+  database.pallets[newPalletId] = pallet;
+  
+  // Eliminar el palet activo de la sesión
+  if (palletId) {
+    removeSessionPallet(carrierUpper, palletId);
+  } else {
+    clearSession(carrierUpper);
+  }
   
   console.log(`\n📦 PALET CREADO: ${palletId} - ${pallet.totalPackages} paquetes`);
   
@@ -1753,7 +1964,12 @@ app.get('/api/stats', (req, res) => {
   for (const carrier of CARRIERS) {
     const session = database.activeSessions[carrier];
     if (session) {
-      packagesInProgress += session.packages.length;
+      if (session.pallets) {
+        packagesInProgress += session.pallets.reduce((sum, p) => sum + p.packages.length, 0);
+      } else if (session.packages) {
+        // Compatibilidad con estructura antigua
+        packagesInProgress += session.packages.length;
+      }
     }
   }
   

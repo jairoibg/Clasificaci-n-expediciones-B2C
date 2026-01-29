@@ -5,7 +5,7 @@
  * Uso: node sync-full.js
  * 
  * Descarga OUTs de Odoo + envíos de Sendcloud y cruza los datos
- * aplicando patrones de coincidencia para CTT, SPRING, etc.
+ * aplicando patrones de coincidencia para CTT, SPRING, ASENDIA, etc.
  * 
  * Resultado: tracking-index.json con todas las coincidencias pre-calculadas
  */
@@ -100,7 +100,7 @@ class OdooClient {
 
     console.log(`   📅 Buscando OUTs desde: ${dateFilter}`);
 
-    // Dominio simplificado y corregido:
+    // Dominio simplificado:
     // (name ilike 'out' OR origin ilike 'out')
     // AND state in ['done', 'assigned', 'confirmed', 'waiting']
     // AND sale_id.team_id ilike 'shopify'
@@ -203,18 +203,25 @@ function matchTracking(sendcloudTracking, odooTracking, carrier) {
   // CTT: Odoo tiene solo los últimos dígitos, Sendcloud tiene el tracking completo
   // Ejemplo: Odoo: "4347080" → Sendcloud: "00030100030197014347080"
   if (carrier === 'CTT') {
-    // El tracking de Odoo suele ser los últimos 7-10 dígitos
     if (scTrack.endsWith(odooTrack)) return true;
     if (odooTrack.length >= 7 && scTrack.includes(odooTrack)) return true;
   }
 
   // SPRING: Similar patrón
-  // Ejemplo: Odoo podría tener parte del tracking
   if (carrier === 'SPRING') {
     if (scTrack.endsWith(odooTrack)) return true;
     if (scTrack.includes(odooTrack)) return true;
-    // A veces Odoo tiene el tracking sin prefijo
     if (odooTrack.length >= 10 && scTrack.includes(odooTrack)) return true;
+  }
+
+  // ASENDIA: El tracking de Odoo puede estar contenido en Sendcloud o viceversa
+  // Ejemplo: Odoo: "6c20544233870" → Sendcloud podría ser diferente
+  if (carrier === 'ASENDIA') {
+    if (scTrack.includes(odooTrack)) return true;
+    if (odooTrack.includes(scTrack)) return true;
+    // Comparar ignorando case
+    if (scTrack.toLowerCase().includes(odooTrack.toLowerCase())) return true;
+    if (odooTrack.toLowerCase().includes(scTrack.toLowerCase())) return true;
   }
 
   return false;
@@ -320,6 +327,7 @@ async function sync() {
     matched: 0,
     unmatched: 0,
     byTracking: {},      // Índice principal: tracking Sendcloud → datos completos
+    byOdooTracking: {},  // Índice inverso: tracking Odoo → datos (para ASENDIA/CTT/SPRING)
     byCarrier: {         // Índice por transportista
       CTT: {},
       SPRING: {},
@@ -333,8 +341,8 @@ async function sync() {
   let matched = 0;
   let unmatched = 0;
 
-  // Para CTT y SPRING, necesitamos buscar por patrón
-  const carriersNeedingPattern = ['CTT', 'SPRING'];
+  // Transportistas que necesitan coincidencia por patrón (código barras ≠ tracking Odoo)
+  const carriersNeedingPattern = ['CTT', 'SPRING', 'ASENDIA'];
 
   for (const picking of pickings) {
     const odooTracking = picking.carrier_tracking_ref;
@@ -360,6 +368,7 @@ async function sync() {
       };
 
       trackingIndex.byTracking[scData.tracking] = fullData;
+      trackingIndex.byOdooTracking[odooTracking.toUpperCase()] = fullData;
       
       if (trackingIndex.byCarrier[scData.carrier]) {
         trackingIndex.byCarrier[scData.carrier][scData.tracking] = fullData;
@@ -369,7 +378,7 @@ async function sync() {
       continue;
     }
 
-    // Para CTT y SPRING, buscar por patrón
+    // Para CTT, SPRING y ASENDIA, buscar por patrón
     let foundMatch = false;
     
     for (const carrier of carriersNeedingPattern) {
@@ -382,10 +391,11 @@ async function sync() {
             tracking: scParcel.tracking,
             carrier: carrier,
             sendcloudData: scParcel,
-            matchType: 'pattern' // Indica que fue por patrón, no exacto
+            matchType: 'pattern'
           };
 
           trackingIndex.byTracking[scParcel.tracking] = fullData;
+          trackingIndex.byOdooTracking[odooTracking.toUpperCase()] = fullData;
           trackingIndex.byCarrier[carrier][scParcel.tracking] = fullData;
           
           matched++;
