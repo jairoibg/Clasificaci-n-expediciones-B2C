@@ -680,6 +680,23 @@ async function getCarrierFromTracking(tracking) {
 
   const odooTracking = picking.carrier_tracking_ref;
   console.log(`   📍 Tracking Odoo: ${odooTracking}`);
+
+  // Detectar CORREOS EXPRESS por carrier de Odoo (empieza por MI)
+  // Necesitamos obtener el carrier_id del picking
+  try {
+    const pickingFull = await odooClient.execute('stock.picking', 'read', [[picking.id]], {
+      fields: ['carrier_id']
+    });
+    if (pickingFull && pickingFull[0] && pickingFull[0].carrier_id) {
+      const carrierName = pickingFull[0].carrier_id[1] || '';
+      if (carrierName.toUpperCase().startsWith('MI')) {
+        console.log(`   ✅ CORREOS EXPRESS detectado por carrier Odoo: ${carrierName}`);
+        return { carrier: 'CORREOS EXPRESS', picking, source: 'odoo-carrier', elapsed: Date.now() - startTime };
+      }
+    }
+  } catch (err) {
+    console.log(`   ⚠️ No se pudo verificar carrier de Odoo: ${err.message}`);
+  }
   
   // Buscar en caché Sendcloud
   const cached = findInSendcloudCache(odooTracking);
