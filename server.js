@@ -251,7 +251,7 @@ const SENDCLOUD_CARRIER_MAP = {
   'asendia_spain': 'ASENDIA'
 };
 
-const CARRIERS = ['ASENDIA', 'CORREOS', 'CTT', 'GLS', 'INPOST', 'SPRING'];
+const CARRIERS = ['ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST', 'SPRING'];
 
 // ============================================
 // BASE DE DATOS CON PERSISTENCIA

@@ -5,19 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>Clasificador de Expediciones</title>
+  <title>Clasificador de Expediciones - DEV</title>
   <link rel="manifest" href="/manifest.json">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; min-height: 100vh; padding-bottom: 80px; }
     
-    .header { background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+    .header { background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
     .header h1 { font-size: 1.2rem; display: flex; align-items: center; gap: 8px; }
     .header-stats { font-size: 0.85rem; opacity: 0.9; }
+    .dev-badge { background: #fbbf24; color: #000; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; margin-left: 8px; }
     
     .tabs { display: flex; background: white; border-bottom: 2px solid #e2e8f0; overflow-x: auto; }
     .tab { flex: 1; min-width: 70px; padding: 10px 5px; text-align: center; cursor: pointer; border: none; background: none; font-size: 0.8rem; color: #64748b; transition: all 0.2s; }
-    .tab.active { color: #1a365d; border-bottom: 3px solid #1a365d; margin-bottom: -2px; font-weight: 600; }
+    .tab.active { color: #7c3aed; border-bottom: 3px solid #7c3aed; margin-bottom: -2px; font-weight: 600; }
     .tab-icon { font-size: 1.2rem; display: block; margin-bottom: 2px; }
     .tab-content { display: none; padding: 15px; }
     .tab-content.active { display: block; }
@@ -27,17 +28,20 @@
     .carrier-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px; }
     .carrier-btn { padding: 15px 10px; border: 2px solid #e2e8f0; border-radius: 12px; background: white; cursor: pointer; transition: all 0.2s; text-align: center; position: relative; }
     .carrier-btn:active { transform: scale(0.95); }
-    .carrier-btn.selected { border-color: #1a365d; background: #1a365d; color: white; }
+    .carrier-btn.selected { border-color: #7c3aed; background: #7c3aed; color: white; }
     .carrier-btn .carrier-name { font-weight: 600; font-size: 0.85rem; }
     .carrier-btn .carrier-badge { position: absolute; top: -8px; right: -8px; background: #ef4444; color: white; font-size: 0.7rem; font-weight: bold; padding: 2px 6px; border-radius: 10px; min-width: 20px; }
     
     .scanner-section { background: white; border-radius: 12px; padding: 20px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .scanner-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-    .scanner-title { font-size: 1rem; color: #1a365d; display: flex; align-items: center; gap: 8px; }
-    .scanner-count { background: #1a365d; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.9rem; font-weight: bold; }
+    .scanner-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; }
+    .scanner-title { font-size: 1rem; color: #7c3aed; display: flex; align-items: center; gap: 8px; }
+    .scanner-count { background: #7c3aed; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.9rem; font-weight: bold; }
+    .pallet-indicator { background: #f3e8ff; color: #7c3aed; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+    .pallet-indicator .pallet-name { font-weight: 700; }
+    .change-pallet-btn { background: none; border: none; color: #7c3aed; cursor: pointer; font-size: 0.85rem; text-decoration: underline; margin-left: 8px; }
     
     .scan-input { width: 100%; padding: 15px; font-size: 1.1rem; border: 2px dashed #cbd5e1; border-radius: 10px; text-align: center; transition: all 0.2s; }
-    .scan-input:focus { outline: none; border-color: #1a365d; border-style: solid; background: #f8fafc; }
+    .scan-input:focus { outline: none; border-color: #7c3aed; border-style: solid; background: #f8fafc; }
     .scan-hint { text-align: center; color: #94a3b8; font-size: 0.85rem; margin-top: 8px; }
     
     .package-list { margin-top: 15px; max-height: 300px; overflow-y: auto; }
@@ -45,13 +49,13 @@
     .package-info { flex: 1; }
     .package-tracking { font-weight: 600; font-size: 0.9rem; color: #1e293b; }
     .package-details { font-size: 0.8rem; color: #64748b; margin-top: 2px; }
-    .package-order { color: #1a365d; font-weight: 500; }
+    .package-order { color: #7c3aed; font-weight: 500; }
     .package-delete { background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer; padding: 5px; }
     
     .action-buttons { display: flex; gap: 10px; margin-top: 15px; }
     .btn { flex: 1; padding: 15px; border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-primary { background: #1a365d; color: white; }
+    .btn-primary { background: #7c3aed; color: white; }
     .btn-secondary { background: #e2e8f0; color: #475569; }
     .btn-success { background: #22c55e; color: white; }
     .btn-danger { background: #fee2e2; color: #dc2626; }
@@ -65,8 +69,8 @@
     .date-filter input { padding: 8px 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem; }
     
     .carrier-group { background: white; border-radius: 12px; margin-bottom: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .carrier-group-header { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #1a365d; color: white; cursor: pointer; }
-    .carrier-group-header:hover { background: #2d4a7c; }
+    .carrier-group-header { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #7c3aed; color: white; cursor: pointer; }
+    .carrier-group-header:hover { background: #6d28d9; }
     .carrier-group-title { font-weight: bold; font-size: 1.1rem; }
     .carrier-group-stats { font-size: 0.85rem; opacity: 0.9; }
     .carrier-group-arrow { transition: transform 0.2s; }
@@ -95,14 +99,14 @@
     .pallet-actions { display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0; flex-wrap: wrap; }
     .pallet-actions .btn { padding: 8px 12px; font-size: 0.85rem; }
     
-    .selection-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #1a365d; color: white; padding: 15px 20px; display: none; justify-content: space-between; align-items: center; z-index: 100; }
+    .selection-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #7c3aed; color: white; padding: 15px 20px; display: none; justify-content: space-between; align-items: center; z-index: 100; }
     .selection-bar.show { display: flex; }
     .selection-bar-info { font-size: 0.9rem; }
     .selection-bar .btn { flex: none; padding: 10px 20px; }
     
     .document-card { background: white; border-radius: 12px; padding: 15px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .document-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px; }
-    .document-id { font-weight: bold; font-family: monospace; color: #1a365d; font-size: 0.9rem; }
+    .document-id { font-weight: bold; font-family: monospace; color: #7c3aed; font-size: 0.9rem; }
     .document-status { padding: 4px 10px; border-radius: 15px; font-size: 0.75rem; font-weight: 600; }
     .document-status.signed { background: #d1fae5; color: #065f46; }
     .document-status.pending { background: #fef3c7; color: #92400e; }
@@ -122,9 +126,27 @@
     .search-modal-content { max-width: 500px; text-align: left; }
     .search-results { max-height: 300px; overflow-y: auto; }
     .search-result-item { padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
-    .search-result-item:hover { background: #f8fafc; border-color: #1a365d; }
-    .search-result-tracking { font-weight: bold; color: #1a365d; }
+    .search-result-item:hover { background: #f8fafc; border-color: #7c3aed; }
+    .search-result-tracking { font-weight: bold; color: #7c3aed; }
     .search-result-info { font-size: 0.85rem; color: #64748b; margin-top: 4px; }
+    
+    /* Pallet Selector Modal */
+    .pallet-selector-list { margin: 15px 0; }
+    .pallet-selector-item { display: flex; align-items: center; justify-content: space-between; padding: 15px; border: 2px solid #e2e8f0; border-radius: 10px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; }
+    .pallet-selector-item:hover { border-color: #7c3aed; background: #f8fafc; }
+    .pallet-selector-item.create-new { border-style: dashed; border-color: #7c3aed; background: #f3e8ff; }
+    .pallet-selector-item.create-new:hover { background: #ede9fe; }
+    .pallet-selector-info { text-align: left; }
+    .pallet-selector-name { font-weight: 600; color: #1e293b; font-size: 1rem; }
+    .pallet-selector-details { font-size: 0.85rem; color: #64748b; margin-top: 4px; }
+    .pallet-selector-count { background: #7c3aed; color: white; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 0.9rem; }
+    .pallet-selector-icon { font-size: 1.5rem; color: #7c3aed; }
+    
+    /* New Pallet Name Input */
+    .new-pallet-input { margin: 15px 0; }
+    .new-pallet-input label { display: block; margin-bottom: 8px; font-weight: 500; color: #475569; text-align: left; }
+    .new-pallet-input input { width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem; }
+    .new-pallet-input input:focus { outline: none; border-color: #7c3aed; }
     
     .toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); padding: 12px 24px; border-radius: 25px; color: white; font-weight: 500; z-index: 300; opacity: 0; transition: opacity 0.3s; }
     .toast.show { opacity: 1; }
@@ -149,7 +171,7 @@
 </head>
 <body>
   <header class="header">
-    <h1>📦 Clasificador</h1>
+    <h1>📦 Clasificador <span class="dev-badge">DEV</span></h1>
     <span class="header-stats" id="headerStats">0 paquetes</span>
   </header>
   
@@ -171,7 +193,11 @@
         <div class="scanner-title">📦 Escaneando para <strong id="selectedCarrierName"></strong></div>
         <div class="scanner-count" id="packageCount">0</div>
       </div>
-      <input type="text" class="scan-input" id="scanInput" placeholder="Escanea o escribe tracking..." autocomplete="off">
+      <div class="pallet-indicator" id="palletIndicator" style="display: none;">
+        📦 Palet: <span class="pallet-name" id="currentPalletName">-</span>
+        <button class="change-pallet-btn" onclick="showPalletSelector()">Cambiar</button>
+      </div>
+      <input type="text" class="scan-input" id="scanInput" placeholder="Escanea o escribe tracking..." autocomplete="off" style="margin-top: 15px;">
       <div class="scan-hint">Enfoca el cursor y escanea el código de barras</div>
       <div class="package-list" id="packageList"></div>
       <div class="action-buttons">
@@ -264,6 +290,34 @@
     </div>
   </div>
   
+  <!-- Pallet Selector Modal -->
+  <div class="modal" id="palletSelectorModal">
+    <div class="modal-content">
+      <div class="modal-icon">📦</div>
+      <div class="modal-title" id="palletSelectorTitle">Selecciona un Palet</div>
+      <div class="modal-message" id="palletSelectorMessage">Elige un palet existente o crea uno nuevo</div>
+      <div class="pallet-selector-list" id="palletSelectorList"></div>
+      <button class="btn btn-secondary" onclick="closePalletSelectorModal()" style="width: 100%; margin-top: 10px;">Cancelar</button>
+    </div>
+  </div>
+  
+  <!-- New Pallet Name Modal -->
+  <div class="modal" id="newPalletModal">
+    <div class="modal-content">
+      <div class="modal-icon">📦</div>
+      <div class="modal-title">Nuevo Palet <span id="newPalletCarrier"></span></div>
+      <div class="modal-message">Introduce un nombre para identificar este palet</div>
+      <div class="new-pallet-input">
+        <label>Nombre del palet (ej: Juan, Mesa 2, etc.)</label>
+        <input type="text" id="newPalletNameInput" placeholder="Escribe un nombre..." autocomplete="off">
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-secondary" onclick="closeNewPalletModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmNewPallet()">Crear Palet</button>
+      </div>
+    </div>
+  </div>
+  
   <div class="modal" id="searchModal">
     <div class="modal-content search-modal-content">
       <div class="modal-title">🔍 Buscar por Cliente</div>
@@ -304,7 +358,42 @@
     let API_URL = localStorage.getItem('apiUrl') || DEFAULT_API_URL;
     const CARRIERS = ['ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST', 'SPRING'];
     
-    const state = { selectedCarrier: null, packages: [], sessions: {}, palletsData: null, selectedPallets: new Set(), pickupCarrier: null, pickupPallets: [] };
+    // Estado con soporte para múltiples palets
+    const state = { 
+      selectedCarrier: null, 
+      currentPalletId: null,       // ID del palet activo seleccionado (o "new_NOMBRE" para palets nuevos)
+      currentPalletName: null,     // Nombre del palet activo
+      packages: [],                // Paquetes del palet actual
+      sessions: {},                // Contador de sesiones por transportista
+      activePallets: {},           // Palets activos por transportista: { CTT: [{id, name, packages}], ... }
+      palletsData: null, 
+      selectedPallets: new Set(), 
+      pickupCarrier: null, 
+      pickupPallets: [] 
+    };
+    
+    // Guardar selección de palet en localStorage por dispositivo
+    function saveDevicePalletSelection(carrier, palletId, palletName) {
+      const selections = JSON.parse(localStorage.getItem('palletSelections') || '{}');
+      selections[carrier] = { palletId, palletName, timestamp: Date.now() };
+      localStorage.setItem('palletSelections', JSON.stringify(selections));
+    }
+    
+    function getDevicePalletSelection(carrier) {
+      const selections = JSON.parse(localStorage.getItem('palletSelections') || '{}');
+      const selection = selections[carrier];
+      // Expira después de 8 horas
+      if (selection && (Date.now() - selection.timestamp) < 8 * 60 * 60 * 1000) {
+        return selection;
+      }
+      return null;
+    }
+    
+    function clearDevicePalletSelection(carrier) {
+      const selections = JSON.parse(localStorage.getItem('palletSelections') || '{}');
+      delete selections[carrier];
+      localStorage.setItem('palletSelections', JSON.stringify(selections));
+    }
     
     async function apiCall(endpoint, options = {}) {
       const response = await fetch(`${API_URL}/api${endpoint}`, { headers: { 'Content-Type': 'application/json' }, ...options });
@@ -327,22 +416,214 @@
     
     // CLASIFICAR
     function renderCarriers() {
-      document.getElementById('carrierGrid').innerHTML = CARRIERS.map(c => `
-        <button class="carrier-btn ${state.selectedCarrier === c ? 'selected' : ''}" onclick="selectCarrier('${c}')">
-          ${state.sessions[c] > 0 ? `<span class="carrier-badge">${state.sessions[c]}</span>` : ''}
-          <div class="carrier-name">${c}</div>
-        </button>
-      `).join('');
+      document.getElementById('carrierGrid').innerHTML = CARRIERS.map(c => {
+        // Contar paquetes totales de todas las sesiones activas del transportista
+        const totalPackages = (state.activePallets[c] || []).reduce((sum, p) => sum + p.packages.length, 0);
+        return `
+          <button class="carrier-btn ${state.selectedCarrier === c ? 'selected' : ''}" onclick="selectCarrier('${c}')">
+            ${totalPackages > 0 ? `<span class="carrier-badge">${totalPackages}</span>` : ''}
+            <div class="carrier-name">${c}</div>
+          </button>
+        `;
+      }).join('');
     }
     
     async function selectCarrier(carrier) {
       state.selectedCarrier = carrier;
-      try { const r = await apiCall(`/session/${carrier}`); state.packages = r.packages || []; } catch { state.packages = []; }
+      
+      // Cargar palets activos del servidor para este transportista
+      await loadActivePallets(carrier);
+      
+      const activePallets = state.activePallets[carrier] || [];
+      const savedSelection = getDevicePalletSelection(carrier);
+      
+      if (activePallets.length === 0) {
+        // No hay palets activos → pedir nombre para crear uno nuevo
+        showNewPalletModal();
+      } else if (savedSelection && activePallets.find(p => p.id === savedSelection.palletId)) {
+        // Hay una selección guardada válida → usarla directamente
+        selectPallet(savedSelection.palletId, savedSelection.palletName);
+      } else {
+        // Hay palets activos → mostrar selector
+        showPalletSelector();
+      }
+      
       renderCarriers();
+    }
+    
+    async function loadActivePallets(carrier) {
+      try {
+        const r = await apiCall(`/sessions/${carrier}/pallets`);
+        state.activePallets[carrier] = r.pallets || [];
+      } catch {
+        // Si el endpoint no existe, fallback al método antiguo
+        try {
+          const r = await apiCall(`/session/${carrier}`);
+          if (r.packages && r.packages.length > 0) {
+            state.activePallets[carrier] = [{
+              id: 'legacy',
+              name: 'Palet activo',
+              packages: r.packages
+            }];
+          } else {
+            state.activePallets[carrier] = [];
+          }
+        } catch {
+          state.activePallets[carrier] = [];
+        }
+      }
+    }
+    
+    function showPalletSelector() {
+      const carrier = state.selectedCarrier;
+      const pallets = state.activePallets[carrier] || [];
+      
+      document.getElementById('palletSelectorTitle').textContent = `Palets ${carrier}`;
+      
+      let html = '';
+      
+      // Mostrar palets existentes
+      pallets.forEach(p => {
+        const timeAgo = p.lastActivity ? getTimeAgo(p.lastActivity) : '';
+        html += `
+          <div class="pallet-selector-item" onclick="selectPallet('${p.id}', '${p.name}')">
+            <div class="pallet-selector-info">
+              <div class="pallet-selector-name">📦 ${p.name || 'Sin nombre'}</div>
+              <div class="pallet-selector-details">${timeAgo ? `Hace ${timeAgo}` : 'Activo'}</div>
+            </div>
+            <div class="pallet-selector-count">${p.packages.length}</div>
+          </div>
+        `;
+      });
+      
+      // Opción de crear nuevo
+      html += `
+        <div class="pallet-selector-item create-new" onclick="showNewPalletModal()">
+          <div class="pallet-selector-info">
+            <div class="pallet-selector-name">➕ Crear nuevo palet</div>
+            <div class="pallet-selector-details">Empezar un palet vacío</div>
+          </div>
+          <div class="pallet-selector-icon">📦</div>
+        </div>
+      `;
+      
+      document.getElementById('palletSelectorList').innerHTML = html;
+      document.getElementById('palletSelectorModal').classList.add('show');
+    }
+    
+    function closePalletSelectorModal() {
+      document.getElementById('palletSelectorModal').classList.remove('show');
+      if (!state.currentPalletId) {
+        document.getElementById('scannerSection').style.display = 'none';
+      }
+    }
+    
+    function selectPallet(palletId, palletName) {
+      state.currentPalletId = palletId;
+      state.currentPalletName = palletName;
+      
+      // Buscar los paquetes de este palet
+      const pallets = state.activePallets[state.selectedCarrier] || [];
+      const pallet = pallets.find(p => p.id === palletId);
+      state.packages = pallet ? [...pallet.packages] : [];
+      
+      // Guardar selección
+      saveDevicePalletSelection(state.selectedCarrier, palletId, palletName);
+      
+      // Cerrar modal y mostrar escáner
+      closePalletSelectorModal();
+      closeNewPalletModal();
+      showScannerWithPallet();
+    }
+    
+    function showNewPalletModal() {
+      document.getElementById('palletSelectorModal').classList.remove('show');
+      document.getElementById('newPalletCarrier').textContent = state.selectedCarrier;
+      document.getElementById('newPalletNameInput').value = '';
+      document.getElementById('newPalletModal').classList.add('show');
+      setTimeout(() => document.getElementById('newPalletNameInput').focus(), 100);
+    }
+    
+    function closeNewPalletModal() {
+      document.getElementById('newPalletModal').classList.remove('show');
+      if (!state.currentPalletId) {
+        document.getElementById('scannerSection').style.display = 'none';
+      }
+    }
+    
+    async function confirmNewPallet() {
+      const name = document.getElementById('newPalletNameInput').value.trim();
+      if (!name) {
+        showToast('Introduce un nombre', 'warning');
+        return;
+      }
+      
+      const carrier = state.selectedCarrier;
+      if (!carrier) {
+        showToast('Error: No hay transportista seleccionado', 'error');
+        return;
+      }
+      
+      // Crear palet en el servidor
+      try {
+        const r = await apiCall(`/sessions/${carrier}/pallets`, {
+          method: 'POST',
+          body: JSON.stringify({ name })
+        });
+        
+        if (r.success) {
+          // Recargar palets activos
+          await loadActivePallets(carrier);
+          selectPallet(r.palletId, name);
+        } else {
+          // Fallback: crear localmente si el endpoint no existe
+          const newPalletId = `new_${Date.now()}`;
+          if (!state.activePallets[carrier]) {
+            state.activePallets[carrier] = [];
+          }
+          state.activePallets[carrier].push({
+            id: newPalletId,
+            name: name,
+            packages: []
+          });
+          selectPallet(newPalletId, name);
+        }
+      } catch {
+        // Fallback: crear localmente
+        const newPalletId = `new_${Date.now()}`;
+        if (!state.activePallets[carrier]) {
+          state.activePallets[carrier] = [];
+        }
+        state.activePallets[carrier].push({
+          id: newPalletId,
+          name: name,
+          packages: []
+        });
+        selectPallet(newPalletId, name);
+      }
+    }
+    
+    document.getElementById('newPalletNameInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') confirmNewPallet();
+    });
+    
+    function showScannerWithPallet() {
       document.getElementById('scannerSection').style.display = 'block';
-      document.getElementById('selectedCarrierName').textContent = carrier;
+      document.getElementById('selectedCarrierName').textContent = state.selectedCarrier;
+      document.getElementById('palletIndicator').style.display = 'flex';
+      document.getElementById('currentPalletName').textContent = state.currentPalletName;
       renderPackages();
       setTimeout(() => document.getElementById('scanInput').focus(), 100);
+    }
+    
+    function getTimeAgo(timestamp) {
+      const diff = Date.now() - new Date(timestamp).getTime();
+      const minutes = Math.floor(diff / 60000);
+      if (minutes < 1) return 'ahora';
+      if (minutes < 60) return `${minutes} min`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h`;
+      return `${Math.floor(hours / 24)}d`;
     }
     
     document.getElementById('scanInput').addEventListener('keypress', async (e) => {
@@ -351,14 +632,43 @@
     
     async function scanPackage(tracking) {
       try {
-        const r = await apiCall('/scan', { method: 'POST', body: JSON.stringify({ tracking, expectedCarrier: state.selectedCarrier }) });
+        const r = await apiCall('/scan', { 
+          method: 'POST', 
+          body: JSON.stringify({ 
+            tracking, 
+            expectedCarrier: state.selectedCarrier,
+            palletId: state.currentPalletId,
+            palletName: state.currentPalletName
+          }) 
+        });
         if (r.success) {
-          state.packages.push(r.package); state.sessions[state.selectedCarrier] = r.sessionCount;
-          renderPackages(); renderCarriers(); showToast(`✓ ${r.package.orderRef || tracking.slice(-8)}`, 'success'); playSound('success');
-        } else if (r.error === 'NO_ENCONTRADO' || r.error === 'NO_VERIFICADO') { showSearchModal(tracking, r.message); playSound('error');
-        } else if (r.error === 'TRANSPORTISTA_INCORRECTO') { showModal('🚫', `PAQUETE DE ${r.detectedCarrier}`, r.message); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]);
-        } else if (r.error === 'DUPLICADO') { showToast('⚠️ Ya escaneado', 'warning');
-        } else { showModal('⚠️', 'Error', r.message || 'Error'); playSound('error'); }
+          state.packages.push(r.package);
+          
+          // Actualizar el palet local
+          const pallets = state.activePallets[state.selectedCarrier] || [];
+          const pallet = pallets.find(p => p.id === state.currentPalletId);
+          if (pallet) {
+            pallet.packages = [...state.packages];
+            pallet.lastActivity = Date.now();
+          }
+          
+          renderPackages(); 
+          renderCarriers(); 
+          showToast(`✓ ${r.package.orderRef || tracking.slice(-8)}`, 'success'); 
+          playSound('success');
+        } else if (r.error === 'NO_ENCONTRADO' || r.error === 'NO_VERIFICADO') { 
+          showSearchModal(tracking, r.message); 
+          playSound('error');
+        } else if (r.error === 'TRANSPORTISTA_INCORRECTO') { 
+          showModal('🚫', `PAQUETE DE ${r.detectedCarrier}`, r.message); 
+          playSound('error'); 
+          if (navigator.vibrate) navigator.vibrate([200,100,200]);
+        } else if (r.error === 'DUPLICADO') { 
+          showToast('⚠️ Ya escaneado', 'warning');
+        } else { 
+          showModal('⚠️', 'Error', r.message || 'Error'); 
+          playSound('error'); 
+        }
       } catch { showToast('❌ Error de conexión', 'error'); }
       document.getElementById('scanInput').focus();
     }
@@ -375,23 +685,76 @@
     }
     
     async function deletePackage(t) {
-      try { await apiCall(`/session/${state.selectedCarrier}/package/${t}`, { method: 'DELETE' }); state.packages = state.packages.filter(p => p.tracking !== t); state.sessions[state.selectedCarrier] = state.packages.length; renderPackages(); renderCarriers(); showToast('Eliminado', 'warning'); } catch { showToast('Error', 'error'); }
+      try { 
+        await apiCall(`/session/${state.selectedCarrier}/package/${t}`, { method: 'DELETE' }); 
+        state.packages = state.packages.filter(p => p.tracking !== t);
+        
+        // Actualizar palet local
+        const pallets = state.activePallets[state.selectedCarrier] || [];
+        const pallet = pallets.find(p => p.id === state.currentPalletId);
+        if (pallet) {
+          pallet.packages = [...state.packages];
+        }
+        
+        renderPackages(); 
+        renderCarriers(); 
+        showToast('Eliminado', 'warning'); 
+      } catch { showToast('Error', 'error'); }
     }
     
     document.getElementById('closePalletBtn').addEventListener('click', async () => {
       if (state.packages.length === 0) return;
       try {
-        const r = await apiCall('/pallets', { method: 'POST', body: JSON.stringify({ carrier: state.selectedCarrier }) });
-        if (r.success) { showLabelModal(r.pallet); state.packages = []; state.sessions[state.selectedCarrier] = 0; renderPackages(); renderCarriers(); }
+        const r = await apiCall('/pallets', { 
+          method: 'POST', 
+          body: JSON.stringify({ 
+            carrier: state.selectedCarrier,
+            palletId: state.currentPalletId,
+            palletName: state.currentPalletName
+          }) 
+        });
+        if (r.success) { 
+          showLabelModal(r.pallet); 
+          
+          // Limpiar palet actual
+          state.packages = []; 
+          
+          // Eliminar palet de la lista activa
+          const pallets = state.activePallets[state.selectedCarrier] || [];
+          state.activePallets[state.selectedCarrier] = pallets.filter(p => p.id !== state.currentPalletId);
+          
+          // Limpiar selección
+          clearDevicePalletSelection(state.selectedCarrier);
+          state.currentPalletId = null;
+          state.currentPalletName = null;
+          
+          renderPackages(); 
+          renderCarriers();
+          
+          // Ocultar escáner y mostrar selector si hay más palets
+          document.getElementById('scannerSection').style.display = 'none';
+          document.getElementById('palletIndicator').style.display = 'none';
+        }
         else { showModal('⚠️', 'Error', r.error); }
       } catch { showModal('❌', 'Error', 'No se pudo crear'); }
     });
     
     document.getElementById('clearSessionBtn').addEventListener('click', async () => {
       if (state.packages.length === 0) return;
-      if (confirm(`¿Limpiar ${state.packages.length} paquetes?`)) {
+      if (confirm(`¿Limpiar ${state.packages.length} paquetes del palet "${state.currentPalletName}"?`)) {
         await apiCall(`/session/${state.selectedCarrier}`, { method: 'DELETE' });
-        state.packages = []; state.sessions[state.selectedCarrier] = 0; renderPackages(); renderCarriers(); showToast('Limpiado', 'warning');
+        state.packages = [];
+        
+        // Actualizar palet local
+        const pallets = state.activePallets[state.selectedCarrier] || [];
+        const pallet = pallets.find(p => p.id === state.currentPalletId);
+        if (pallet) {
+          pallet.packages = [];
+        }
+        
+        renderPackages(); 
+        renderCarriers(); 
+        showToast('Limpiado', 'warning');
       }
     });
     
@@ -425,11 +788,12 @@
     function renderPalletCard(p, canSelect) {
       const time = new Date(p.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
       const pickupTime = p.pickedUpAt ? new Date(p.pickedUpAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : null;
+      const palletName = p.palletName ? ` - ${p.palletName}` : '';
       return `
         <div class="pallet-card" id="pallet-${p.id}">
           <div class="pallet-card-header">
             ${canSelect ? `<input type="checkbox" class="pallet-checkbox" ${state.selectedPallets.has(p.id) ? 'checked' : ''} onclick="event.stopPropagation(); togglePalletSelection('${p.id}')">` : '<span style="width:20px;">✓</span>'}
-            <span class="pallet-id">${p.id}</span>
+            <span class="pallet-id">${p.id}${palletName}</span>
             <span class="pallet-count">${p.totalPackages} envíos</span>
             <span class="pallet-time">🕐 ${time}</span>
             ${pickupTime ? `<span class="pallet-pickup-time">🚚 ${pickupTime}</span>` : ''}
@@ -571,7 +935,8 @@
       document.getElementById('modalOkBtn').onclick = () => { document.getElementById('modal').classList.remove('show'); if (onOk) onOk(); };
     }
     function showLabelModal(pallet) {
-      document.getElementById('labelModalMessage').textContent = `${pallet.id}\n${pallet.totalPackages} envíos`;
+      const palletName = pallet.palletName ? ` (${pallet.palletName})` : '';
+      document.getElementById('labelModalMessage').textContent = `${pallet.id}${palletName}\n${pallet.totalPackages} envíos`;
       document.getElementById('labelModal').classList.add('show');
       document.getElementById('printLabelBtn').onclick = () => window.open(`${API_URL}/api/pallets/${pallet.id}/label`, '_blank');
     }
@@ -591,7 +956,6 @@
         const r = await apiCall(`/search-client/${encodeURIComponent(name)}`);
         const container = document.getElementById('searchResults');
         if (r.count === 0) { container.innerHTML = '<div class="empty-state">No hay resultados</div>'; return; }
-        // Guardar resultados en variable global para acceso desde onclick
         window.searchResultsData = r.results;
         container.innerHTML = r.results.map((item, idx) => `<div class="search-result-item" onclick="selectSearchResultByIndex(${idx})"><div class="search-result-tracking">${item.tracking}</div><div class="search-result-info">📋 ${item.origin || 'Sin ref'} · ${item.client}</div></div>`).join('');
       } catch { showToast('Error', 'error'); }
@@ -603,8 +967,34 @@
     }
     async function selectSearchResult(tracking, pickingId, orderRef, clientName) {
       try {
-        const r = await apiCall('/add-tracking', { method: 'POST', body: JSON.stringify({ tracking, carrier: state.selectedCarrier, pickingId, orderRef, clientName }) });
-        if (r.success) { state.packages.push(r.package); state.sessions[state.selectedCarrier] = r.sessionCount; renderPackages(); renderCarriers(); closeSearchModal(); showToast(`✓ ${orderRef || tracking}`, 'success'); playSound('success'); }
+        const r = await apiCall('/add-tracking', { 
+          method: 'POST', 
+          body: JSON.stringify({ 
+            tracking, 
+            carrier: state.selectedCarrier, 
+            pickingId, 
+            orderRef, 
+            clientName,
+            palletId: state.currentPalletId,
+            palletName: state.currentPalletName
+          }) 
+        });
+        if (r.success) { 
+          state.packages.push(r.package); 
+          
+          // Actualizar palet local
+          const pallets = state.activePallets[state.selectedCarrier] || [];
+          const pallet = pallets.find(p => p.id === state.currentPalletId);
+          if (pallet) {
+            pallet.packages = [...state.packages];
+          }
+          
+          renderPackages(); 
+          renderCarriers(); 
+          closeSearchModal(); 
+          showToast(`✓ ${orderRef || tracking}`, 'success'); 
+          playSound('success'); 
+        }
         else { showModal('🚫', 'Error', r.message); playSound('error'); }
       } catch { showToast('Error', 'error'); }
     }
@@ -628,12 +1018,34 @@
     // UTILS
     function showToast(msg, type = 'success') { const t = document.getElementById('toast'); t.textContent = msg; t.className = `toast ${type} show`; setTimeout(() => t.classList.remove('show'), 2500); }
     function playSound(type) { try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.connect(gain); gain.connect(ctx.destination); if (type === 'success') { osc.frequency.value = 800; gain.gain.value = 0.3; osc.start(); setTimeout(() => osc.frequency.value = 1000, 100); setTimeout(() => osc.stop(), 200); } else { osc.frequency.value = 300; gain.gain.value = 0.3; osc.start(); setTimeout(() => osc.stop(), 300); } } catch {} }
-    function updateHeaderStats() { const total = Object.values(state.sessions).reduce((s, c) => s + c, 0); document.getElementById('headerStats').textContent = `${total} paquetes`; }
+    function updateHeaderStats() { 
+      let total = 0;
+      for (const carrier of CARRIERS) {
+        const pallets = state.activePallets[carrier] || [];
+        total += pallets.reduce((sum, p) => sum + p.packages.length, 0);
+      }
+      document.getElementById('headerStats').textContent = `${total} paquetes`; 
+    }
     
     // INIT
     async function init() {
-      try { const r = await apiCall('/sessions'); state.sessions = {}; for (const [c, d] of Object.entries(r.sessions || {})) { state.sessions[c] = d.count; } } catch {}
-      renderCarriers(); updateHeaderStats();
+      try { 
+        const r = await apiCall('/sessions'); 
+        state.sessions = {}; 
+        for (const [c, d] of Object.entries(r.sessions || {})) { 
+          state.sessions[c] = d.count;
+          // Convertir a formato de palets activos
+          if (d.count > 0 && d.packages) {
+            state.activePallets[c] = [{
+              id: 'legacy',
+              name: 'Palet activo',
+              packages: d.packages
+            }];
+          }
+        } 
+      } catch {}
+      renderCarriers(); 
+      updateHeaderStats();
     }
     init();
   </script>

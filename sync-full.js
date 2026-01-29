@@ -119,7 +119,7 @@ class OdooClient {
     console.log(`   🔍 Dominio: OUTs Shopify B2C con tracking, últimos ${daysBack} días`);
 
     const pickings = await this.execute('stock.picking', 'search_read', [domain], {
-      fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state'],
+      fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state', 'carrier_id'],
       order: 'scheduled_date desc',
       limit: 15000
     });
@@ -272,6 +272,7 @@ async function sync() {
     CTT: [],
     SPRING: [],
     CORREOS: [],
+    'CORREOS EXPRESS': [],
     GLS: [],
     INPOST: [],
     ASENDIA: [],
@@ -332,6 +333,7 @@ async function sync() {
       CTT: {},
       SPRING: {},
       CORREOS: {},
+      'CORREOS EXPRESS': {},
       GLS: {},
       INPOST: {},
       ASENDIA: {}
@@ -348,6 +350,10 @@ async function sync() {
     const odooTracking = picking.carrier_tracking_ref;
     if (!odooTracking) continue;
 
+    // Detectar CORREOS EXPRESS por carrier de Odoo (empieza por MI)
+    const odooCarrierName = picking.carrier_id ? picking.carrier_id[1] : '';
+    const isCorreosExpress = odooCarrierName.toUpperCase().startsWith('MI');
+
     const pickingData = {
       pickingId: picking.id,
       pickingName: picking.name,
@@ -356,6 +362,23 @@ async function sync() {
       odooTracking: odooTracking,
       state: picking.state
     };
+
+    // Si es CORREOS EXPRESS (carrier Odoo empieza por MI), añadir directamente sin Sendcloud
+    if (isCorreosExpress) {
+      const fullData = {
+        ...pickingData,
+        tracking: odooTracking,
+        carrier: 'CORREOS EXPRESS',
+        source: 'odoo-carrier'
+      };
+
+      trackingIndex.byTracking[odooTracking] = fullData;
+      trackingIndex.byOdooTracking[odooTracking.toUpperCase()] = fullData;
+      trackingIndex.byCarrier['CORREOS EXPRESS'][odooTracking] = fullData;
+      
+      matched++;
+      continue;
+    }
 
     // Primero intentar coincidencia exacta
     if (sendcloudByTracking[odooTracking]) {
