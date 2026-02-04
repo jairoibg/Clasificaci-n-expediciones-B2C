@@ -116,7 +116,7 @@ function findInTrackingIndex(tracking) {
   if (trackingIndex.byTracking && trackingIndex.byTracking[clean]) {
     return trackingIndex.byTracking[clean];
   }
-
+  
   // PASO 2: Match exacto en byOdooTracking - O(1)
   if (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[clean]) {
     return trackingIndex.byOdooTracking[clean];
@@ -136,7 +136,7 @@ function findInTrackingIndex(tracking) {
         if (odooTrack.length >= 7) {
           if (clean.endsWith(odooTrack)) {
             console.log("   🔍 Match CTT sufijo: termina con " + odooTrack);
-            return data;
+        return data;
           }
           if (clean.indexOf(odooTrack) !== -1) {
             console.log("   🔍 Match CTT contenido: contiene " + odooTrack);
@@ -250,7 +250,7 @@ function findInTrackingIndex(tracking) {
       }
     }
   }
-
+  
   return null;
 }
 
@@ -439,7 +439,7 @@ class OdooClient {
     if (numeros) patterns.push(...numeros);
     if (clean.length > 15 && /^\d+$/.test(clean)) {
       for (let len = Math.min(clean.length - 2, 15); len >= 7; len--) patterns.push(clean.slice(-len));
-    }
+      }
     if (clean.length > 15) {
       for (let len = 15; len >= 10; len--) patterns.push(clean.substring(0, len));
     }
@@ -473,6 +473,25 @@ class OdooClient {
   async updateExpeditionDate(pickingIds, date) {
     return await this.execute('stock.picking', 'write', [pickingIds, { manual_expedition_date: date }]);
   }
+}
+
+// ============================================
+// EXTRACCIÓN DE PATRONES ESPECIALES
+// ============================================
+function extractSpecialPatterns(scanned) {
+  const clean = scanned.toUpperCase().trim();
+  const result = { patterns: [clean], detectedCarrier: null };
+  
+  // GLS QR: Extraer tracking de formato ...ESxxxxxxxxCCE...
+  const glsMatch = clean.match(/ES([A-Z][0-9]{2}[A-Z0-9]{5})[A-Z]{2,3}/);
+  if (glsMatch) {
+    result.patterns.push(glsMatch[1]);
+    result.detectedCarrier = 'GLS';
+    console.log('   🔍 Patrón GLS extraído: ' + glsMatch[1]);
+  }
+  
+  result.patterns = [...new Set(result.patterns)];
+  return result;
 }
 
 const odooClient = new OdooClient(CONFIG.odoo);
@@ -511,6 +530,36 @@ const sendcloudClient = new SendcloudClient(CONFIG.sendcloud);
 async function getCarrierFromTracking(tracking) {
   const startTime = Date.now();
   const clean = tracking.trim().toUpperCase();
+  
+  // Extraer patrones especiales (GLS QR)
+  const extracted = extractSpecialPatterns(clean);
+  const glsPattern = extracted.detectedCarrier === 'GLS' && extracted.patterns.length > 1 ? extracted.patterns[1] : null;
+  
+  // Si es GLS con patrón extraído, buscar primero el patrón
+  if (glsPattern) {
+    // Buscar patrón GLS en índice
+    const indexResult = findInTrackingIndex(glsPattern);
+    if (indexResult && indexResult.orderRef) {
+      const elapsed = Date.now() - startTime;
+      console.log('   ⚡ Índice GLS: ' + glsPattern + ' (' + elapsed + 'ms)');
+      return {
+        carrier: 'GLS',
+        picking: { id: indexResult.pickingId, name: indexResult.pickingName, carrier_tracking_ref: indexResult.odooTracking, origin: indexResult.orderRef, partner_id: [null, indexResult.clientName] },
+        source: 'index (patrón: ' + glsPattern + ')', elapsed
+      };
+    }
+    
+    // Buscar patrón GLS en Odoo
+    console.log('   🔍 Buscando en Odoo: ' + glsPattern);
+    const picking = await odooClient.findPickingByTracking(glsPattern);
+    if (picking) {
+      const elapsed = Date.now() - startTime;
+      console.log('   ✅ GLS encontrado en Odoo: ' + (picking.origin || 'sin pedido'));
+      return { carrier: 'GLS', picking, source: 'odoo (patrón: ' + glsPattern + ')', elapsed };
+    }
+  }
+  
+  // FLUJO NORMAL PARA TODOS LOS TRANSPORTISTAS
   
   // 1. Índice pre-calculado
   const indexResult = findInTrackingIndex(clean);
@@ -941,7 +990,7 @@ app.get('/api/manifest/:pickupId', (req, res) => {
   let signatureSection = '';
   if (isSigned) {
     signatureSection = '<div class="signature-section signed"><h3>MANIFIESTO FIRMADO</h3><p>Firmado el ' + new Date(manifest.signedAt).toLocaleString('es-ES') + '</p><div class="signature-grid"><div class="signature-box"><div class="label">ENTREGADO POR (Almacén)</div><img src="' + manifest.warehouseSignature + '" class="signature-img"><div class="signer-name">' + (manifest.warehouseName||'') + '</div></div><div class="signature-box"><div class="label">RECIBIDO POR (Transportista)</div><img src="' + manifest.driverSignature + '" class="signature-img"><div class="signer-name">' + (manifest.driverName||'') + '</div><div class="signer-dni">DNI: ' + (manifest.driverDNI||'') + '</div></div></div></div>';
-  } else {
+        } else {
     signatureSection = '<div class="signature-section" id="signatureSection"><h3>CONFORMIDAD DE ENTREGA</h3><p style="font-size:12px;color:#666;margin:10px 0">El transportista confirma haber recibido los palets y envíos detallados.</p><div class="signature-grid"><div class="signature-box"><div class="label">ENTREGADO POR (Almacén)</div><canvas id="warehouseSignature" class="signature-canvas"></canvas><button class="clear-btn" onclick="clearSignature(\'warehouseSignature\')">Limpiar</button><input type="text" id="warehouseName" placeholder="Nombre" class="signer-input"></div><div class="signature-box"><div class="label">RECIBIDO POR (Transportista)</div><canvas id="driverSignature" class="signature-canvas"></canvas><button class="clear-btn" onclick="clearSignature(\'driverSignature\')">Limpiar</button><input type="text" id="driverName" placeholder="Nombre" class="signer-input"><input type="text" id="driverDNI" placeholder="DNI" class="signer-input"></div></div><button id="signBtn" class="sign-btn" onclick="signManifest()">FIRMAR Y GUARDAR MANIFIESTO</button></div>';
   }
   
