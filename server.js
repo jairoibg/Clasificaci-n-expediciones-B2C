@@ -620,6 +620,21 @@ const FRONTEND_DIR = path.join(__dirname, 'public');
 app.use(express.static(FRONTEND_DIR));
 app.get('/', (req, res) => res.sendFile(path.join(FRONTEND_DIR, 'index.html')));
 
+// ---- HELPER: detectar transportista por nombre carrier Odoo ----
+function detectCarrierFromOdooName(carrierName) {
+  if (!carrierName) return null;
+  const n = carrierName.toUpperCase();
+  if (n.startsWith('MI'))                                    return 'CORREOS EXPRESS';
+  if (n.includes('CORREOS EXPRESS') || n.includes('CEX'))   return 'CORREOS EXPRESS';
+  if (n.includes('CORREOS') || n.includes('ORDINARIO'))     return 'CORREOS';
+  if (n.includes('CTT'))                                     return 'CTT';
+  if (n.includes('GLS'))                                     return 'GLS';
+  if (n.includes('INPOST') || n.includes('IN POST'))        return 'INPOST';
+  if (n.includes('SPRING'))                                  return 'SPRING';
+  if (n.includes('ASENDIA'))                                 return 'ASENDIA';
+  return null;
+}
+
 // ============================================
 // ENDPOINTS API
 // ============================================
@@ -1040,6 +1055,125 @@ app.get('/api/stats', (req, res) => {
     totalPickups: todayPickups.length, signedManifests: todayPickups.filter(p => database.manifests[p.id]).length,
     index: { loaded: !!trackingIndex.lastSync, matched: trackingIndex.matched, ageMinutes: indexAge }
   });
+});
+
+// ============================================
+// ENDPOINT INFORME DE COBERTURA
+// ============================================
+app.get('/api/odoo-outs', async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) return res.status(400).json({ error: 'Parámetros from y to requeridos (YYYY-MM-DD)' });
+
+  const dateFrom = from + ' 00:00:00';
+  const dateTo   = to   + ' 23:59:59';
+
+  console.log('\n📊 ODOO-OUTS B2C: ' + from + ' → ' + to);
+
+  try {
+    const domain = [
+      '&',
+        '|',
+          ['location_id', 'ilike', 'salida'],
+          ['location_id', 'ilike', 'empaquetad'],
+        '&', ['state', '=', 'done'],
+        '&', ['sale_id.team_id', 'ilike', 'shopify'],
+        '&', ['location_dest_id', 'ilike', 'customers'],
+        '&', ['date_done', '!=', false],
+        '&', ['date_done', '>=', dateFrom],
+              ['date_done', '<=', dateTo]
+    ];
+
+    const pickings = await odooClient.execute(
+      'stock.picking', 'search_read',
+      [domain],
+      {
+        fields: ['id', 'name', 'carrier_tracking_ref', 'carrier_id', 'partner_id', 'origin', 'date_done', 'state'],
+        order: 'date_done desc',
+        limit: 50000
+      }
+    );
+
+    console.log('   📦 ' + pickings.length + ' OUTs B2C encontrados en Odoo');
+
+    const scannedTrackings = new Set();
+    for (const pallet of Object.values(database.pallets)) {
+      for (const pkg of (pallet.packages || [])) {
+        if (pkg.tracking) scannedTrackings.add(pkg.tracking.toUpperCase().trim());
+      }
+    }
+    for (const carrier of CARRIERS) {
+      const session = database.activeSessions[carrier];
+      if (session && session.packages) {
+        for (const pkg of session.packages) {
+          if (pkg.tracking) scannedTrackings.add(pkg.tracking.toUpperCase().trim());
+        }
+      }
+    }
+
+    console.log('   🔍 Trackings en app: ' + scannedTrackings.size);
+
+    const byCarrier = {};
+    for (const c of [...CARRIERS, 'DESCONOCIDO']) {
+      byCarrier[c] = { total: 0, scanned: 0, missing: 0, pct: 0, records: [] };
+    }
+
+    for (const picking of pickings) {
+      const odooCarrierName = picking.carrier_id ? picking.carrier_id[1] : '';
+      let carrier = detectCarrierFromOdooName(odooCarrierName);
+
+      if (!carrier && picking.carrier_tracking_ref) {
+        const idx = findInTrackingIndex(picking.carrier_tracking_ref.trim());
+        if (idx && idx.carrier) carrier = idx.carrier;
+      }
+
+      const key = carrier || 'DESCONOCIDO';
+      if (!byCarrier[key]) byCarrier[key] = { total: 0, scanned: 0, missing: 0, pct: 0, records: [] };
+
+      const tracking  = (picking.carrier_tracking_ref || '').toUpperCase().trim();
+      const isScanned = tracking.length > 0 && scannedTrackings.has(tracking);
+
+      byCarrier[key].total++;
+      if (isScanned) byCarrier[key].scanned++;
+      byCarrier[key].records.push({
+        id:          picking.id,
+        name:        picking.name,
+        tracking:    picking.carrier_tracking_ref || '',
+        carrier:     key,
+        odooCarrier: odooCarrierName,
+        client:      picking.partner_id ? picking.partner_id[1] : '',
+        origin:      picking.origin || '',
+        dateDone:    picking.date_done || '',
+        scanned:     isScanned
+      });
+    }
+
+    const summary = {};
+    for (const [c, data] of Object.entries(byCarrier)) {
+      if (data.total === 0 && c === 'DESCONOCIDO') continue;
+      data.missing = data.total - data.scanned;
+      data.pct     = data.total > 0 ? Math.min(100, (data.scanned / data.total) * 100) : 0;
+      summary[c]   = data;
+    }
+
+    const totalAll     = pickings.length;
+    const totalScanned = Object.values(summary).reduce((s, d) => s + d.scanned, 0);
+
+    console.log('   ✅ ' + totalScanned + ' / ' + totalAll + ' escaneados (' +
+      (totalAll > 0 ? ((totalScanned / totalAll) * 100).toFixed(1) : 0) + '%)');
+
+    res.json({
+      from, to,
+      total:    totalAll,
+      scanned:  totalScanned,
+      missing:  totalAll - totalScanned,
+      coverage: totalAll > 0 ? Math.min(100, (totalScanned / totalAll) * 100) : 0,
+      byCarrier: summary
+    });
+
+  } catch (err) {
+    console.error('   ❌ Error:', err.message);
+    res.status(500).json({ error: 'Error consultando Odoo: ' + err.message });
+  }
 });
 
 // ============================================
