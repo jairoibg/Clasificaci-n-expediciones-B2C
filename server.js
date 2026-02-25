@@ -1087,7 +1087,7 @@ app.get('/api/odoo-outs', async (req, res) => {
       'stock.picking', 'search_read',
       [domain],
       {
-        fields: ['id', 'name', 'carrier_tracking_ref', 'carrier_id', 'partner_id', 'origin', 'date_done', 'state'],
+        fields: ['id', 'name', 'carrier_tracking_ref', 'carrier_id', 'partner_id', 'origin', 'date_done', 'state', 'sale_id'],
         order: 'date_done desc',
         limit: 50000
       }
@@ -1141,6 +1141,7 @@ app.get('/api/odoo-outs', async (req, res) => {
         carrier:     key,
         odooCarrier: odooCarrierName,
         client:      picking.partner_id ? picking.partner_id[1] : '',
+        saleOrder:   picking.sale_id   ? picking.sale_id[1]   : '',
         origin:      picking.origin || '',
         dateDone:    picking.date_done || '',
         scanned:     isScanned
