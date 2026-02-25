@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Informe de Cobertura · Expediciones</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #1a1a24;
+    --border: #2a2a3a;
+    --accent: #6ee7b7;
+    --accent2: #f59e0b;
+    --accent3: #f87171;
+    --accent4: #60a5fa;
+    --text: #e8e8f0;
+    --muted: #6b6b80;
+    --font-head: 'Syne', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-head); min-height: 100vh; overflow-x: hidden; }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: linear-gradient(rgba(110,231,183,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(110,231,183,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none; z-index: 0;
+  }
+  .wrap { position: relative; z-index: 1; max-width: 1320px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  /* HEADER */
+  .header { margin-bottom: 36px; }
+  .eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.2em; color: var(--accent); text-transform: uppercase; margin-bottom: 8px; }
+  h1 { font-size: clamp(26px, 3.5vw, 44px); font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .subtitle { margin-top: 6px; color: var(--muted); font-size: 14px; }
+
+  /* CONFIG */
+  .config-panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px 24px; display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.15em; color: var(--muted); text-transform: uppercase; }
+  .field input, .field select {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-family: var(--font-mono); font-size: 13px;
+    padding: 10px 13px; outline: none; transition: border-color .2s; min-width: 140px; height: 40px;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .btn {
+    background: var(--accent); color: #000; border: none; border-radius: 8px;
+    font-family: var(--font-head); font-weight: 700; font-size: 13px;
+    padding: 0 22px; cursor: pointer; letter-spacing: 0.04em;
+    transition: opacity .15s, transform .1s; white-space: nowrap;
+    height: 40px; display: inline-flex; align-items: center; gap: 7px;
+  }
+  .btn:hover { opacity: 0.85; } .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+  .btn-ghost { background: transparent; color: var(--accent); border: 1px solid rgba(110,231,183,0.3); }
+  .btn-ghost:hover { background: rgba(110,231,183,0.07); }
+
+  /* STATUS */
+  .status-bar { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); margin-bottom: 32px; min-height: 20px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .dot.ok    { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .dot.loading { background: var(--accent2); animation: blink 1s infinite; }
+  .dot.error { background: var(--accent3); }
+  @keyframes blink { 0%,100%{opacity:1}50%{opacity:.25} }
+
+  /* PROGRESS */
+  .progress-bar-wrap { width: 100%; height: 3px; background: var(--border); border-radius: 2px; margin-bottom: 32px; overflow: hidden; display: none; }
+  .progress-bar-fill { height: 100%; width: 0%; background: var(--accent); border-radius: 2px; transition: width 0.4s ease; }
+
+  /* KPI */
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin-bottom: 32px; }
+  .kpi-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px 24px; position: relative; overflow: hidden;
+  }
+  .kpi-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--kc, var(--accent)); }
+  .kpi-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.15em; color: var(--muted); text-transform: uppercase; margin-bottom: 10px; }
+  .kpi-value { font-size: 38px; font-weight: 800; line-height: 1; color: var(--kc, var(--accent)); letter-spacing: -0.03em; font-family: var(--font-mono); }
+  .kpi-sub { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 7px; }
+
+  /* GAUGE */
+  .gauge-section { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 32px 24px 28px; margin-bottom: 32px; display: none; }
+
+  /* SECTION TITLE */
+  .section-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .section-title small { font-size: 11px; font-weight: 400; color: var(--muted); font-family: var(--font-mono); }
+
+  /* CARRIER CARDS */
+  .carrier-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-bottom: 36px; }
+  .carrier-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; transition: transform .15s; }
+  .carrier-card:hover { transform: translateY(-2px); }
+  .carrier-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .carrier-name { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; display: flex; align-items: center; gap: 8px; text-transform: uppercase; }
+  .cdot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .pct-big { font-family: var(--font-mono); font-size: 24px; font-weight: 700; letter-spacing: -0.03em; }
+  .progress-track { width: 100%; height: 5px; background: var(--surface2); border-radius: 3px; overflow: hidden; margin: 8px 0 12px; }
+  .progress-fill { height: 100%; border-radius: 3px; transition: width 0.9s cubic-bezier(.4,0,.2,1); }
+  .carrier-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .stat-box { background: var(--surface2); border-radius: 8px; padding: 9px; text-align: center; }
+  .stat-box .val { font-family: var(--font-mono); font-size: 18px; font-weight: 700; line-height: 1; }
+  .stat-box .lbl { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; margin-top: 3px; }
+
+  /* CHART */
+  .chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; margin-bottom: 36px; display: none; }
+  .chart-scroll { overflow-x: auto; }
+
+  /* TABLE */
+  .table-section { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 36px; display: none; }
+  .table-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .table-title { font-size: 14px; font-weight: 700; }
+  .table-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .table-filters input, .table-filters select {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: var(--font-mono); font-size: 12px;
+    padding: 6px 10px; outline: none; transition: border-color .2s; height: 34px;
+  }
+  .table-filters input:focus, .table-filters select:focus { border-color: var(--accent); }
+  .table-scroll { overflow-x: auto; max-height: 440px; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase;
+    color: var(--muted); padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--border);
+    background: var(--surface2); white-space: nowrap; position: sticky; top: 0; z-index: 2;
+    cursor: pointer; user-select: none; transition: color .15s;
+  }
+  thead th:hover { color: var(--text); }
+  thead th.asc::after  { content: ' ↑'; color: var(--accent); }
+  thead th.desc::after { content: ' ↓'; color: var(--accent); }
+  tbody td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid rgba(42,42,58,0.5); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: rgba(255,255,255,.02); }
+  .mono { font-family: var(--font-mono); font-size: 12px; }
+  .pill { display: inline-block; font-family: var(--font-mono); font-size: 10px; padding: 3px 8px; border-radius: 4px; white-space: nowrap; }
+  .p-green { background: rgba(110,231,183,.1); color: var(--accent); }
+  .p-red   { background: rgba(248,113,113,.1); color: var(--accent3); }
+
+  /* PAGINATION */
+  .pagination { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-top: 1px solid var(--border); font-family: var(--font-mono); font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px; }
+  .pag-btns { display: flex; gap: 5px; flex-wrap: wrap; }
+  .pag-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: var(--font-mono); font-size: 11px; padding: 5px 10px; cursor: pointer; transition: border-color .15s; }
+  .pag-btn:hover { border-color: var(--accent); }
+  .pag-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .pag-btn.active { border-color: var(--accent); color: var(--accent); }
+
+  /* MISC */
+  .empty-state { text-align: center; padding: 56px 24px; color: var(--muted); }
+  .empty-state .icon { font-size: 34px; margin-bottom: 10px; }
+  .empty-state p { font-size: 13px; }
+  .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid rgba(110,231,183,.2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  [data-tip] { position: relative; cursor: help; }
+  [data-tip]::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-family: var(--font-mono); font-size: 11px; padding: 6px 10px; border-radius: 6px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .15s; z-index: 99; }
+  [data-tip]:hover::after { opacity: 1; }
+  @media (max-width: 640px) {
+    .config-panel { flex-direction: column; align-items: stretch; }
+    .carrier-grid { grid-template-columns: 1fr; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .table-header { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <div class="eyebrow">Illice Brands Group · White Division</div>
+    <h1>Informe de <span>Cobertura</span> de Lecturas</h1>
+    <p class="subtitle">OUTs B2C Shopify validados en Odoo (date_done) vs paquetes escaneados en la app</p>
+  </div>
+
+  <div class="config-panel">
+    <div class="field">
+      <label>Período rápido</label>
+      <select id="quickPeriod">
+        <option value="">Personalizado</option>
+        <option value="0">Hoy</option>
+        <option value="1">Ayer</option>
+        <option value="7" selected>Últimos 7 días</option>
+        <option value="14">Últimas 2 semanas</option>
+        <option value="30">Últimos 30 días</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Fecha inicio</label>
+      <input type="date" id="dateFrom">
+    </div>
+    <div class="field">
+      <label>Fecha fin</label>
+      <input type="date" id="dateTo">
+    </div>
+    <button class="btn" id="loadBtn" onclick="loadReport()">
+      <span id="btnIcon">▶</span><span id="btnText">Cargar informe</span>
+    </button>
+    <button class="btn btn-ghost" id="exportBtn" onclick="exportCSV()" style="display:none;">
+      ↓ Exportar CSV
+    </button>
+  </div>
+
+  <div class="progress-bar-wrap" id="progressWrap">
+    <div class="progress-bar-fill" id="progressFill"></div>
+  </div>
+
+  <div class="status-bar">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">Conectando con la API...</span>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-row">
+    <div class="kpi-card" style="--kc:var(--text)">
+      <div class="kpi-label">OUTs en Odoo (B2C)</div>
+      <div class="kpi-value" id="kpiTotal">—</div>
+      <div class="kpi-sub">albaranes validados en período</div>
+    </div>
+    <div class="kpi-card" style="--kc:var(--accent4)">
+      <div class="kpi-label">Escaneados en app</div>
+      <div class="kpi-value" id="kpiScanned">—</div>
+      <div class="kpi-sub">paquetes leídos en la app</div>
+    </div>
+    <div class="kpi-card" style="--kc:var(--accent3)">
+      <div class="kpi-label" data-tip="OUTs de Odoo no encontrados en ningún palet ni sesión activa">Sin escanear</div>
+      <div class="kpi-value" id="kpiMissing">—</div>
+      <div class="kpi-sub">no registrados en app</div>
+    </div>
+    <div class="kpi-card" style="--kc:var(--accent2)" id="kpiCovCard">
+      <div class="kpi-label" data-tip="(Escaneados / OUTs Odoo) × 100">Cobertura global</div>
+      <div class="kpi-value" id="kpiCoverage">—</div>
+      <div class="kpi-sub" id="kpiLabel">—</div>
+    </div>
+  </div>
+
+  <!-- Gauge + leyenda -->
+  <div class="gauge-section" id="gaugeSection">
+    <div style="display:flex;justify-content:center;align-items:center;gap:56px;flex-wrap:wrap;">
+      <canvas id="gaugeCanvas" width="260" height="145"></canvas>
+      <div id="gaugeLegend" style="display:flex;flex-direction:column;gap:10px;"></div>
+    </div>
+  </div>
+
+  <!-- Carrier cards -->
+  <div class="section-title">Desglose por transportista</div>
+  <div class="carrier-grid" id="carrierGrid">
+    <div class="empty-state" style="grid-column:1/-1">
+      <div class="icon">📦</div>
+      <p>Selecciona un período y pulsa "Cargar informe"</p>
+    </div>
+  </div>
+
+  <!-- Daily chart -->
+  <div class="chart-wrap" id="chartWrap">
+    <div class="section-title">Evolución diaria <small>— OUTs Odoo vs escaneados en app</small></div>
+    <div class="chart-scroll">
+      <svg id="dailySvg" height="200"></svg>
+    </div>
+  </div>
+
+  <!-- Tabla completa -->
+  <div class="table-section" id="tableSection">
+    <div class="table-header">
+      <div>
+        <div class="table-title">Todos los OUTs del período</div>
+        <div id="tableSubtitle" style="font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:3px;"></div>
+      </div>
+      <div class="table-filters">
+        <input type="text" id="filterText" placeholder="Tracking / pedido / cliente..." style="min-width:220px;" oninput="filterTable()">
+        <select id="filterCarrier" onchange="filterTable()">
+          <option value="">Todos los transportistas</option>
+        </select>
+        <select id="filterStatus" onchange="filterTable()">
+          <option value="">Todos los estados</option>
+          <option value="scanned">✅ Escaneado</option>
+          <option value="missing">❌ Sin escanear</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortBy('carrier')"   id="th-carrier">Transportista</th>
+            <th onclick="sortBy('name')"      id="th-name">Albarán</th>
+            <th onclick="sortBy('tracking')"  id="th-tracking">Tracking</th>
+            <th onclick="sortBy('origin')"    id="th-origin">Pedido</th>
+            <th onclick="sortBy('client')"    id="th-client">Cliente</th>
+            <th onclick="sortBy('dateDone')"  id="th-dateDone">Validado en Odoo</th>
+            <th onclick="sortBy('scanned')"   id="th-scanned">Estado app</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+    <div class="pagination" id="paginationRow">
+      <span id="pagInfo"></span>
+      <div class="pag-btns" id="pagBtns"></div>
+    </div>
+  </div>
+
+</div>
+<script>
+// ================================================================
+// CONFIG — auto-detecta si es local o Railway
+// ================================================================
+const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? 'http://localhost:3001'
+  : location.origin;
+
+const CARRIERS = ['ASENDIA','CORREOS','CORREOS EXPRESS','CTT','GLS','INPOST','SPRING'];
+const CCOLOR = {
+  'ASENDIA':'#a78bfa','CORREOS':'#f59e0b','CORREOS EXPRESS':'#f87171',
+  'CTT':'#60a5fa','GLS':'#6ee7b7','INPOST':'#fb923c','SPRING':'#e879f9','DESCONOCIDO':'#6b6b80'
+};
+
+// ================================================================
+// ESTADO
+// ================================================================
+let allRecs     = [];
+let filteredRec = [];
+let sortCol = 'dateDone', sortDir = 'desc';
+let curPage = 1;
+const PAGE = 50;
+let report  = null;
+
+// ================================================================
+// INIT
+// ================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  setQuick(7);
+  document.getElementById('quickPeriod').addEventListener('change', e => {
+    if (e.target.value !== '') setQuick(parseInt(e.target.value));
+  });
+  checkAPI();
+});
+
+function fmt(d)    { return d.toISOString().split('T')[0]; }
+function setQuick(n) {
+  const t = new Date(), f = new Date(t);
+  if (n > 0) f.setDate(f.getDate() - n);
+  document.getElementById('dateFrom').value = fmt(f);
+  document.getElementById('dateTo').value   = fmt(t);
+}
+function fmtDT(s) {
+  if (!s) return '—';
+  const d = new Date((s + '').replace(' ','T') + (s.includes('T')||s.includes('Z') ? '' : 'Z'));
+  return isNaN(d) ? s : d.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'})
+                      + ' ' + d.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+}
+async function checkAPI() {
+  try {
+    const r = await fetch(API_BASE + '/api/health', { signal: AbortSignal.timeout(4000) });
+    setStatus(r.ok ? 'ok' : 'error', r.ok ? 'API conectada · listo' : 'API no responde');
+  } catch { setStatus('error', 'No se puede conectar con la API'); }
+}
+function setStatus(s, t) {
+  document.getElementById('statusDot').className  = 'dot ' + s;
+  document.getElementById('statusText').textContent = t;
+}
+function setProgress(p) {
+  const w = document.getElementById('progressWrap');
+  if (p === null) { w.style.display = 'none'; return; }
+  w.style.display = 'block';
+  document.getElementById('progressFill').style.width = p + '%';
+}
+
+// ================================================================
+// CARGA
+// ================================================================
+async function loadReport() {
+  const from = document.getElementById('dateFrom').value;
+  const to   = document.getElementById('dateTo').value;
+  if (!from || !to)  { alert('Selecciona las fechas'); return; }
+  if (from > to)     { alert('La fecha de inicio no puede ser posterior al fin'); return; }
+
+  const btn = document.getElementById('loadBtn');
+  btn.disabled = true;
+  document.getElementById('btnIcon').innerHTML = '<span class="spinner"></span>';
+  document.getElementById('btnText').textContent = 'Consultando Odoo...';
+  setStatus('loading', 'Consultando OUTs B2C en Odoo (' + from + ' → ' + to + ')...');
+  setProgress(30);
+
+  try {
+    const data = await apiFetch('/api/odoo-outs?from=' + from + '&to=' + to);
+    setProgress(90);
+    report  = { ...data, from, to };
+    allRecs = [];
+    for (const info of Object.values(data.byCarrier || {})) {
+      allRecs.push(...(info.records || []));
+    }
+    renderAll(data);
+    setStatus('ok', 'Informe cargado · ' + allRecs.length.toLocaleString('es-ES') + ' OUTs · ' + new Date().toLocaleTimeString('es-ES'));
+    document.getElementById('exportBtn').style.display = 'inline-flex';
+    setProgress(null);
+  } catch(e) {
+    setStatus('error', 'Error: ' + e.message);
+    setProgress(null);
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    document.getElementById('btnIcon').textContent  = '▶';
+    document.getElementById('btnText').textContent  = 'Cargar informe';
+  }
+}
+async function apiFetch(path) {
+  const r = await fetch(API_BASE + path);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+// ================================================================
+// COLORES / ETIQUETAS
+// ================================================================
+function covColor(p) { return p >= 95 ? 'var(--accent)' : p >= 80 ? 'var(--accent2)' : 'var(--accent3)'; }
+function covLabel(p) {
+  if (p >= 95) return '✅ Cobertura excelente';
+  if (p >= 80) return '🟡 Cobertura buena';
+  if (p >= 60) return '🟠 Cobertura regular';
+  return '🔴 Cobertura baja — revisar';
+}
+
+// ================================================================
+// RENDER PRINCIPAL
+// ================================================================
+function renderAll(data) {
+  // KPIs
+  const cc = covColor(data.coverage);
+  document.getElementById('kpiTotal').textContent    = data.total.toLocaleString('es-ES');
+  document.getElementById('kpiScanned').textContent  = data.scanned.toLocaleString('es-ES');
+  document.getElementById('kpiMissing').textContent  = data.missing.toLocaleString('es-ES');
+  document.getElementById('kpiMissing').style.color  = data.missing > 0 ? 'var(--accent3)' : 'var(--accent)';
+  document.getElementById('kpiCoverage').textContent = data.coverage.toFixed(1) + '%';
+  document.getElementById('kpiCoverage').style.color = cc;
+  document.getElementById('kpiLabel').textContent    = covLabel(data.coverage);
+  document.getElementById('kpiCovCard').style.setProperty('--kc', cc);
+
+  drawGauge(data.coverage, data.byCarrier);
+  renderCards(data.byCarrier);
+  renderChart();
+  renderTable();
+}
+
+// ---- GAUGE ----
+function drawGauge(pct, byCarrier) {
+  const c = document.getElementById('gaugeCanvas');
+  const x = c.getContext('2d');
+  const W=260, H=145, cx=130, cy=128, r=100;
+  c.width=W; c.height=H;
+  x.clearRect(0,0,W,H);
+
+  // bg
+  x.beginPath(); x.arc(cx,cy,r,Math.PI,2*Math.PI);
+  x.lineWidth=14; x.strokeStyle='#1a1a24'; x.lineCap='round'; x.stroke();
+
+  // fill
+  const color = covColor(pct);
+  const g = x.createLinearGradient(cx-r,cy,cx+r,cy);
+  g.addColorStop(0, color+'40'); g.addColorStop(1, color);
+  x.beginPath(); x.arc(cx,cy,r,Math.PI, Math.PI+(pct/100)*Math.PI);
+  x.lineWidth=14; x.strokeStyle=g; x.lineCap='round'; x.stroke();
+
+  // text
+  x.fillStyle=color; x.font='bold 34px JetBrains Mono, monospace';
+  x.textAlign='center'; x.textBaseline='bottom';
+  x.fillText(pct.toFixed(1)+'%', cx, cy-4);
+  x.fillStyle='#6b6b80'; x.font='11px Syne, sans-serif';
+  x.fillText('cobertura global', cx, cy+13);
+
+  // legend
+  const leg = document.getElementById('gaugeLegend');
+  leg.innerHTML = Object.entries(byCarrier)
+    .filter(([,d])=>d.total>0)
+    .sort((a,b)=>b[1].total-a[1].total)
+    .map(([c,d])=>`
+      <div style="display:flex;align-items:center;gap:10px;font-family:var(--font-mono);font-size:12px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${CCOLOR[c]||'#888'};flex-shrink:0;"></span>
+        <span style="min-width:150px;">${c}</span>
+        <span style="color:${covColor(d.pct)};font-weight:700;min-width:48px;">${d.pct.toFixed(1)}%</span>
+        <span style="color:var(--muted);">${d.scanned}/${d.total}</span>
+      </div>`).join('');
+
+  document.getElementById('gaugeSection').style.display='block';
+}
+
+// ---- CARRIER CARDS ----
+function renderCards(byCarrier) {
+  const grid = document.getElementById('carrierGrid');
+  const active = Object.entries(byCarrier).filter(([c,d])=>d.total>0&&c!=='DESCONOCIDO')
+                                          .sort((a,b)=>b[1].total-a[1].total);
+  if (!active.length) {
+    grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="icon">📭</div><p>Sin OUTs en el período</p></div>';
+    return;
+  }
+  grid.innerHTML = active.map(([carrier,d])=>{
+    const col = CCOLOR[carrier]||'#888';
+    const pc  = covColor(d.pct);
+    return `<div class="carrier-card" style="border-color:${col}22">
+      <div class="carrier-head">
+        <div class="carrier-name"><span class="cdot" style="background:${col}"></span>${carrier}</div>
+        <div class="pct-big" style="color:${pc}">${d.pct.toFixed(1)}%</div>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="width:${d.pct}%;background:${col}"></div></div>
+      <div class="carrier-stats">
+        <div class="stat-box"><div class="val" style="color:${col}">${d.scanned.toLocaleString('es-ES')}</div><div class="lbl">Escaneados</div></div>
+        <div class="stat-box"><div class="val">${d.total.toLocaleString('es-ES')}</div><div class="lbl">Total Odoo</div></div>
+        <div class="stat-box"><div class="val" style="color:${d.missing>0?'var(--accent3)':'var(--accent)'}">${d.missing.toLocaleString('es-ES')}</div><div class="lbl">Sin leer</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ---- DAILY CHART ----
+function renderChart() {
+  if (!allRecs.length) return;
+  const from = document.getElementById('dateFrom').value;
+  const to   = document.getElementById('dateTo').value;
+
+  const days=[], cur=new Date(from), end=new Date(to);
+  while(cur<=end){ days.push(fmt(cur)); cur.setDate(cur.getDate()+1); }
+
+  const totalDay={}, scannedDay={};
+  for(const r of allRecs){
+    const d=(r.dateDone||'').split(' ')[0].split('T')[0]; if(!d) continue;
+    totalDay[d]   = (totalDay[d]||0)+1;
+    if(r.scanned) scannedDay[d]=(scannedDay[d]||0)+1;
+  }
+
+  const maxV = Math.max(1,...days.map(d=>totalDay[d]||0));
+  const W    = Math.max(560, days.length*50+80);
+  const H=190, pL=44, pR=20, pT=16, pB=32, iW=W-pL-pR, iH=H-pT-pB;
+  const xS=i=>pL+(days.length<=1?iW/2:(i/(days.length-1))*iW);
+  const yS=v=>pT+iH-(v/maxV)*iH;
+
+  const svg=document.getElementById('dailySvg');
+  svg.setAttribute('width',W); svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+
+  function buildPaths(vals){
+    const pts=days.map((d,i)=>({x:xS(i),y:yS(vals[d]||0)}));
+    let area=`M ${pts[0].x},${pT+iH} L ${pts[0].x},${pts[0].y}`;
+    let line=`M ${pts[0].x},${pts[0].y}`;
+    for(let i=1;i<pts.length;i++){
+      const cx=(pts[i-1].x+pts[i].x)/2;
+      area+=` C ${cx},${pts[i-1].y} ${cx},${pts[i].y} ${pts[i].x},${pts[i].y}`;
+      line+=` C ${cx},${pts[i-1].y} ${cx},${pts[i].y} ${pts[i].x},${pts[i].y}`;
+    }
+    return {area:area+` L ${pts[pts.length-1].x},${pT+iH} Z`, line, pts};
+  }
+
+  let out=`<defs>
+    <linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#6ee7b7" stop-opacity=".2"/><stop offset="100%" stop-color="#6ee7b7" stop-opacity="0"/></linearGradient>
+    <linearGradient id="gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa" stop-opacity=".15"/><stop offset="100%" stop-color="#60a5fa" stop-opacity="0"/></linearGradient>
+  </defs>`;
+
+  for(let i=0;i<=4;i++){
+    const y=pT+(i/4)*iH, v=Math.round(maxV*(1-i/4));
+    out+=`<line x1="${pL}" y1="${y}" x2="${W-pR}" y2="${y}" stroke="#2a2a3a" stroke-width="1"/>`;
+    out+=`<text x="${pL-6}" y="${y+4}" text-anchor="end" fill="#6b6b80" font-size="10" font-family="JetBrains Mono">${v}</text>`;
+  }
+
+  const t=buildPaths(totalDay), s=buildPaths(scannedDay);
+  out+=`<path d="${t.area}" fill="url(#gb)"/>`;
+  out+=`<path d="${t.line}" fill="none" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4,3" opacity=".5"/>`;
+  out+=`<path d="${s.area}" fill="url(#ga)"/>`;
+  out+=`<path d="${s.line}" fill="none" stroke="#6ee7b7" stroke-width="2.5" stroke-linecap="round"/>`;
+
+  const nth=Math.ceil(days.length/10);
+  days.forEach((d,i)=>{
+    const sv=scannedDay[d]||0, tv=totalDay[d]||0;
+    if(tv>0) out+=`<circle cx="${xS(i)}" cy="${yS(tv)}" r="2.5" fill="#60a5fa" stroke="#0a0a0f" stroke-width="1.5" opacity=".7"/>`;
+    if(sv>0) out+=`<circle cx="${xS(i)}" cy="${yS(sv)}" r="3.5" fill="#6ee7b7" stroke="#0a0a0f" stroke-width="1.5"/>`;
+    if(i%nth===0||i===days.length-1)
+      out+=`<text x="${xS(i)}" y="${H-4}" text-anchor="middle" fill="#6b6b80" font-size="10" font-family="JetBrains Mono">${d.slice(5)}</text>`;
+  });
+
+  out+=`
+    <rect x="${pL}" y="${pT}" width="12" height="3" rx="1.5" fill="#6ee7b7"/>
+    <text x="${pL+16}" y="${pT+8}" fill="#9ca3af" font-size="10" font-family="JetBrains Mono">Escaneados en app</text>
+    <rect x="${pL+150}" y="${pT}" width="12" height="3" rx="1.5" fill="#60a5fa" opacity=".6"/>
+    <text x="${pL+166}" y="${pT+8}" fill="#9ca3af" font-size="10" font-family="JetBrains Mono">OUTs validados Odoo</text>`;
+
+  svg.innerHTML=out;
+  document.getElementById('chartWrap').style.display='block';
+}
+
+// ---- TABLA ----
+function renderTable() {
+  const carriers=[...new Set(allRecs.map(r=>r.carrier))].sort();
+  const sel=document.getElementById('filterCarrier');
+  sel.innerHTML='<option value="">Todos los transportistas</option>'+
+    carriers.map(c=>`<option value="${c}">${c}</option>`).join('');
+  curPage=1;
+  applyAndRender();
+  document.getElementById('tableSection').style.display='block';
+}
+
+function filterTable() { curPage=1; applyAndRender(); }
+
+function applyAndRender() {
+  const q       = document.getElementById('filterText').value.toLowerCase();
+  const carrier = document.getElementById('filterCarrier').value;
+  const status  = document.getElementById('filterStatus').value;
+
+  filteredRec = allRecs.filter(r => {
+    if(carrier && r.carrier!==carrier) return false;
+    if(status==='scanned' && !r.scanned) return false;
+    if(status==='missing' &&  r.scanned) return false;
+    if(q){
+      const hay=((r.tracking||'')+(r.origin||'')+(r.client||'')+(r.name||'')).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  // Sort
+  filteredRec.sort((a,b)=>{
+    let va=a[sortCol]??'', vb=b[sortCol]??'';
+    if(typeof va==='boolean') va=va?1:0;
+    if(typeof vb==='boolean') vb=vb?1:0;
+    if(va<vb) return sortDir==='asc'?-1:1;
+    if(va>vb) return sortDir==='asc'?1:-1;
+    return 0;
+  });
+
+  const total=filteredRec.length, pages=Math.ceil(total/PAGE)||1;
+  if(curPage>pages) curPage=pages;
+  const slice=filteredRec.slice((curPage-1)*PAGE, curPage*PAGE);
+
+  const sc=filteredRec.filter(r=>r.scanned).length;
+  document.getElementById('tableSubtitle').textContent=
+    total.toLocaleString('es-ES')+' registros · '+
+    sc.toLocaleString('es-ES')+' escaneados · '+
+    (total-sc).toLocaleString('es-ES')+' sin escanear';
+
+  const tbody=document.getElementById('tableBody');
+  tbody.innerHTML = slice.length===0
+    ? `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Sin resultados</td></tr>`
+    : slice.map(r=>{
+        const col=CCOLOR[r.carrier]||'#888';
+        return `<tr>
+          <td><span style="display:inline-flex;align-items:center;gap:6px;">
+            <span style="width:7px;height:7px;border-radius:50%;background:${col};flex-shrink:0;"></span>
+            <span style="font-size:12px;font-weight:600;">${r.carrier}</span>
+          </span></td>
+          <td class="mono" style="color:var(--muted)">${r.name||'—'}</td>
+          <td class="mono">${r.tracking||'—'}</td>
+          <td class="mono">${r.origin||'—'}</td>
+          <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.client||''}">${r.client||'—'}</td>
+          <td class="mono" style="font-size:11px;color:var(--muted);white-space:nowrap;">${fmtDT(r.dateDone)}</td>
+          <td><span class="pill ${r.scanned?'p-green':'p-red'}">${r.scanned?'✅ Escaneado':'❌ Sin escanear'}</span></td>
+        </tr>`;
+      }).join('');
+
+  // Pagination
+  document.getElementById('pagInfo').textContent=
+    'Mostrando '+((curPage-1)*PAGE+1)+'–'+Math.min(curPage*PAGE,total)+' de '+total.toLocaleString('es-ES');
+
+  let btns='';
+  btns+=`<button class="pag-btn" onclick="goPage(${curPage-1})" ${curPage<=1?'disabled':''}>‹</button>`;
+  const range=[...new Set([1,curPage-1,curPage,curPage+1,pages].filter(p=>p>=1&&p<=pages))].sort((a,b)=>a-b);
+  let prev=null;
+  for(const p of range){
+    if(prev!==null&&p-prev>1) btns+=`<span style="color:var(--muted);padding:0 2px;">…</span>`;
+    btns+=`<button class="pag-btn ${p===curPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
+    prev=p;
+  }
+  btns+=`<button class="pag-btn" onclick="goPage(${curPage+1})" ${curPage>=pages?'disabled':''}>›</button>`;
+  document.getElementById('pagBtns').innerHTML=btns;
+
+  // Update sort headers
+  document.querySelectorAll('thead th').forEach(th=>{
+    th.classList.remove('asc','desc');
+    const col=th.id.replace('th-','');
+    if(col===sortCol) th.classList.add(sortDir);
+  });
+}
+
+function goPage(p){
+  const pages=Math.ceil(filteredRec.length/PAGE)||1;
+  if(p<1||p>pages) return;
+  curPage=p;
+  applyAndRender();
+  document.getElementById('tableSection').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function sortBy(col){
+  sortDir = sortCol===col ? (sortDir==='asc'?'desc':'asc') : (col==='dateDone'?'desc':'asc');
+  sortCol=col; curPage=1; applyAndRender();
+}
+
+// ================================================================
+// EXPORT CSV
+// ================================================================
+function exportCSV(){
+  if(!report){ alert('Carga primero el informe'); return; }
+  const rows=[
+    ['INFORME DE COBERTURA DE LECTURAS — ILLICE BRANDS GROUP'],
+    ['Período', report.from+' → '+report.to],
+    ['Tipo','Solo B2C Shopify (sale_id.team_id ilike shopify)'],
+    ['Generado', new Date().toLocaleString('es-ES')],
+    [],
+    ['RESUMEN GLOBAL'],
+    ['OUTs Odoo B2C', report.total],
+    ['Escaneados en app', report.scanned],
+    ['Sin escanear', report.missing],
+    ['% Cobertura global', report.coverage.toFixed(2)+'%'],
+    [],
+    ['RESUMEN POR TRANSPORTISTA'],
+    ['Transportista','OUTs Odoo','Escaneados','Sin escanear','% Cobertura'],
+    ...[...CARRIERS,'DESCONOCIDO']
+      .filter(c=>report.byCarrier[c]&&report.byCarrier[c].total>0)
+      .map(c=>{const d=report.byCarrier[c]; return [c,d.total,d.scanned,d.missing,d.pct.toFixed(2)+'%'];}),
+    [],
+    ['DETALLE COMPLETO'],
+    ['Transportista','Carrier Odoo','Albarán','Tracking','Pedido','Cliente','Fecha validación Odoo','Estado app'],
+    ...allRecs.map(r=>[
+      r.carrier, r.odooCarrier||'', r.name||'', r.tracking||'',
+      r.origin||'', r.client||'',
+      r.dateDone ? fmtDT(r.dateDone) : '',
+      r.scanned ? 'Escaneado' : 'Sin escanear'
+    ])
+  ];
+  const csv=rows.map(r=>Array.isArray(r)?r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(','):'').join('\r\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download='cobertura-'+report.from+'-'+report.to+'.csv';
+  a.click();
+}
+</script>
+</body>
+</html>
