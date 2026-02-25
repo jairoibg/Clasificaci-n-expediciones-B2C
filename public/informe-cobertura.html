@@ -200,9 +200,9 @@
     <button class="btn" id="loadBtn" onclick="loadReport()">
       <span id="btnIcon">▶</span><span id="btnText">Cargar informe</span>
     </button>
-    <button class="btn btn-ghost" id="exportBtn" onclick="exportCSV()" style="display:none;">
-      ↓ Exportar CSV
-    </button>
+    <button class="btn btn-ghost" id="exportBtn" onclick="exportExcel()" style="display:none;">
+  ↓ Exportar Excel
+</button>
   </div>
 
   <div class="progress-bar-wrap" id="progressWrap">
@@ -696,40 +696,97 @@ function sortBy(col){
 // ================================================================
 // EXPORT CSV
 // ================================================================
-function exportCSV(){
-  if(!report){ alert('Carga primero el informe'); return; }
-  const rows=[
+function exportExcel(soloSinEscanear) {
+  if (!report) { alert('Carga primero el informe'); return; }
+
+  // Cabecera del resumen
+  const wb = [];
+
+  // ── HOJA 1: RESUMEN ──────────────────────────────────────────
+  const resumen = [
     ['INFORME DE COBERTURA DE LECTURAS — ILLICE BRANDS GROUP'],
-    ['Período', report.from+' → '+report.to],
-    ['Tipo','Solo B2C Shopify (sale_id.team_id ilike shopify)'],
+    ['Período', report.from + ' → ' + report.to],
+    ['Tipo', 'Solo B2C Shopify'],
     ['Generado', new Date().toLocaleString('es-ES')],
     [],
     ['RESUMEN GLOBAL'],
     ['OUTs Odoo B2C', report.total],
     ['Escaneados en app', report.scanned],
     ['Sin escanear', report.missing],
-    ['% Cobertura global', report.coverage.toFixed(2)+'%'],
+    ['% Cobertura global', report.coverage.toFixed(2) + '%'],
     [],
     ['RESUMEN POR TRANSPORTISTA'],
-    ['Transportista','OUTs Odoo','Escaneados','Sin escanear','% Cobertura'],
-    ...[...CARRIERS,'DESCONOCIDO']
-      .filter(c=>report.byCarrier[c]&&report.byCarrier[c].total>0)
-      .map(c=>{const d=report.byCarrier[c]; return [c,d.total,d.scanned,d.missing,d.pct.toFixed(2)+'%'];}),
-    [],
-    ['DETALLE COMPLETO'],
-    ['Transportista','Carrier Odoo','Albarán','Tracking','Pedido','Cliente','Fecha validación Odoo','Estado app'],
-    ...allRecs.map(r=>[
-      r.carrier, r.odooCarrier||'', r.name||'', r.tracking||'',
-      r.origin||'', r.client||'',
+    ['Transportista', 'OUTs Odoo', 'Escaneados', 'Sin escanear', '% Cobertura'],
+    ...[...CARRIERS, 'DESCONOCIDO']
+      .filter(c => report.byCarrier[c] && report.byCarrier[c].total > 0)
+      .map(c => {
+        const d = report.byCarrier[c];
+        return [c, d.total, d.scanned, d.missing, d.pct.toFixed(2) + '%'];
+      })
+  ];
+
+  // ── HOJA 2: SIN ESCANEAR ─────────────────────────────────────
+  const sinEscanear = [
+    ['Transportista', 'Albarán', 'Nº Pedido', 'Tracking', 'Cliente', 'Fecha validación Odoo'],
+    ...allRecs
+      .filter(r => !r.scanned)
+      .sort((a, b) => (a.carrier > b.carrier ? 1 : -1))
+      .map(r => [
+        r.carrier,
+        r.name || '',
+        r.saleOrder || r.origin || '',
+        r.tracking || '',
+        r.client || '',
+        r.dateDone ? fmtDT(r.dateDone) : ''
+      ])
+  ];
+
+  // ── HOJA 3: TODOS ─────────────────────────────────────────────
+  const todos = [
+    ['Transportista', 'Albarán', 'Nº Pedido', 'Tracking', 'Cliente', 'Fecha validación Odoo', 'Estado app'],
+    ...allRecs.map(r => [
+      r.carrier,
+      r.name || '',
+      r.saleOrder || r.origin || '',
+      r.tracking || '',
+      r.client || '',
       r.dateDone ? fmtDT(r.dateDone) : '',
       r.scanned ? 'Escaneado' : 'Sin escanear'
     ])
   ];
-  const csv=rows.map(r=>Array.isArray(r)?r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(','):'').join('\r\n');
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
-  a.download='cobertura-'+report.from+'-'+report.to+'.csv';
+
+  // Construir XML Excel (formato SpreadsheetML, abre directo en Excel)
+  function sheetXml(rows) {
+    return rows.map(row =>
+      '<Row>' + row.map(cell => {
+        const v = String(cell ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        const t = isNaN(cell) || cell === '' ? 'String' : 'Number';
+        return `<Cell><Data ss:Type="${t}">${v}</Data></Cell>`;
+      }).join('') + '</Row>'
+    ).join('');
+  }
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  <Worksheet ss:Name="Resumen">
+    <Table>${sheetXml(resumen)}</Table>
+  </Worksheet>
+  <Worksheet ss:Name="Sin escanear">
+    <Table>${sheetXml(sinEscanear)}</Table>
+  </Worksheet>
+  <Worksheet ss:Name="Todos los OUTs">
+    <Table>${sheetXml(todos)}</Table>
+  </Worksheet>
+</Workbook>`;
+
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cobertura-' + report.from + '-' + report.to + '.xls';
   a.click();
+  URL.revokeObjectURL(a.href);
 }
 </script>
 </body>
