@@ -1126,6 +1126,18 @@ app.get('/api/odoo-outs', async (req, res) => {
         if (idx && idx.carrier) carrier = idx.carrier;
       }
 
+      // Detectar por formato de tracking si sigue sin carrier
+      if (!carrier && picking.carrier_tracking_ref) {
+        const t = picking.carrier_tracking_ref.toUpperCase().trim();
+        if (/^PK/.test(t)) carrier = 'CORREOS';
+        else if (/^MI/.test(t)) carrier = 'CORREOS EXPRESS';
+        else if (/^Z89/.test(t)) carrier = 'GLS';
+        else if (/^LS|^LX|^LV|^LT|^3[A-Z]/.test(t)) carrier = 'SPRING';
+        else if (/^6A/.test(t)) carrier = 'ASENDIA';
+        else if (/^CTT|^EA/.test(t)) carrier = 'CTT';
+        else if (/^C0/.test(t)) carrier = 'CORREOS';
+      }
+
       const key = carrier || 'DESCONOCIDO';
       if (!byCarrier[key]) byCarrier[key] = { total: 0, scanned: 0, missing: 0, pct: 0, records: [] };
 
