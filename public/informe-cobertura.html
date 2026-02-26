@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Informe de Cobertura Â· Expediciones</title>
+<title>Informe de Cobertura · Expediciones</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -172,21 +172,21 @@
 <div class="wrap">
 
   <div class="header">
-    <div class="eyebrow">Illice Brands Group Â· White Division</div>
+    <div class="eyebrow">Illice Brands Group · White Division</div>
     <h1>Informe de <span>Cobertura</span> de Lecturas</h1>
     <p class="subtitle">OUTs B2C Shopify validados en Odoo (date_done) vs paquetes escaneados en la app</p>
   </div>
 
   <div class="config-panel">
     <div class="field">
-      <label>PerÃ­odo rÃ¡pido</label>
+      <label>Período rápido</label>
       <select id="quickPeriod">
         <option value="">Personalizado</option>
         <option value="0">Hoy</option>
         <option value="1">Ayer</option>
-        <option value="7" selected>Ãšltimos 7 dÃ­as</option>
-        <option value="14">Ãšltimas 2 semanas</option>
-        <option value="30">Ãšltimos 30 dÃ­as</option>
+        <option value="7" selected>Últimos 7 días</option>
+        <option value="14">Últimas 2 semanas</option>
+        <option value="30">Últimos 30 días</option>
       </select>
     </div>
     <div class="field">
@@ -198,7 +198,7 @@
       <input type="date" id="dateTo">
     </div>
     <button class="btn" id="loadBtn" onclick="loadReport()">
-      <span id="btnIcon">â–¶</span><span id="btnText">Cargar informe</span>
+      <span id="btnIcon">▶</span><span id="btnText">Cargar informe</span>
     </button>
     <button class="btn btn-ghost" id="exportBtn" onclick="exportExcel()" style="display:none;">
   â†“ Exportar Excel
@@ -219,20 +219,20 @@
     <div class="kpi-card" style="--kc:var(--text)">
       <div class="kpi-label">OUTs en Odoo (B2C)</div>
       <div class="kpi-value" id="kpiTotal">â€”</div>
-      <div class="kpi-sub">albaranes validados en perÃ­odo</div>
+      <div class="kpi-sub">albaranes validados en período</div>
     </div>
     <div class="kpi-card" style="--kc:var(--accent4)">
       <div class="kpi-label">Escaneados en app</div>
       <div class="kpi-value" id="kpiScanned">â€”</div>
-      <div class="kpi-sub">paquetes leÃ­dos en la app</div>
+      <div class="kpi-sub">paquetes leídos en la app</div>
     </div>
     <div class="kpi-card" style="--kc:var(--accent3)">
-      <div class="kpi-label" data-tip="OUTs de Odoo no encontrados en ningÃºn palet ni sesiÃ³n activa">Sin escanear</div>
+      <div class="kpi-label" data-tip="OUTs de Odoo no encontrados en ningún palet ni sesión activa">Sin escanear</div>
       <div class="kpi-value" id="kpiMissing">â€”</div>
       <div class="kpi-sub">no registrados en app</div>
     </div>
     <div class="kpi-card" style="--kc:var(--accent2)" id="kpiCovCard">
-      <div class="kpi-label" data-tip="(Escaneados / OUTs Odoo) Ã— 100">Cobertura global</div>
+      <div class="kpi-label" data-tip="(Escaneados / OUTs Odoo) × 100">Cobertura global</div>
       <div class="kpi-value" id="kpiCoverage">â€”</div>
       <div class="kpi-sub" id="kpiLabel">â€”</div>
     </div>
@@ -251,13 +251,13 @@
   <div class="carrier-grid" id="carrierGrid">
     <div class="empty-state" style="grid-column:1/-1">
       <div class="icon">ðŸ“¦</div>
-      <p>Selecciona un perÃ­odo y pulsa "Cargar informe"</p>
+      <p>Selecciona un período y pulsa "Cargar informe"</p>
     </div>
   </div>
 
   <!-- Daily chart -->
   <div class="chart-wrap" id="chartWrap">
-    <div class="section-title">EvoluciÃ³n diaria <small>â€” OUTs Odoo vs escaneados en app</small></div>
+    <div class="section-title">Evolución diaria <small>â€” OUTs Odoo vs escaneados en app</small></div>
     <div class="chart-scroll">
       <svg id="dailySvg" height="200"></svg>
     </div>
@@ -267,7 +267,7 @@
   <div class="table-section" id="tableSection">
     <div class="table-header">
       <div>
-        <div class="table-title">Todos los OUTs del perÃ­odo</div>
+        <div class="table-title">Todos los OUTs del período</div>
         <div id="tableSubtitle" style="font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:3px;"></div>
       </div>
       <div class="table-filters">
@@ -287,7 +287,7 @@
         <thead>
           <tr>
             <th onclick="sortBy('carrier')"   id="th-carrier">Transportista</th>
-            <th onclick="sortBy('name')"      id="th-name">AlbarÃ¡n</th>
+            <th onclick="sortBy('name')"      id="th-name">Albarán</th>
             <th onclick="sortBy('tracking')"  id="th-tracking">Tracking</th>
             <th onclick="sortBy('origin')"    id="th-origin">Pedido</th>
             <th onclick="sortBy('client')"    id="th-client">Cliente</th>
@@ -356,7 +356,7 @@ function fmtDT(s) {
 async function checkAPI() {
   try {
     const r = await fetch(API_BASE + '/api/health', { signal: AbortSignal.timeout(4000) });
-    setStatus(r.ok ? 'ok' : 'error', r.ok ? 'API conectada Â· listo' : 'API no responde');
+    setStatus(r.ok ? 'ok' : 'error', r.ok ? 'API conectada · listo' : 'API no responde');
   } catch { setStatus('error', 'No se puede conectar con la API'); }
 }
 function setStatus(s, t) {
@@ -395,7 +395,7 @@ async function loadReport() {
       allRecs.push(...(info.records || []));
     }
     renderAll(data);
-    setStatus('ok', 'Informe cargado Â· ' + allRecs.length.toLocaleString('es-ES') + ' OUTs Â· ' + new Date().toLocaleTimeString('es-ES'));
+    setStatus('ok', 'Informe cargado · ' + allRecs.length.toLocaleString('es-ES') + ' OUTs · ' + new Date().toLocaleTimeString('es-ES'));
     document.getElementById('exportBtn').style.display = 'inline-flex';
     setProgress(null);
   } catch(e) {
@@ -404,7 +404,7 @@ async function loadReport() {
     console.error(e);
   } finally {
     btn.disabled = false;
-    document.getElementById('btnIcon').textContent  = 'â–¶';
+    document.getElementById('btnIcon').textContent  = '▶';
     document.getElementById('btnText').textContent  = 'Cargar informe';
   }
 }
@@ -495,7 +495,7 @@ function renderCards(byCarrier) {
   const active = Object.entries(byCarrier).filter(([c,d])=>d.total>0&&c!=='DESCONOCIDO')
                                           .sort((a,b)=>b[1].total-a[1].total);
   if (!active.length) {
-    grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="icon">ðŸ“­</div><p>Sin OUTs en el perÃ­odo</p></div>';
+    grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="icon">ðŸ“­</div><p>Sin OUTs en el período</p></div>';
     return;
   }
   grid.innerHTML = active.map(([carrier,d])=>{
@@ -634,8 +634,8 @@ function applyAndRender() {
 
   const sc=filteredRec.filter(r=>r.scanned).length;
   document.getElementById('tableSubtitle').textContent=
-    total.toLocaleString('es-ES')+' registros Â· '+
-    sc.toLocaleString('es-ES')+' escaneados Â· '+
+    total.toLocaleString('es-ES')+' registros · '+
+    sc.toLocaleString('es-ES')+' escaneados · '+
     (total-sc).toLocaleString('es-ES')+' sin escanear';
 
   const tbody=document.getElementById('tableBody');
@@ -706,7 +706,7 @@ function exportExcel(soloSinEscanear) {
   // â”€â”€ HOJA 1: RESUMEN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const resumen = [
     ['INFORME DE COBERTURA DE LECTURAS â€” ILLICE BRANDS GROUP'],
-    ['PerÃ­odo', report.from + ' â†’ ' + report.to],
+    ['Período', report.from + ' â†’ ' + report.to],
     ['Tipo', 'Solo B2C Shopify'],
     ['Generado', new Date().toLocaleString('es-ES')],
     [],
@@ -728,7 +728,7 @@ function exportExcel(soloSinEscanear) {
 
   // â”€â”€ HOJA 2: SIN ESCANEAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const sinEscanear = [
-    ['Transportista', 'AlbarÃ¡n', 'NÂº Pedido', 'Tracking', 'Cliente', 'Fecha validaciÃ³n Odoo'],
+    ['Transportista', 'Albarán', 'Nº Pedido', 'Tracking', 'Cliente', 'Fecha validación Odoo'],
     ...allRecs
       .filter(r => !r.scanned)
       .sort((a, b) => (a.carrier > b.carrier ? 1 : -1))
@@ -744,7 +744,7 @@ function exportExcel(soloSinEscanear) {
 
   // â”€â”€ HOJA 3: TODOS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const todos = [
-    ['Transportista', 'AlbarÃ¡n', 'NÂº Pedido', 'Tracking', 'Cliente', 'Fecha validaciÃ³n Odoo', 'Estado app'],
+    ['Transportista', 'Albarán', 'Nº Pedido', 'Tracking', 'Cliente', 'Fecha validación Odoo', 'Estado app'],
     ...allRecs.map(r => [
       r.carrier,
       r.name || '',
