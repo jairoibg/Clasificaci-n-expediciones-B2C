@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Informe de Cobertura · Expediciones</title>
+<title>Informe de Cobertura Â· Expediciones</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -133,8 +133,8 @@
     cursor: pointer; user-select: none; transition: color .15s;
   }
   thead th:hover { color: var(--text); }
-  thead th.asc::after  { content: ' ↑'; color: var(--accent); }
-  thead th.desc::after { content: ' ↓'; color: var(--accent); }
+  thead th.asc::after  { content: ' â†‘'; color: var(--accent); }
+  thead th.desc::after { content: ' â†“'; color: var(--accent); }
   tbody td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid rgba(42,42,58,0.5); vertical-align: middle; }
   tbody tr:last-child td { border-bottom: none; }
   tbody tr:hover td { background: rgba(255,255,255,.02); }
@@ -172,21 +172,21 @@
 <div class="wrap">
 
   <div class="header">
-    <div class="eyebrow">Illice Brands Group · White Division</div>
+    <div class="eyebrow">Illice Brands Group Â· White Division</div>
     <h1>Informe de <span>Cobertura</span> de Lecturas</h1>
     <p class="subtitle">OUTs B2C Shopify validados en Odoo (date_done) vs paquetes escaneados en la app</p>
   </div>
 
   <div class="config-panel">
     <div class="field">
-      <label>Período rápido</label>
+      <label>PerÃ­odo rÃ¡pido</label>
       <select id="quickPeriod">
         <option value="">Personalizado</option>
         <option value="0">Hoy</option>
         <option value="1">Ayer</option>
-        <option value="7" selected>Últimos 7 días</option>
-        <option value="14">Últimas 2 semanas</option>
-        <option value="30">Últimos 30 días</option>
+        <option value="7" selected>Ãšltimos 7 dÃ­as</option>
+        <option value="14">Ãšltimas 2 semanas</option>
+        <option value="30">Ãšltimos 30 dÃ­as</option>
       </select>
     </div>
     <div class="field">
@@ -198,10 +198,10 @@
       <input type="date" id="dateTo">
     </div>
     <button class="btn" id="loadBtn" onclick="loadReport()">
-      <span id="btnIcon">▶</span><span id="btnText">Cargar informe</span>
+      <span id="btnIcon">â–¶</span><span id="btnText">Cargar informe</span>
     </button>
     <button class="btn btn-ghost" id="exportBtn" onclick="exportExcel()" style="display:none;">
-  ↓ Exportar Excel
+  â†“ Exportar Excel
 </button>
   </div>
 
@@ -218,23 +218,23 @@
   <div class="kpi-row">
     <div class="kpi-card" style="--kc:var(--text)">
       <div class="kpi-label">OUTs en Odoo (B2C)</div>
-      <div class="kpi-value" id="kpiTotal">—</div>
-      <div class="kpi-sub">albaranes validados en período</div>
+      <div class="kpi-value" id="kpiTotal">â€”</div>
+      <div class="kpi-sub">albaranes validados en perÃ­odo</div>
     </div>
     <div class="kpi-card" style="--kc:var(--accent4)">
       <div class="kpi-label">Escaneados en app</div>
-      <div class="kpi-value" id="kpiScanned">—</div>
-      <div class="kpi-sub">paquetes leídos en la app</div>
+      <div class="kpi-value" id="kpiScanned">â€”</div>
+      <div class="kpi-sub">paquetes leÃ­dos en la app</div>
     </div>
     <div class="kpi-card" style="--kc:var(--accent3)">
-      <div class="kpi-label" data-tip="OUTs de Odoo no encontrados en ningún palet ni sesión activa">Sin escanear</div>
-      <div class="kpi-value" id="kpiMissing">—</div>
+      <div class="kpi-label" data-tip="OUTs de Odoo no encontrados en ningÃºn palet ni sesiÃ³n activa">Sin escanear</div>
+      <div class="kpi-value" id="kpiMissing">â€”</div>
       <div class="kpi-sub">no registrados en app</div>
     </div>
     <div class="kpi-card" style="--kc:var(--accent2)" id="kpiCovCard">
-      <div class="kpi-label" data-tip="(Escaneados / OUTs Odoo) × 100">Cobertura global</div>
-      <div class="kpi-value" id="kpiCoverage">—</div>
-      <div class="kpi-sub" id="kpiLabel">—</div>
+      <div class="kpi-label" data-tip="(Escaneados / OUTs Odoo) Ã— 100">Cobertura global</div>
+      <div class="kpi-value" id="kpiCoverage">â€”</div>
+      <div class="kpi-sub" id="kpiLabel">â€”</div>
     </div>
   </div>
 
@@ -250,14 +250,14 @@
   <div class="section-title">Desglose por transportista</div>
   <div class="carrier-grid" id="carrierGrid">
     <div class="empty-state" style="grid-column:1/-1">
-      <div class="icon">📦</div>
-      <p>Selecciona un período y pulsa "Cargar informe"</p>
+      <div class="icon">ðŸ“¦</div>
+      <p>Selecciona un perÃ­odo y pulsa "Cargar informe"</p>
     </div>
   </div>
 
   <!-- Daily chart -->
   <div class="chart-wrap" id="chartWrap">
-    <div class="section-title">Evolución diaria <small>— OUTs Odoo vs escaneados en app</small></div>
+    <div class="section-title">EvoluciÃ³n diaria <small>â€” OUTs Odoo vs escaneados en app</small></div>
     <div class="chart-scroll">
       <svg id="dailySvg" height="200"></svg>
     </div>
@@ -267,7 +267,7 @@
   <div class="table-section" id="tableSection">
     <div class="table-header">
       <div>
-        <div class="table-title">Todos los OUTs del período</div>
+        <div class="table-title">Todos los OUTs del perÃ­odo</div>
         <div id="tableSubtitle" style="font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:3px;"></div>
       </div>
       <div class="table-filters">
@@ -277,8 +277,8 @@
         </select>
         <select id="filterStatus" onchange="filterTable()">
           <option value="">Todos los estados</option>
-          <option value="scanned">✅ Escaneado</option>
-          <option value="missing">❌ Sin escanear</option>
+          <option value="scanned">âœ… Escaneado</option>
+          <option value="missing">âŒ Sin escanear</option>
         </select>
       </div>
     </div>
@@ -287,7 +287,7 @@
         <thead>
           <tr>
             <th onclick="sortBy('carrier')"   id="th-carrier">Transportista</th>
-            <th onclick="sortBy('name')"      id="th-name">Albarán</th>
+            <th onclick="sortBy('name')"      id="th-name">AlbarÃ¡n</th>
             <th onclick="sortBy('tracking')"  id="th-tracking">Tracking</th>
             <th onclick="sortBy('origin')"    id="th-origin">Pedido</th>
             <th onclick="sortBy('client')"    id="th-client">Cliente</th>
@@ -307,7 +307,7 @@
 </div>
 <script>
 // ================================================================
-// CONFIG — auto-detecta si es local o Railway
+// CONFIG â€” auto-detecta si es local o Railway
 // ================================================================
 const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
   ? 'http://localhost:3001'
@@ -348,7 +348,7 @@ function setQuick(n) {
   document.getElementById('dateTo').value   = fmt(t);
 }
 function fmtDT(s) {
-  if (!s) return '—';
+  if (!s) return 'â€”';
   const d = new Date((s + '').replace(' ','T') + (s.includes('T')||s.includes('Z') ? '' : 'Z'));
   return isNaN(d) ? s : d.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'})
                       + ' ' + d.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
@@ -356,7 +356,7 @@ function fmtDT(s) {
 async function checkAPI() {
   try {
     const r = await fetch(API_BASE + '/api/health', { signal: AbortSignal.timeout(4000) });
-    setStatus(r.ok ? 'ok' : 'error', r.ok ? 'API conectada · listo' : 'API no responde');
+    setStatus(r.ok ? 'ok' : 'error', r.ok ? 'API conectada Â· listo' : 'API no responde');
   } catch { setStatus('error', 'No se puede conectar con la API'); }
 }
 function setStatus(s, t) {
@@ -383,7 +383,7 @@ async function loadReport() {
   btn.disabled = true;
   document.getElementById('btnIcon').innerHTML = '<span class="spinner"></span>';
   document.getElementById('btnText').textContent = 'Consultando Odoo...';
-  setStatus('loading', 'Consultando OUTs B2C en Odoo (' + from + ' → ' + to + ')...');
+  setStatus('loading', 'Consultando OUTs B2C en Odoo (' + from + ' â†’ ' + to + ')...');
   setProgress(30);
 
   try {
@@ -395,7 +395,7 @@ async function loadReport() {
       allRecs.push(...(info.records || []));
     }
     renderAll(data);
-    setStatus('ok', 'Informe cargado · ' + allRecs.length.toLocaleString('es-ES') + ' OUTs · ' + new Date().toLocaleTimeString('es-ES'));
+    setStatus('ok', 'Informe cargado Â· ' + allRecs.length.toLocaleString('es-ES') + ' OUTs Â· ' + new Date().toLocaleTimeString('es-ES'));
     document.getElementById('exportBtn').style.display = 'inline-flex';
     setProgress(null);
   } catch(e) {
@@ -404,7 +404,7 @@ async function loadReport() {
     console.error(e);
   } finally {
     btn.disabled = false;
-    document.getElementById('btnIcon').textContent  = '▶';
+    document.getElementById('btnIcon').textContent  = 'â–¶';
     document.getElementById('btnText').textContent  = 'Cargar informe';
   }
 }
@@ -418,11 +418,12 @@ async function apiFetch(path) {
 // COLORES / ETIQUETAS
 // ================================================================
 function covColor(p) { return p >= 95 ? 'var(--accent)' : p >= 80 ? 'var(--accent2)' : 'var(--accent3)'; }
+function covColorHex(p) { return p >= 95 ? '#6ee7b7' : p >= 80 ? '#f59e0b' : '#f87171'; }
 function covLabel(p) {
-  if (p >= 95) return '✅ Cobertura excelente';
-  if (p >= 80) return '🟡 Cobertura buena';
-  if (p >= 60) return '🟠 Cobertura regular';
-  return '🔴 Cobertura baja — revisar';
+  if (p >= 95) return 'âœ… Cobertura excelente';
+  if (p >= 80) return 'ðŸŸ¡ Cobertura buena';
+  if (p >= 60) return 'ðŸŸ  Cobertura regular';
+  return 'ðŸ”´ Cobertura baja â€” revisar';
 }
 
 // ================================================================
@@ -459,14 +460,14 @@ function drawGauge(pct, byCarrier) {
   x.lineWidth=14; x.strokeStyle='#1a1a24'; x.lineCap='round'; x.stroke();
 
   // fill
-  const color = covColor(pct);
+  const color = covColorHex(pct);
   const g = x.createLinearGradient(cx-r,cy,cx+r,cy);
   g.addColorStop(0, color+'40'); g.addColorStop(1, color);
   x.beginPath(); x.arc(cx,cy,r,Math.PI, Math.PI+(pct/100)*Math.PI);
   x.lineWidth=14; x.strokeStyle=g; x.lineCap='round'; x.stroke();
 
   // text
-  x.fillStyle=color; x.font='bold 34px JetBrains Mono, monospace';
+  x.fillStyle=covColorHex(pct); x.font='bold 34px JetBrains Mono, monospace';
   x.textAlign='center'; x.textBaseline='bottom';
   x.fillText(pct.toFixed(1)+'%', cx, cy-4);
   x.fillStyle='#6b6b80'; x.font='11px Syne, sans-serif';
@@ -494,7 +495,7 @@ function renderCards(byCarrier) {
   const active = Object.entries(byCarrier).filter(([c,d])=>d.total>0&&c!=='DESCONOCIDO')
                                           .sort((a,b)=>b[1].total-a[1].total);
   if (!active.length) {
-    grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="icon">📭</div><p>Sin OUTs en el período</p></div>';
+    grid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="icon">ðŸ“­</div><p>Sin OUTs en el perÃ­odo</p></div>';
     return;
   }
   grid.innerHTML = active.map(([carrier,d])=>{
@@ -633,8 +634,8 @@ function applyAndRender() {
 
   const sc=filteredRec.filter(r=>r.scanned).length;
   document.getElementById('tableSubtitle').textContent=
-    total.toLocaleString('es-ES')+' registros · '+
-    sc.toLocaleString('es-ES')+' escaneados · '+
+    total.toLocaleString('es-ES')+' registros Â· '+
+    sc.toLocaleString('es-ES')+' escaneados Â· '+
     (total-sc).toLocaleString('es-ES')+' sin escanear';
 
   const tbody=document.getElementById('tableBody');
@@ -647,29 +648,29 @@ function applyAndRender() {
             <span style="width:7px;height:7px;border-radius:50%;background:${col};flex-shrink:0;"></span>
             <span style="font-size:12px;font-weight:600;">${r.carrier}</span>
           </span></td>
-          <td class="mono" style="color:var(--muted)">${r.name||'—'}</td>
-          <td class="mono">${r.tracking||'—'}</td>
-          <td class="mono">${r.origin||'—'}</td>
-          <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.client||''}">${r.client||'—'}</td>
+          <td class="mono" style="color:var(--muted)">${r.name||'â€”'}</td>
+          <td class="mono">${r.tracking||'â€”'}</td>
+          <td class="mono">${r.origin||'â€”'}</td>
+          <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.client||''}">${r.client||'â€”'}</td>
           <td class="mono" style="font-size:11px;color:var(--muted);white-space:nowrap;">${fmtDT(r.dateDone)}</td>
-          <td><span class="pill ${r.scanned?'p-green':'p-red'}">${r.scanned?'✅ Escaneado':'❌ Sin escanear'}</span></td>
+          <td><span class="pill ${r.scanned?'p-green':'p-red'}">${r.scanned?'âœ… Escaneado':'âŒ Sin escanear'}</span></td>
         </tr>`;
       }).join('');
 
   // Pagination
   document.getElementById('pagInfo').textContent=
-    'Mostrando '+((curPage-1)*PAGE+1)+'–'+Math.min(curPage*PAGE,total)+' de '+total.toLocaleString('es-ES');
+    'Mostrando '+((curPage-1)*PAGE+1)+'â€“'+Math.min(curPage*PAGE,total)+' de '+total.toLocaleString('es-ES');
 
   let btns='';
-  btns+=`<button class="pag-btn" onclick="goPage(${curPage-1})" ${curPage<=1?'disabled':''}>‹</button>`;
+  btns+=`<button class="pag-btn" onclick="goPage(${curPage-1})" ${curPage<=1?'disabled':''}>â€¹</button>`;
   const range=[...new Set([1,curPage-1,curPage,curPage+1,pages].filter(p=>p>=1&&p<=pages))].sort((a,b)=>a-b);
   let prev=null;
   for(const p of range){
-    if(prev!==null&&p-prev>1) btns+=`<span style="color:var(--muted);padding:0 2px;">…</span>`;
+    if(prev!==null&&p-prev>1) btns+=`<span style="color:var(--muted);padding:0 2px;">â€¦</span>`;
     btns+=`<button class="pag-btn ${p===curPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
     prev=p;
   }
-  btns+=`<button class="pag-btn" onclick="goPage(${curPage+1})" ${curPage>=pages?'disabled':''}>›</button>`;
+  btns+=`<button class="pag-btn" onclick="goPage(${curPage+1})" ${curPage>=pages?'disabled':''}>â€º</button>`;
   document.getElementById('pagBtns').innerHTML=btns;
 
   // Update sort headers
@@ -702,10 +703,10 @@ function exportExcel(soloSinEscanear) {
   // Cabecera del resumen
   const wb = [];
 
-  // ── HOJA 1: RESUMEN ──────────────────────────────────────────
+  // â”€â”€ HOJA 1: RESUMEN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const resumen = [
-    ['INFORME DE COBERTURA DE LECTURAS — ILLICE BRANDS GROUP'],
-    ['Período', report.from + ' → ' + report.to],
+    ['INFORME DE COBERTURA DE LECTURAS â€” ILLICE BRANDS GROUP'],
+    ['PerÃ­odo', report.from + ' â†’ ' + report.to],
     ['Tipo', 'Solo B2C Shopify'],
     ['Generado', new Date().toLocaleString('es-ES')],
     [],
@@ -725,9 +726,9 @@ function exportExcel(soloSinEscanear) {
       })
   ];
 
-  // ── HOJA 2: SIN ESCANEAR ─────────────────────────────────────
+  // â”€â”€ HOJA 2: SIN ESCANEAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const sinEscanear = [
-    ['Transportista', 'Albarán', 'Nº Pedido', 'Tracking', 'Cliente', 'Fecha validación Odoo'],
+    ['Transportista', 'AlbarÃ¡n', 'NÂº Pedido', 'Tracking', 'Cliente', 'Fecha validaciÃ³n Odoo'],
     ...allRecs
       .filter(r => !r.scanned)
       .sort((a, b) => (a.carrier > b.carrier ? 1 : -1))
@@ -741,9 +742,9 @@ function exportExcel(soloSinEscanear) {
       ])
   ];
 
-  // ── HOJA 3: TODOS ─────────────────────────────────────────────
+  // â”€â”€ HOJA 3: TODOS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const todos = [
-    ['Transportista', 'Albarán', 'Nº Pedido', 'Tracking', 'Cliente', 'Fecha validación Odoo', 'Estado app'],
+    ['Transportista', 'AlbarÃ¡n', 'NÂº Pedido', 'Tracking', 'Cliente', 'Fecha validaciÃ³n Odoo', 'Estado app'],
     ...allRecs.map(r => [
       r.carrier,
       r.name || '',
@@ -791,3 +792,5 @@ function exportExcel(soloSinEscanear) {
 </script>
 </body>
 </html>
+
+
