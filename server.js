@@ -222,56 +222,56 @@ function findInTrackingIndex(tracking) {
   }
 
   // PASO 3: CTT/SPRING - Escaneado LARGO (>=18 chars)
+  // GUARD: evitar contaminación cross-carrier (barcode CTT matcheando SPRING y viceversa)
   if (clean.length >= 18 && trackingIndex.byCarrier) {
-    
-    var cttData = trackingIndex.byCarrier["CTT"];
-    if (cttData) {
-      var cttKeys = Object.keys(cttData);
-      for (var i = 0; i < cttKeys.length; i++) {
-        var cttTrack = cttKeys[i];
-        var data = cttData[cttTrack];
-        var odooTrack = data.odooTracking ? data.odooTracking.toUpperCase() : cttTrack;
-        
-        if (odooTrack.length >= 7) {
-          if (clean.endsWith(odooTrack)) {
-            console.log("   🔍 Match CTT sufijo: termina con " + odooTrack);
-        return data;
-          }
-          if (clean.indexOf(odooTrack) !== -1) {
-            console.log("   🔍 Match CTT contenido: contiene " + odooTrack);
-            return data;
+    var isCTTFormat = /^00030100/.test(clean);
+    var isSPRINGFormat = /^0626/.test(clean);
+
+    // Solo buscar CTT si el barcode NO es claramente SPRING
+    if (!isSPRINGFormat) {
+      var cttData = trackingIndex.byCarrier["CTT"];
+      if (cttData) {
+        var cttKeys = Object.keys(cttData);
+        for (var i = 0; i < cttKeys.length; i++) {
+          var cttTrack = cttKeys[i];
+          var data = cttData[cttTrack];
+          var odooTrack = data.odooTracking ? data.odooTracking.toUpperCase() : cttTrack;
+
+          if (odooTrack.length >= 7) {
+            if (clean.endsWith(odooTrack)) {
+              console.log("   🔍 Match CTT sufijo: termina con " + odooTrack);
+              return data;
+            }
+            if (clean.indexOf(odooTrack) !== -1) {
+              console.log("   🔍 Match CTT contenido: contiene " + odooTrack);
+              return data;
+            }
           }
         }
-        
-        // ELIMINADO: matching parcial (substring 10-17 chars) causaba falsos positivos
-        // porque todos los CTT comparten prefijo largo (ej: 00030100030197015)
-        // Solo se permite match exacto completo (indexOf del odooTrack entero)
       }
     }
-    
-    var springData = trackingIndex.byCarrier["SPRING"];
-    if (springData) {
-      var springKeys = Object.keys(springData);
-      for (var j = 0; j < springKeys.length; j++) {
-        var springTrack = springKeys[j];
-        var dataS = springData[springTrack];
-        var odooTrackS = dataS.odooTracking ? dataS.odooTracking.toUpperCase() : springTrack;
-        
-        if (odooTrackS.length >= 7) {
-          if (clean.endsWith(odooTrackS)) {
-            console.log("   🔍 Match SPRING sufijo: termina con " + odooTrackS);
-            return dataS;
-          }
-          if (clean.indexOf(odooTrackS) !== -1) {
-            console.log("   🔍 Match SPRING contenido: contiene " + odooTrackS);
-            return dataS;
+
+    // Solo buscar SPRING si el barcode NO es claramente CTT
+    if (!isCTTFormat) {
+      var springData = trackingIndex.byCarrier["SPRING"];
+      if (springData) {
+        var springKeys = Object.keys(springData);
+        for (var j = 0; j < springKeys.length; j++) {
+          var springTrack = springKeys[j];
+          var dataS = springData[springTrack];
+          var odooTrackS = dataS.odooTracking ? dataS.odooTracking.toUpperCase() : springTrack;
+
+          if (odooTrackS.length >= 7) {
+            if (clean.endsWith(odooTrackS)) {
+              console.log("   🔍 Match SPRING sufijo: termina con " + odooTrackS);
+              return dataS;
+            }
+            if (clean.indexOf(odooTrackS) !== -1) {
+              console.log("   🔍 Match SPRING contenido: contiene " + odooTrackS);
+              return dataS;
+            }
           }
         }
-        
-        // ELIMINADO: matching parcial (substring 10-17 chars) causaba falsos positivos
-        // Ej: barcode 000234406265024591287328040 contenía los primeros 10 chars (0626502459)
-        // de OTRO tracking SPRING (KA281275) antes de encontrar el correcto (06265024591287)
-        // Solo se permite match exacto completo (indexOf del odooTrack entero)
       }
     }
   }
@@ -485,10 +485,20 @@ class OdooClient {
         if (pattern.length >= 7) {
           pickings = await this.execute('stock.picking', 'search_read', [
             [['carrier_tracking_ref', 'ilike', pattern], ['state', '=', 'done'], ['picking_type_code', '=', 'outgoing']]
-          ], { fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1 });
+          ], { fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 10 });
           if (pickings.length > 0) {
-            console.log('   🔍 Match patrón Odoo: "' + pattern + '" → ' + pickings[0].carrier_tracking_ref);
-            return pickings[0];
+            // Si hay múltiples resultados, elegir el que mejor coincida con el barcode escaneado
+            const best = pickings.reduce((a, b) => {
+              const cleanUpper = tracking.toUpperCase();
+              const trackA = (a.carrier_tracking_ref || '').toUpperCase();
+              const trackB = (b.carrier_tracking_ref || '').toUpperCase();
+              let scoreA = 0, scoreB = 0;
+              while (scoreA < trackA.length && scoreA < cleanUpper.length && trackA[scoreA] === cleanUpper[scoreA]) scoreA++;
+              while (scoreB < trackB.length && scoreB < cleanUpper.length && trackB[scoreB] === cleanUpper[scoreB]) scoreB++;
+              return scoreB > scoreA ? b : a;
+            });
+            console.log('   🔍 Match patrón Odoo: "' + pattern + '" → ' + best.carrier_tracking_ref + ' (mejor de ' + pickings.length + ')');
+            return best;
           }
         }
       }
