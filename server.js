@@ -268,15 +268,10 @@ function findInTrackingIndex(tracking) {
           }
         }
         
-        if (odooTrackS.length >= 10) {
-          for (var lenS = Math.min(odooTrackS.length, 17); lenS >= 10; lenS--) {
-            var partialS = odooTrackS.substring(0, lenS);
-            if (clean.indexOf(partialS) !== -1) {
-              console.log("   🔍 Match SPRING parcial: contiene " + partialS + " (" + lenS + "/" + odooTrackS.length + " chars)");
-              return dataS;
-            }
-          }
-        }
+        // ELIMINADO: matching parcial (substring 10-17 chars) causaba falsos positivos
+        // Ej: barcode 000234406265024591287328040 contenía los primeros 10 chars (0626502459)
+        // de OTRO tracking SPRING (KA281275) antes de encontrar el correcto (06265024591287)
+        // Solo se permite match exacto completo (indexOf del odooTrack entero)
       }
     }
   }
@@ -732,13 +727,16 @@ async function getCarrierFromTracking(tracking) {
           source: 'index (INPOST extraído: ' + ipTracking + ')', elapsed
         };
       }
-      // Fallback: buscar en Odoo con el tracking extraído
-      console.log('   🔍 Buscando INPOST en Odoo: ' + ipTracking);
-      const ipPicking = await odooClient.findPickingByTracking(ipTracking);
-      if (ipPicking) {
-        const elapsed = Date.now() - startTime;
-        console.log('   ✅ INPOST encontrado en Odoo: ' + (ipPicking.origin || 'sin pedido'));
-        return { carrier: 'INPOST', picking: ipPicking, source: 'odoo (INPOST extraído: ' + ipTracking + ')', elapsed };
+      // Solo buscar en Odoo si el tracking parece genuinamente INPOST (prefijos 04/81)
+      // Evita llamadas Odoo innecesarias para barcodes numéricos de otros carriers
+      if (/^(04|81)\d{6}$/.test(ipTracking)) {
+        console.log('   🔍 Buscando INPOST en Odoo: ' + ipTracking);
+        const ipPicking = await odooClient.findPickingByTracking(ipTracking);
+        if (ipPicking) {
+          const elapsed = Date.now() - startTime;
+          console.log('   ✅ INPOST encontrado en Odoo: ' + (ipPicking.origin || 'sin pedido'));
+          return { carrier: 'INPOST', picking: ipPicking, source: 'odoo (INPOST extraído: ' + ipTracking + ')', elapsed };
+        }
       }
     }
   }
