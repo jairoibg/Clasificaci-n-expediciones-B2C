@@ -517,7 +517,9 @@ class OdooClient {
       for (let len = Math.min(clean.length - 2, 15); len >= 7; len--) patterns.push(clean.slice(-len));
       }
     if (clean.length > 15) {
-      for (let len = 15; len >= 10; len--) patterns.push(clean.substring(0, len));
+      // Prefijos largos: CTT barcode=26 chars (tracking 23 + sufijo 3),
+      // con max 15 matcheaba demasiados CTT y el correcto no estaba en los resultados
+      for (let len = Math.min(clean.length - 1, 25); len >= 10; len--) patterns.push(clean.substring(0, len));
     }
     return [...new Set(patterns)].sort((a, b) => b.length - a.length);
   }
