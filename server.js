@@ -614,7 +614,8 @@ function extractSpecialPatterns(scanned) {
       const idx = cleanAlnum.indexOf(prefix);
       if (idx > 0) {
         // Extraer substrings de longitudes típicas de tracking SPRING (12-16 chars)
-        for (var len = 16; len >= 12; len--) {
+        // Orden: corto→largo para que el match exacto (14 chars) se pruebe antes
+        for (var len = 12; len <= 16; len++) {
           if (idx + len <= cleanAlnum.length) {
             result.patterns.push(cleanAlnum.substring(idx, idx + len));
           }
