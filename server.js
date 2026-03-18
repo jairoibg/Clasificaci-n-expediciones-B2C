@@ -606,6 +606,26 @@ function extractSpecialPatterns(scanned) {
     console.log('   🔍 Patrón GLS extraído: ' + glsMatch[1]);
   }
 
+  // SPRING: Extraer tracking embebido de barcodes GS1-128 largos
+  // Ejemplo: %000542106265024593998328040 → tracking: 06265024593998
+  if (!result.detectedCarrier && cleanAlnum.length > 20 && /^\d+$/.test(cleanAlnum)) {
+    const springPrefixes = ['0626', '0008'];
+    for (const prefix of springPrefixes) {
+      const idx = cleanAlnum.indexOf(prefix);
+      if (idx > 0) {
+        // Extraer substrings de longitudes típicas de tracking SPRING (12-16 chars)
+        for (var len = 16; len >= 12; len--) {
+          if (idx + len <= cleanAlnum.length) {
+            result.patterns.push(cleanAlnum.substring(idx, idx + len));
+          }
+        }
+        result.detectedCarrier = 'SPRING';
+        console.log('   🔍 Patrones SPRING extraídos desde pos ' + idx + ': ' + cleanAlnum.substring(idx, Math.min(idx + 16, cleanAlnum.length)));
+        break;
+      }
+    }
+  }
+
   // ASENDIA: Extraer tracking embebido
   if (!result.detectedCarrier) {
     const asResult = extractAsendiaTracking(cleanAlnum);
@@ -749,6 +769,34 @@ async function getCarrierFromTracking(tracking) {
           console.log('   ✅ INPOST encontrado en Odoo: ' + (ipPicking.origin || 'sin pedido'));
           return { carrier: 'INPOST', picking: ipPicking, source: 'odoo (INPOST extraído: ' + ipTracking + ')', elapsed };
         }
+      }
+    }
+  }
+
+  // SPRING: buscar tracking embebido extraído del barcode GS1-128
+  if (extracted.detectedCarrier === 'SPRING' && extracted.patterns.length > 1) {
+    const springPatterns = extracted.patterns.slice(1); // skip el código completo
+    for (const pat of springPatterns) {
+      // Buscar en índice
+      const spIndex = findInTrackingIndex(pat);
+      if (spIndex && (spIndex.carrier === 'SPRING' || spIndex.orderRef)) {
+        const elapsed = Date.now() - startTime;
+        console.log('   ⚡ Índice SPRING: ' + pat + ' (' + elapsed + 'ms)');
+        return {
+          carrier: spIndex.carrier || 'SPRING',
+          picking: { id: spIndex.pickingId, name: spIndex.pickingName, carrier_tracking_ref: spIndex.odooTracking, origin: spIndex.orderRef, partner_id: [null, spIndex.clientName] },
+          source: 'index (SPRING extraído: ' + pat + ')', elapsed
+        };
+      }
+    }
+    // Buscar en Odoo con cada patrón extraído
+    for (const pat of springPatterns) {
+      console.log('   🔍 Buscando SPRING en Odoo: ' + pat);
+      const spPicking = await odooClient.findPickingByTracking(pat);
+      if (spPicking) {
+        const elapsed = Date.now() - startTime;
+        console.log('   ✅ SPRING encontrado en Odoo: ' + (spPicking.origin || 'sin pedido'));
+        return { carrier: 'SPRING', picking: spPicking, source: 'odoo (SPRING extraído: ' + pat + ')', elapsed };
       }
     }
   }
