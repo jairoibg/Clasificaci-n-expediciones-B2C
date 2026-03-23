@@ -121,7 +121,7 @@ class OdooClient {
     const pickings = await this.execute('stock.picking', 'search_read', [domain], {
       fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state', 'carrier_id'],
       order: 'scheduled_date desc',
-      limit: 15000
+      limit: 25000
     });
 
     return pickings;
@@ -252,7 +252,7 @@ async function sync() {
     process.exit(1);
   }
 
-  const pickings = await odooClient.getRecentPickings(4);
+  const pickings = await odooClient.getRecentPickings(7);
   console.log(`   📦 ${pickings.length} OUTs descargados de Odoo`);
   console.log('');
 
@@ -260,7 +260,7 @@ async function sync() {
   // PASO 2: Descargar envíos de Sendcloud
   // ============================================
   console.log('📬 PASO 2: Descargando envíos de Sendcloud...');
-  const parcels = await fetchSendcloudParcels(4);
+  const parcels = await fetchSendcloudParcels(7);
   console.log(`   📬 ${parcels.length} envíos descargados de Sendcloud`);
   console.log('');
 
