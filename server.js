@@ -420,6 +420,7 @@ function getSession(carrier) {
 function addPackageToSession(carrier, packageData) {
   const session = getSession(carrier);
   if (session.packages.find(p => p.tracking === packageData.tracking)) return { added: false, reason: 'duplicate' };
+  if (packageData.orderRef && session.packages.find(p => p.orderRef === packageData.orderRef)) return { added: false, reason: 'duplicate-order' };
   session.packages.push(packageData);
   session.lastUpdate = new Date().toISOString();
   saveData();
@@ -953,25 +954,35 @@ app.post('/api/scan', async (req, res) => {
   if (session.packages.find(p => p.tracking === clean)) {
     return res.json({ success: false, error: 'DUPLICADO', message: 'Este paquete ya está escaneado', tracking: clean });
   }
-  
+
   const det = await getCarrierFromTracking(clean);
-  
+
   if (!det.picking) {
     console.log('   ❌ No existe en Odoo');
     return res.json({ success: false, error: 'NO_ENCONTRADO', message: 'El tracking ' + clean + ' no existe en Odoo', tracking: clean });
   }
-  
+
   if (det.carrier && det.carrier !== expected) {
     console.log('   ❌ Es ' + det.carrier + ', no ' + expected);
     return res.json({ success: false, error: 'TRANSPORTISTA_INCORRECTO', message: 'Este paquete es de ' + det.carrier + ', no de ' + expected, detectedCarrier: det.carrier });
   }
-  
+
   if (!det.carrier) {
     console.log('   ⚠️ No se pudo verificar transportista');
     return res.json({ success: false, error: 'NO_VERIFICADO', message: 'No se pudo verificar el transportista. Busca por nombre de cliente.', tracking: clean, picking: det.picking });
   }
-  
-  const packageData = { tracking: clean, pickingId: det.picking.id, orderRef: det.picking.origin || '', clientName: det.picking.partner_id ? det.picking.partner_id[1] : '', scannedAt: new Date().toISOString() };
+
+  // Detectar duplicado por pedido (diferentes barcodes CTT multi-collo resuelven al mismo pedido)
+  const orderRef = det.picking.origin || '';
+  if (orderRef) {
+    const existingByOrder = session.packages.find(p => p.orderRef === orderRef);
+    if (existingByOrder) {
+      console.log('   ⚠️ Pedido ' + orderRef + ' ya escaneado (barcode diferente: ' + existingByOrder.tracking.substring(0, 20) + '...)');
+      return res.json({ success: false, error: 'DUPLICADO', message: 'El pedido ' + orderRef + ' ya está escaneado (tracking diferente)', tracking: clean, orderRef: orderRef });
+    }
+  }
+
+  const packageData = { tracking: clean, pickingId: det.picking.id, orderRef: orderRef, clientName: det.picking.partner_id ? det.picking.partner_id[1] : '', scannedAt: new Date().toISOString() };
   addPackageToSession(expected, packageData);
   const updatedSession = getSession(expected);
   
