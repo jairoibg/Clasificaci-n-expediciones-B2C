@@ -57,6 +57,13 @@ function normalizeCarrier(carrierCode) {
   return CARRIER_MAP[normalized] || carrierCode.toUpperCase();
 }
 
+function overrideCarrier(carrier, tracking) {
+  if (!carrier || !tracking) return carrier;
+  const t = tracking.toUpperCase().trim();
+  if (/^H10/.test(t) && carrier === 'SPRING') return 'ASENDIA';
+  return carrier;
+}
+
 // Archivos de salida - usar Volume si está disponible
 const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
 const INDEX_FILE = path.join(VOLUME_PATH, 'tracking-index.json');
@@ -381,18 +388,19 @@ async function sync() {
     // Primero intentar coincidencia exacta
     if (sendcloudByTracking[odooTracking]) {
       const scData = sendcloudByTracking[odooTracking];
+      const finalCarrier = overrideCarrier(scData.carrier, odooTracking);
       const fullData = {
         ...pickingData,
         tracking: scData.tracking,
-        carrier: scData.carrier,
+        carrier: finalCarrier,
         sendcloudData: scData
       };
 
       trackingIndex.byTracking[scData.tracking] = fullData;
       trackingIndex.byOdooTracking[odooTracking.toUpperCase()] = fullData;
-      
-      if (trackingIndex.byCarrier[scData.carrier]) {
-        trackingIndex.byCarrier[scData.carrier][scData.tracking] = fullData;
+
+      if (trackingIndex.byCarrier[finalCarrier]) {
+        trackingIndex.byCarrier[finalCarrier][scData.tracking] = fullData;
       }
       
       matched++;
@@ -407,17 +415,20 @@ async function sync() {
       
       for (const scParcel of sendcloudByCarrier[carrier]) {
         if (matchTracking(scParcel.tracking, odooTracking, carrier)) {
+          const finalCarrier = overrideCarrier(carrier, odooTracking);
           const fullData = {
             ...pickingData,
             tracking: scParcel.tracking,
-            carrier: carrier,
+            carrier: finalCarrier,
             sendcloudData: scParcel,
             matchType: 'pattern'
           };
 
           trackingIndex.byTracking[scParcel.tracking] = fullData;
           trackingIndex.byOdooTracking[odooTracking.toUpperCase()] = fullData;
-          trackingIndex.byCarrier[carrier][scParcel.tracking] = fullData;
+          if (trackingIndex.byCarrier[finalCarrier]) {
+            trackingIndex.byCarrier[finalCarrier][scParcel.tracking] = fullData;
+          }
           
           matched++;
           foundMatch = true;
@@ -435,9 +446,10 @@ async function sync() {
       else if (/^PK/.test(t)) detectedCarrier = 'CORREOS';
       else if (/^MI/.test(t)) detectedCarrier = 'CORREOS EXPRESS';
       else if (/^6C20/.test(t)) detectedCarrier = 'ASENDIA';
+      else if (/^H10/.test(t)) detectedCarrier = 'ASENDIA';
       else if (/^6A/.test(t)) detectedCarrier = 'SPRING';
       else if (/^LS\d{9}[A-Z]{2}$/.test(t)) detectedCarrier = 'ASENDIA';
-      else if (/^LS|^LX|^LV|^LT|^3[A-Z]|^H10|^CP|^Z96|^XSMT|^0008|^0626/.test(t)) detectedCarrier = 'SPRING';
+      else if (/^LS|^LX|^LV|^LT|^3[A-Z]|^CP|^Z96|^XSMT|^0008|^0626/.test(t)) detectedCarrier = 'SPRING';
       else if (/^CTT|^EA/.test(t)) detectedCarrier = 'CTT';
       else if (/^C0/.test(t)) detectedCarrier = 'CORREOS';
       else if (/^\d{8}$/.test(t)) detectedCarrier = 'INPOST';

@@ -675,10 +675,17 @@ const sendcloudClient = new SendcloudClient(CONFIG.sendcloud);
 // ============================================
 // DETECCIÓN DE TRANSPORTISTA
 // ============================================
+function overrideCarrier(carrier, tracking) {
+  if (!carrier || !tracking) return carrier;
+  const t = tracking.toUpperCase().trim();
+  if (/^H10/.test(t) && carrier === 'SPRING') return 'ASENDIA';
+  return carrier;
+}
+
 async function getCarrierFromTracking(tracking) {
   const startTime = Date.now();
   const clean = tracking.trim().toUpperCase();
-  
+
   // Extraer patrones especiales (GLS QR)
   const extracted = extractSpecialPatterns(clean);
   const glsPattern = extracted.detectedCarrier === 'GLS' && extracted.patterns.length > 1 ? extracted.patterns[1] : null;
@@ -809,9 +816,10 @@ async function getCarrierFromTracking(tracking) {
   const indexResult = findInTrackingIndex(clean);
   if (indexResult && indexResult.carrier !== 'DESCONOCIDO') {
     const elapsed = Date.now() - startTime;
-    console.log('   ⚡ Índice: ' + indexResult.carrier + ' (' + elapsed + 'ms)');
+    const finalCarrier = overrideCarrier(indexResult.carrier, indexResult.odooTracking || clean);
+    console.log('   ⚡ Índice: ' + finalCarrier + ' (' + elapsed + 'ms)');
     return {
-      carrier: indexResult.carrier,
+      carrier: finalCarrier,
       picking: { id: indexResult.pickingId, name: indexResult.pickingName, carrier_tracking_ref: indexResult.odooTracking, origin: indexResult.orderRef, partner_id: [null, indexResult.clientName] },
       source: 'index', elapsed
     };
@@ -846,17 +854,18 @@ async function getCarrierFromTracking(tracking) {
   // 4. Caché Sendcloud
   const cached = findInSendcloudCache(odooTracking);
   if (cached && cached.carrier) {
-    console.log('   ⚡ Caché: ' + cached.carrier + ' (' + (Date.now() - startTime) + 'ms)');
-    return { carrier: cached.carrier, picking, source: 'cache', elapsed: Date.now() - startTime };
+    const cachedCarrier = overrideCarrier(cached.carrier, odooTracking);
+    console.log('   ⚡ Caché: ' + cachedCarrier + ' (' + (Date.now() - startTime) + 'ms)');
+    return { carrier: cachedCarrier, picking, source: 'cache', elapsed: Date.now() - startTime };
   }
 
   // 5. API Sendcloud
   console.log('   🌐 Consultando Sendcloud API...');
   const sendcloudData = await sendcloudClient.getParcelByTracking(odooTracking);
   if (sendcloudData && sendcloudData.carrier_code) {
-    const carrier = sendcloudClient.normalizeCarrier(sendcloudData.carrier_code);
-    console.log('   🌐 Sendcloud: ' + carrier + ' (' + (Date.now() - startTime) + 'ms)');
-    return { carrier, picking, source: 'sendcloud', elapsed: Date.now() - startTime };
+    const scCarrier = overrideCarrier(sendcloudClient.normalizeCarrier(sendcloudData.carrier_code), odooTracking);
+    console.log('   🌐 Sendcloud: ' + scCarrier + ' (' + (Date.now() - startTime) + 'ms)');
+    return { carrier: scCarrier, picking, source: 'sendcloud', elapsed: Date.now() - startTime };
   }
 
   return { carrier: null, picking, source: 'no_sendcloud' };
@@ -1473,9 +1482,10 @@ app.get('/api/odoo-outs', async (req, res) => {
         else if (/^MI/.test(t)) carrier = 'CORREOS EXPRESS';
         else if (/^Z89/.test(t)) carrier = 'GLS';
         else if (/^6C20/.test(t)) carrier = 'ASENDIA';
+        else if (/^H10/.test(t)) carrier = 'ASENDIA';
         else if (/^6A/.test(t)) carrier = 'SPRING';
         else if (/^LS\d{9}[A-Z]{2}$/.test(t)) carrier = 'ASENDIA';
-        else if (/^LS|^LX|^LV|^LT|^3[A-Z]|^H10|^CP|^Z96|^XSMT|^0008|^0626/.test(t)) carrier = 'SPRING';
+        else if (/^LS|^LX|^LV|^LT|^3[A-Z]|^CP|^Z96|^XSMT|^0008|^0626/.test(t)) carrier = 'SPRING';
         else if (/^CTT|^EA/.test(t)) carrier = 'CTT';
         else if (/^C0/.test(t)) carrier = 'CORREOS';
         else if (/^\d{8}$/.test(t)) carrier = 'INPOST';
