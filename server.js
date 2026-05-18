@@ -962,12 +962,12 @@ app.post('/api/scan', async (req, res) => {
     return res.json({ success: false, error: 'NO_ENCONTRADO', message: 'El tracking ' + clean + ' no existe en Odoo', tracking: clean });
   }
 
-  if (det.carrier && det.carrier !== expected) {
+  if (det.carrier && det.carrier !== 'DESCONOCIDO' && det.carrier !== expected) {
     console.log('   ❌ Es ' + det.carrier + ', no ' + expected);
     return res.json({ success: false, error: 'TRANSPORTISTA_INCORRECTO', message: 'Este paquete es de ' + det.carrier + ', no de ' + expected, detectedCarrier: det.carrier });
   }
 
-  if (!det.carrier) {
+  if (!det.carrier || det.carrier === 'DESCONOCIDO') {
     console.log('   ⚠️ No se pudo verificar transportista');
     return res.json({ success: false, error: 'NO_VERIFICADO', message: 'No se pudo verificar el transportista. Busca por nombre de cliente.', tracking: clean, picking: det.picking });
   }
@@ -1003,7 +1003,7 @@ app.post('/api/add-tracking', async (req, res) => {
   }
   
   const det = await getCarrierFromTracking(clean);
-  if (det.carrier && det.carrier !== carrierUpper) {
+  if (det.carrier && det.carrier !== 'DESCONOCIDO' && det.carrier !== carrierUpper) {
     return res.json({ success: false, error: 'TRANSPORTISTA_INCORRECTO', message: 'Este paquete es de ' + det.carrier + ', no de ' + carrierUpper, detectedCarrier: det.carrier });
   }
   
