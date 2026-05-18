@@ -1449,14 +1449,15 @@ app.get('/api/odoo-outs', async (req, res) => {
 
     for (const picking of pickings) {
       const odooCarrierName = picking.carrier_id ? picking.carrier_id[1] : '';
-      let carrier = detectCarrierFromOdooName(odooCarrierName);
+      let carrier = null;
 
-      if (!carrier && picking.carrier_tracking_ref) {
+      // 1. Índice pre-calculado (más preciso)
+      if (picking.carrier_tracking_ref) {
         const idx = findInTrackingIndex(picking.carrier_tracking_ref.trim());
         if (idx && idx.carrier) carrier = idx.carrier;
       }
 
-      // Detectar por formato de tracking si sigue sin carrier
+      // 2. Prefijo de tracking (muy fiable)
       if (!carrier && picking.carrier_tracking_ref) {
         const t = picking.carrier_tracking_ref.toUpperCase().trim();
         if (/^PK/.test(t)) carrier = 'CORREOS';
@@ -1469,6 +1470,11 @@ app.get('/api/odoo-outs', async (req, res) => {
         else if (/^CTT|^EA/.test(t)) carrier = 'CTT';
         else if (/^C0/.test(t)) carrier = 'CORREOS';
         else if (/^\d{8}$/.test(t)) carrier = 'INPOST';
+      }
+
+      // 3. Nombre carrier en Odoo (fallback para envíos sin tracking o prefijo desconocido)
+      if (!carrier) {
+        carrier = detectCarrierFromOdooName(odooCarrierName);
       }
 
       const key = carrier || 'DESCONOCIDO';
