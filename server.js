@@ -807,7 +807,7 @@ async function getCarrierFromTracking(tracking) {
 
   // 1. Índice pre-calculado
   const indexResult = findInTrackingIndex(clean);
-  if (indexResult) {
+  if (indexResult && indexResult.carrier !== 'DESCONOCIDO') {
     const elapsed = Date.now() - startTime;
     console.log('   ⚡ Índice: ' + indexResult.carrier + ' (' + elapsed + 'ms)');
     return {
@@ -816,14 +816,23 @@ async function getCarrierFromTracking(tracking) {
       source: 'index', elapsed
     };
   }
-  
-  // 2. Buscar en Odoo
-  console.log('   🔍 No en índice, buscando en Odoo...');
-  const picking = await odooClient.findPickingByTracking(clean);
-  if (!picking) return { carrier: null, picking: null, source: 'not_found' };
 
-  const odooTracking = picking.carrier_tracking_ref;
-  console.log('   📍 Tracking Odoo: ' + odooTracking);
+  // Si el índice tenía DESCONOCIDO, reusar datos del picking pero seguir detectando carrier
+  let picking;
+  let odooTracking;
+
+  if (indexResult) {
+    console.log('   ⚠️ Índice DESCONOCIDO, intentando Sendcloud...');
+    picking = { id: indexResult.pickingId, name: indexResult.pickingName, carrier_tracking_ref: indexResult.odooTracking, origin: indexResult.orderRef, partner_id: [null, indexResult.clientName] };
+    odooTracking = indexResult.odooTracking;
+  } else {
+    // 2. Buscar en Odoo
+    console.log('   🔍 No en índice, buscando en Odoo...');
+    picking = await odooClient.findPickingByTracking(clean);
+    if (!picking) return { carrier: null, picking: null, source: 'not_found' };
+    odooTracking = picking.carrier_tracking_ref;
+    console.log('   📍 Tracking Odoo: ' + odooTracking);
+  }
 
   // 3. Detectar CORREOS EXPRESS por carrier Odoo (MI*)
   if (picking.carrier_id) {
@@ -833,14 +842,14 @@ async function getCarrierFromTracking(tracking) {
       return { carrier: 'CORREOS EXPRESS', picking, source: 'odoo-carrier', elapsed: Date.now() - startTime };
     }
   }
-  
+
   // 4. Caché Sendcloud
   const cached = findInSendcloudCache(odooTracking);
   if (cached && cached.carrier) {
     console.log('   ⚡ Caché: ' + cached.carrier + ' (' + (Date.now() - startTime) + 'ms)');
     return { carrier: cached.carrier, picking, source: 'cache', elapsed: Date.now() - startTime };
   }
-  
+
   // 5. API Sendcloud
   console.log('   🌐 Consultando Sendcloud API...');
   const sendcloudData = await sendcloudClient.getParcelByTracking(odooTracking);
