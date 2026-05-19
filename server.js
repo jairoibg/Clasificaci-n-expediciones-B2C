@@ -678,7 +678,7 @@ const sendcloudClient = new SendcloudClient(CONFIG.sendcloud);
 function overrideCarrier(carrier, tracking) {
   if (!carrier || !tracking) return carrier;
   const t = tracking.toUpperCase().trim();
-  if (/^H10/.test(t) && carrier === 'SPRING') return 'ASENDIA';
+  if (/^H103/.test(t) && carrier === 'SPRING') return 'ASENDIA';
   return carrier;
 }
 
@@ -1476,7 +1476,7 @@ app.get('/api/odoo-outs', async (req, res) => {
         else if (/^MI/.test(t)) carrier = 'CORREOS EXPRESS';
         else if (/^Z89/.test(t)) carrier = 'GLS';
         else if (/^6C20/.test(t)) carrier = 'ASENDIA';
-        else if (/^H10/.test(t)) carrier = 'ASENDIA';
+        else if (/^H103/.test(t)) carrier = 'ASENDIA';
         else if (/^6A/.test(t)) carrier = 'SPRING';
         else if (/^LS\d{9}[A-Z]{2}$/.test(t)) carrier = 'ASENDIA';
         else if (/^LS|^LX|^LV|^LT|^3[A-Z]|^CP|^Z96|^XSMT|^0008|^0626/.test(t)) carrier = 'SPRING';

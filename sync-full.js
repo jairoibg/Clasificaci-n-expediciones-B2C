@@ -60,7 +60,7 @@ function normalizeCarrier(carrierCode) {
 function overrideCarrier(carrier, tracking) {
   if (!carrier || !tracking) return carrier;
   const t = tracking.toUpperCase().trim();
-  if (/^H10/.test(t) && carrier === 'SPRING') return 'ASENDIA';
+  if (/^H103/.test(t) && carrier === 'SPRING') return 'ASENDIA';
   return carrier;
 }
 
@@ -446,7 +446,7 @@ async function sync() {
       else if (/^PK/.test(t)) detectedCarrier = 'CORREOS';
       else if (/^MI/.test(t)) detectedCarrier = 'CORREOS EXPRESS';
       else if (/^6C20/.test(t)) detectedCarrier = 'ASENDIA';
-      else if (/^H10/.test(t)) detectedCarrier = 'ASENDIA';
+      else if (/^H103/.test(t)) detectedCarrier = 'ASENDIA';
       else if (/^6A/.test(t)) detectedCarrier = 'SPRING';
       else if (/^LS\d{9}[A-Z]{2}$/.test(t)) detectedCarrier = 'ASENDIA';
       else if (/^LS|^LX|^LV|^LT|^3[A-Z]|^CP|^Z96|^XSMT|^0008|^0626/.test(t)) detectedCarrier = 'SPRING';
