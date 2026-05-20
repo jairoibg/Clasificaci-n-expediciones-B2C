@@ -127,9 +127,9 @@ class OdooClient {
     console.log(`   🔍 Dominio: OUTs Shopify B2C con tracking, últimos ${daysBack} días`);
 
     const pickings = await this.execute('stock.picking', 'search_read', [domain], {
-      fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state', 'carrier_id'],
+      fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state', 'carrier_id', 'sale_id', 'weight', 'date_done'],
       order: 'scheduled_date desc',
-      limit: 25000
+      limit: 30000
     });
 
     return pickings;
@@ -139,9 +139,12 @@ class OdooClient {
 // ============================================
 // CLIENTE SENDCLOUD
 // ============================================
+// IMPORTANTE: Sendcloud IGNORA el parámetro limit y siempre devuelve 100 envíos por página.
+// Con ~3000 envíos/día * 7 días = ~21000 envíos -> necesitamos al menos 250 páginas.
+// Subimos a 500 páginas máximo para tener margen (=50000 envíos posibles).
 async function fetchSendcloudParcels(daysBack = 7) {
   const authHeader = 'Basic ' + Buffer.from(`${CONFIG.sendcloud.publicKey}:${CONFIG.sendcloud.secretKey}`).toString('base64');
-  
+
   const dateFrom = new Date();
   dateFrom.setDate(dateFrom.getDate() - daysBack);
   dateFrom.setHours(0, 0, 0, 0);
@@ -152,9 +155,14 @@ async function fetchSendcloudParcels(daysBack = 7) {
   let allParcels = [];
   let nextUrl = `${CONFIG.sendcloud.apiUrl}/parcels?updated_after=${encodeURIComponent(updatedAfter)}&limit=500`;
   let page = 1;
+  const MAX_PAGES = 500;
+  let consecutiveErrors = 0;
 
-  while (nextUrl && page <= 100) {
-    console.log(`   📄 Página ${page}...`);
+  while (nextUrl && page <= MAX_PAGES) {
+    // Log cada 25 páginas para no saturar
+    if (page === 1 || page % 25 === 0) {
+      console.log(`   📄 Página ${page} (${allParcels.length} envíos descargados)...`);
+    }
 
     try {
       const response = await fetch(nextUrl, {
@@ -166,9 +174,18 @@ async function fetchSendcloudParcels(daysBack = 7) {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // Reintentar hasta 3 errores consecutivos antes de abortar
+        consecutiveErrors++;
+        console.warn(`   ⚠️ HTTP ${response.status} en página ${page} (intento ${consecutiveErrors}/3)`);
+        if (consecutiveErrors >= 3) {
+          console.error(`   ❌ 3 errores consecutivos, abortando paginación`);
+          break;
+        }
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
       }
 
+      consecutiveErrors = 0;
       const data = await response.json();
 
       if (data.parcels && data.parcels.length > 0) {
@@ -179,15 +196,18 @@ async function fetchSendcloudParcels(daysBack = 7) {
       page++;
 
       if (nextUrl) {
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 150));
       }
 
     } catch (err) {
-      console.error(`   ❌ Error: ${err.message}`);
-      break;
+      consecutiveErrors++;
+      console.error(`   ❌ Error en página ${page}: ${err.message} (${consecutiveErrors}/3)`);
+      if (consecutiveErrors >= 3) break;
+      await new Promise(r => setTimeout(r, 1000));
     }
   }
 
+  console.log(`   ✅ Total descargado: ${allParcels.length} envíos en ${page - 1} páginas`);
   return allParcels;
 }
 
@@ -290,7 +310,7 @@ async function sync() {
     if (!tracking) continue;
 
     const carrier = normalizeCarrier(parcel.carrier?.code || parcel.shipment?.name);
-    
+
     const parcelData = {
       tracking: tracking,
       carrier: carrier,
@@ -300,7 +320,13 @@ async function sync() {
       name: parcel.name || null,
       company: parcel.company_name || null,
       status: parcel.status?.message || null,
-      createdAt: parcel.date_created || null
+      createdAt: parcel.date_created || null,
+      // Datos extra para validación cruzada
+      country: parcel.country?.iso_2 || null,
+      postalCode: parcel.postal_code || null,
+      city: parcel.city || null,
+      weight: parcel.weight ? parseFloat(parcel.weight) : null,
+      shipmentName: parcel.shipment?.name || null
     };
 
     sendcloudByTracking[tracking] = parcelData;
@@ -365,7 +391,13 @@ async function sync() {
       pickingName: picking.name,
       orderRef: picking.origin || '',
       clientName: picking.partner_id ? picking.partner_id[1] : '',
+      partnerId: picking.partner_id ? picking.partner_id[0] : null,
+      saleId: picking.sale_id ? picking.sale_id[0] : null,
+      saleName: picking.sale_id ? picking.sale_id[1] : '',
+      weight: picking.weight || null,
+      dateDone: picking.date_done || null,
       odooTracking: odooTracking,
+      odooCarrierName: odooCarrierName || '',
       state: picking.state
     };
 
@@ -476,6 +508,69 @@ async function sync() {
 
   trackingIndex.matched = matched;
   trackingIndex.unmatched = unmatched;
+
+  // ============================================
+  // PASO 3.5: Construir índices auxiliares (búsqueda por pedido y cliente)
+  // ============================================
+  console.log('🔗 PASO 3.5: Construyendo índices auxiliares...');
+
+  trackingIndex.byOrderRef = {};      // orderRef → [pickings]
+  trackingIndex.byClientName = {};    // clientName lowercase → [pickings]
+  trackingIndex.byPartnerId = {};     // partnerId → [pickings]
+
+  const allEntries = new Set();
+  Object.values(trackingIndex.byOdooTracking || {}).forEach(e => allEntries.add(e));
+  Object.values(trackingIndex.byTracking || {}).forEach(e => allEntries.add(e));
+
+  let dupTrackings = 0;
+  const trackingCounts = {};
+
+  for (const entry of allEntries) {
+    if (entry.orderRef) {
+      const key = entry.orderRef.toUpperCase();
+      if (!trackingIndex.byOrderRef[key]) trackingIndex.byOrderRef[key] = [];
+      trackingIndex.byOrderRef[key].push({
+        pickingId: entry.pickingId,
+        pickingName: entry.pickingName,
+        tracking: entry.tracking || entry.odooTracking,
+        carrier: entry.carrier,
+        clientName: entry.clientName,
+        state: entry.state
+      });
+    }
+    if (entry.clientName) {
+      // Extraer primer nombre (formato "Nombre, Nombre" en Odoo)
+      const firstName = entry.clientName.split(',')[0].trim().toLowerCase();
+      if (firstName.length >= 3) {
+        if (!trackingIndex.byClientName[firstName]) trackingIndex.byClientName[firstName] = [];
+        trackingIndex.byClientName[firstName].push({
+          pickingId: entry.pickingId,
+          pickingName: entry.pickingName,
+          tracking: entry.tracking || entry.odooTracking,
+          carrier: entry.carrier,
+          orderRef: entry.orderRef
+        });
+      }
+    }
+    // Contar duplicados de tracking (mismo tracking en múltiples pickings)
+    const trk = entry.odooTracking || entry.tracking;
+    if (trk) {
+      trackingCounts[trk] = (trackingCounts[trk] || 0) + 1;
+    }
+  }
+
+  // Detectar trackings duplicados
+  trackingIndex.duplicateTrackings = {};
+  for (const [trk, count] of Object.entries(trackingCounts)) {
+    if (count > 1) {
+      trackingIndex.duplicateTrackings[trk] = count;
+      dupTrackings++;
+    }
+  }
+
+  console.log(`   📋 Índice por pedido: ${Object.keys(trackingIndex.byOrderRef).length} pedidos`);
+  console.log(`   👤 Índice por cliente: ${Object.keys(trackingIndex.byClientName).length} clientes únicos`);
+  console.log(`   ⚠️ Trackings duplicados: ${dupTrackings}`);
 
   // ============================================
   // PASO 4: Guardar índice

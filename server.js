@@ -1040,18 +1040,134 @@ app.get('/api/detect-carrier/:tracking', async (req, res) => {
 app.get('/api/search-client/:name', async (req, res) => {
   const searchTerm = req.params.name.trim();
   if (searchTerm.length < 3) return res.status(400).json({ error: 'Mínimo 3 caracteres' });
-  
+
+  const startTime = Date.now();
   console.log('\n🔎 BÚSQUEDA: "' + searchTerm + '"');
   const isOrderRef = /^(DF|SO|PO|WH|S|CO|KA)\d/i.test(searchTerm);
-  
+  const upperTerm = searchTerm.toUpperCase();
+
+  // 1. Buscar primero en el ÍNDICE LOCAL (instantáneo, O(1))
+  let indexResults = [];
+
+  // Por pedido exacto
+  if (trackingIndex.byOrderRef && trackingIndex.byOrderRef[upperTerm]) {
+    indexResults = trackingIndex.byOrderRef[upperTerm].map(e => ({
+      id: e.pickingId,
+      name: e.pickingName,
+      tracking: e.tracking,
+      client: e.clientName || 'Sin cliente',
+      origin: upperTerm,
+      carrier: e.carrier,
+      state: e.state,
+      source: 'index'
+    }));
+  }
+
+  // Por pedido parcial (si no hubo match exacto)
+  if (indexResults.length === 0 && isOrderRef && trackingIndex.byOrderRef) {
+    for (const ref of Object.keys(trackingIndex.byOrderRef)) {
+      if (ref.includes(upperTerm)) {
+        for (const e of trackingIndex.byOrderRef[ref]) {
+          indexResults.push({
+            id: e.pickingId,
+            name: e.pickingName,
+            tracking: e.tracking,
+            client: e.clientName || 'Sin cliente',
+            origin: ref,
+            carrier: e.carrier,
+            state: e.state,
+            source: 'index'
+          });
+        }
+        if (indexResults.length >= 20) break;
+      }
+    }
+  }
+
+  // Por cliente (búsqueda parcial)
+  if (indexResults.length === 0 && !isOrderRef && trackingIndex.byClientName) {
+    const searchLower = searchTerm.toLowerCase();
+    for (const clientKey of Object.keys(trackingIndex.byClientName)) {
+      if (clientKey.includes(searchLower)) {
+        for (const e of trackingIndex.byClientName[clientKey]) {
+          indexResults.push({
+            id: e.pickingId,
+            name: e.pickingName,
+            tracking: e.tracking,
+            client: clientKey,
+            origin: e.orderRef || '',
+            carrier: e.carrier,
+            source: 'index'
+          });
+        }
+        if (indexResults.length >= 20) break;
+      }
+    }
+  }
+
+  if (indexResults.length > 0) {
+    const elapsed = Date.now() - startTime;
+    console.log('   ⚡ Índice local: ' + indexResults.length + ' resultados (' + elapsed + 'ms)');
+    return res.json({ query: searchTerm, count: indexResults.length, results: indexResults, source: 'index', time: elapsed });
+  }
+
+  // 2. Fallback a Odoo (más lento)
+  console.log('   🔍 No en índice, buscando en Odoo...');
   let pickings = isOrderRef ? await odooClient.findPickingsByOrderRef(searchTerm) : await odooClient.findPickingsByClientName(searchTerm);
   if (pickings.length === 0) {
     pickings = isOrderRef ? await odooClient.findPickingsByClientName(searchTerm) : await odooClient.findPickingsByOrderRef(searchTerm);
   }
-  
-  const results = pickings.map(p => ({ id: p.id, name: p.name, tracking: p.carrier_tracking_ref, client: p.partner_id ? p.partner_id[1] : 'Sin cliente', origin: p.origin, date: p.scheduled_date, expedited: !!p.manual_expedition_date }));
-  console.log('   ✅ Devolviendo ' + results.length + ' resultados');
-  res.json({ query: searchTerm, count: results.length, results });
+
+  const results = pickings.map(p => ({
+    id: p.id,
+    name: p.name,
+    tracking: p.carrier_tracking_ref,
+    client: p.partner_id ? p.partner_id[1] : 'Sin cliente',
+    origin: p.origin,
+    date: p.scheduled_date,
+    expedited: !!p.manual_expedition_date,
+    source: 'odoo'
+  }));
+  const elapsed = Date.now() - startTime;
+  console.log('   ✅ Devolviendo ' + results.length + ' resultados desde Odoo (' + elapsed + 'ms)');
+  res.json({ query: searchTerm, count: results.length, results, source: 'odoo', time: elapsed });
+});
+
+// Endpoint de diagnóstico - estadísticas detalladas del índice
+app.get('/api/index-diagnostic', (req, res) => {
+  const byCarrierCount = {};
+  for (const [carrier, data] of Object.entries(trackingIndex.byCarrier || {})) {
+    byCarrierCount[carrier] = Object.keys(data).length;
+  }
+
+  const dupCount = Object.keys(trackingIndex.duplicateTrackings || {}).length;
+  const orderRefCount = Object.keys(trackingIndex.byOrderRef || {}).length;
+  const clientCount = Object.keys(trackingIndex.byClientName || {}).length;
+
+  // Contar entries DESCONOCIDO
+  let desconocidoCount = 0;
+  for (const entry of Object.values(trackingIndex.byOdooTracking || {})) {
+    if (entry.carrier === 'DESCONOCIDO') desconocidoCount++;
+  }
+
+  const age = trackingIndex.lastSync ? Math.round((Date.now() - new Date(trackingIndex.lastSync).getTime()) / 60000) : null;
+
+  res.json({
+    lastSync: trackingIndex.lastSync,
+    ageMinutes: age,
+    totals: {
+      odoo: trackingIndex.totalOdoo,
+      sendcloud: trackingIndex.totalSendcloud,
+      matched: trackingIndex.matched,
+      unmatched: trackingIndex.unmatched,
+      desconocido: desconocidoCount,
+      duplicateTrackings: dupCount,
+      indexedOrderRefs: orderRefCount,
+      indexedClients: clientCount
+    },
+    byCarrier: byCarrierCount,
+    duplicateSamples: Object.entries(trackingIndex.duplicateTrackings || {}).slice(0, 10).map(([t, n]) => ({ tracking: t, count: n }))
+  });
 });
 
 // Búsqueda global
