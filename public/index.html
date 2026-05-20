@@ -749,10 +749,136 @@
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
-    /* Tablet+ */
-    @media (min-width: 768px) {
-      .body { max-width: 720px; margin: 0 auto; }
-      .d3 .nav { left: 50%; right: auto; transform: translateX(-50%); width: 720px; max-width: 100vw; border-radius: 0; }
+    /* ──────────── RESPONSIVE ──────────── */
+
+    /* Tablet (768-1023px): wider grid */
+    @media (min-width: 768px) and (max-width: 1023px) {
+      .body { max-width: 920px; margin: 0 auto; padding: 20px 24px 100px; }
+      .d3 .grid { grid-template-columns: repeat(4, 1fr); gap: 10px; }
+      .d3 .nav { left: 50%; right: auto; transform: translateX(-50%); width: 920px; max-width: 100vw; }
+    }
+
+    /* Desktop (1024px+): sidebar nav + wide layout */
+    @media (min-width: 1024px) {
+      body { display: flex; }
+      .app {
+        flex: 1; min-height: 100vh;
+        display: grid; grid-template-columns: 240px 1fr;
+        gap: 0;
+      }
+      .d3 .topbar {
+        grid-column: 1 / -1;
+        padding: 18px 32px;
+      }
+      .d3 .topbar .logo { width: 42px; height: 42px; font-size: 16px; }
+      .d3 .topbar .title { font-size: 18px; }
+
+      /* Sidebar nav */
+      .d3 .nav {
+        position: sticky; top: 0;
+        align-self: start;
+        grid-column: 1;
+        grid-row: 2;
+        display: flex; flex-direction: column;
+        gap: 6px;
+        padding: 24px 16px;
+        border-top: none; border-right: 1px solid var(--line);
+        background: rgba(255,255,255,0.45);
+        backdrop-filter: blur(20px) saturate(180%);
+        min-height: calc(100vh - 80px);
+        transform: none; left: auto; right: auto; bottom: auto;
+        width: auto;
+        height: calc(100vh - 80px);
+      }
+      .d3 .nav-item {
+        flex-direction: row; justify-content: flex-start;
+        gap: 12px; padding: 12px 14px; border-radius: 12px;
+        transition: all 150ms;
+      }
+      .d3 .nav-item:hover { background: rgba(255,255,255,0.5); }
+      .d3 .nav-item.on {
+        background: var(--jade-soft);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+      }
+      .d3 .nav-item .ic { width: 36px; height: 36px; }
+      .d3 .nav-item .ic svg { width: 20px; height: 20px; }
+      .d3 .nav-item .l { font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+      .d3 .fab {
+        width: auto; min-height: auto;
+        margin: 0; align-self: stretch;
+        height: 56px; border-radius: 14px;
+        padding: 0 18px;
+        display: flex; flex-direction: row; gap: 14px;
+        align-items: center; justify-content: flex-start;
+        color: white;
+        font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 700;
+        letter-spacing: 0.01em;
+      }
+      .d3 .fab::after {
+        content: 'Recogida';
+      }
+      .d3 .fab svg { width: 24px; height: 24px; flex-shrink: 0; }
+
+      /* Main content area */
+      .body {
+        grid-column: 2;
+        padding: 28px 36px;
+        max-width: none;
+      }
+
+      /* Wider grid for carriers */
+      .d3 .grid {
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 12px;
+        max-width: 1100px;
+      }
+
+      /* Two-column scanner layout on desktop */
+      .d3 .scanner {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        align-items: start;
+        max-width: 1100px;
+      }
+      .d3 .scanner .sc-head { grid-column: 1 / -1; }
+      .d3 .scanner .sc-input { grid-column: 1; }
+      .d3 .scanner .sc-hint { grid-column: 1; }
+      .d3 .scanner .pkg-list {
+        grid-column: 2;
+        grid-row: 2 / span 3;
+        margin-top: 0;
+        max-height: 480px; overflow-y: auto;
+        padding-right: 4px;
+      }
+      .d3 .scanner .actions { grid-column: 1 / -1; }
+
+      /* Wider pallet list */
+      #palletsList, #documentsList { max-width: 1100px; }
+      .d3 .group { max-width: 1100px; }
+
+      /* Wider summary (recogida) */
+      .d3 .summary { max-width: 600px; }
+
+      /* Wider filter rows */
+      .d3 .filter-row { max-width: 1100px; }
+
+      /* Config cards */
+      .d3 .config-card { max-width: 720px; }
+
+      /* Section headers */
+      .d3 .h { max-width: 1100px; }
+    }
+
+    /* Wide desktop (1440px+): even more breathing room */
+    @media (min-width: 1440px) {
+      .d3 .grid { max-width: 1280px; }
+      .d3 .scanner { max-width: 1280px; }
+      #palletsList, #documentsList { max-width: 1280px; }
+      .d3 .group { max-width: 1280px; }
+      .d3 .filter-row { max-width: 1280px; }
+      .d3 .h { max-width: 1280px; }
+      .body { padding: 28px 48px; }
     }
   </style>
 </head>
