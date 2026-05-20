@@ -1042,7 +1042,7 @@ app.get('/api/search-client/:name', async (req, res) => {
   if (searchTerm.length < 3) return res.status(400).json({ error: 'Mínimo 3 caracteres' });
   
   console.log('\n🔎 BÚSQUEDA: "' + searchTerm + '"');
-  const isOrderRef = /^(DF|SO|PO|WH|S)\d/i.test(searchTerm);
+  const isOrderRef = /^(DF|SO|PO|WH|S|CO|KA)\d/i.test(searchTerm);
   
   let pickings = isOrderRef ? await odooClient.findPickingsByOrderRef(searchTerm) : await odooClient.findPickingsByClientName(searchTerm);
   if (pickings.length === 0) {
