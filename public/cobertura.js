@@ -111,6 +111,7 @@
     $('filterCarrier').addEventListener('change', () => { state.page = 1; renderTable(); });
     $('filterStatus').addEventListener('change', () => { state.page = 1; renderTable(); });
     if ($('filterDivision')) $('filterDivision').addEventListener('change', () => { state.page = 1; renderTable(); });
+    if ($('filterTracking')) $('filterTracking').addEventListener('change', () => { state.page = 1; renderTable(); });
 
     document.querySelectorAll('.va-th').forEach(th => {
       th.onclick = () => sortBy(th.dataset.sort);
@@ -506,6 +507,7 @@
     const carrier = $('filterCarrier').value;
     const status = $('filterStatus').value;
     const division = $('filterDivision') ? $('filterDivision').value : '';
+    const trackingFilter = $('filterTracking') ? $('filterTracking').value : '';
 
     state.filtered = state.allRecs.filter(r => {
       if (carrier && r.carrier !== carrier) return false;
@@ -516,6 +518,9 @@
         const name = r.name || '';
         if (!name.startsWith(division + '/')) return false;
       }
+      // Filtro por tracking presente o ausente
+      if (trackingFilter === 'with' && (!r.tracking || r.tracking.trim() === '')) return false;
+      if (trackingFilter === 'without' && r.tracking && r.tracking.trim() !== '') return false;
       if (q) {
         const hay = ((r.tracking||'') + (r.origin||'') + (r.client||'') + (r.name||'')).toLowerCase();
         if (!hay.includes(q)) return false;
