@@ -1057,6 +1057,68 @@ app.get('/api/index-stats', (req, res) => {
   res.json({ lastSync: trackingIndex.lastSync, ageMinutes: age, totalOdoo: trackingIndex.totalOdoo, totalSendcloud: trackingIndex.totalSendcloud, matched: trackingIndex.matched, unmatched: trackingIndex.unmatched || 0, byCarrier: trackingIndex.byCarrier || {}, syncInProgress, lastSyncAttempt });
 });
 
+// Índice compacto para escaneo del lado del cliente (0ms matching)
+// Devuelve array compacto [tracking, pickingId, orderRef, clientName, carrier] por entrada
+let scanningIndexCache = null;
+let scanningIndexCacheKey = null;
+
+app.get('/api/scanning-index', (req, res) => {
+  const ifNoneMatch = req.headers['if-none-match'];
+  const etag = '"' + (trackingIndex.lastSync || '0') + '-' + (trackingIndex.matched || 0) + '"';
+
+  if (ifNoneMatch === etag) {
+    res.status(304).end();
+    return;
+  }
+
+  // Reusar caché si el sync no ha cambiado
+  if (scanningIndexCache && scanningIndexCacheKey === etag) {
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'no-cache');
+    return res.json(scanningIndexCache);
+  }
+
+  const entries = [];
+  const seen = new Set();
+
+  // Recolectar entradas únicas (por tracking)
+  function addEntry(tracking, data) {
+    if (!tracking) return;
+    const key = tracking.toUpperCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    entries.push([
+      key,
+      data.pickingId || 0,
+      data.orderRef || '',
+      data.clientName || '',
+      data.carrier || ''
+    ]);
+  }
+
+  // byTracking (tracking de Sendcloud)
+  for (const [t, data] of Object.entries(trackingIndex.byTracking || {})) {
+    addEntry(t, data);
+  }
+  // byOdooTracking (tracking de Odoo)
+  for (const [t, data] of Object.entries(trackingIndex.byOdooTracking || {})) {
+    addEntry(t, data);
+  }
+
+  const result = {
+    lastSync: trackingIndex.lastSync,
+    count: entries.length,
+    entries: entries
+  };
+
+  scanningIndexCache = result;
+  scanningIndexCacheKey = etag;
+
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', 'no-cache');
+  res.json(result);
+});
+
 app.post('/api/reload-index', async (req, res) => {
   if (syncInProgress) return res.json({ success: false, message: 'Sync ya en progreso' });
   console.log('🔄 Recarga de índice solicitada');
