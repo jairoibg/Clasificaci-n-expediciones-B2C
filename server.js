@@ -639,7 +639,36 @@ function extractSpecialPatterns(scanned) {
   if (glsMatch) {
     result.patterns.push(glsMatch[1]);
     result.detectedCarrier = 'GLS';
-    console.log('   🔍 Patrón GLS extraído: ' + glsMatch[1]);
+    console.log('   🔍 Patrón GLS extraído (QR): ' + glsMatch[1]);
+  }
+
+  // GLS sliding window: buscar Z89 + 5 chars en cualquier posición del barcode
+  // Cubre SSCC y otros formatos con tracking GLS embebido (no solo el QR ES...CCE)
+  // Ejemplo: 00340014240000Z89TJVNX → Z89TJVNX
+  if (!result.detectedCarrier && cleanAlnum.length >= 8) {
+    const glsIndex = trackingIndex && trackingIndex.byCarrier && trackingIndex.byCarrier['GLS'];
+    const idx = cleanAlnum.indexOf('Z89');
+    if (idx >= 0 && cleanAlnum.length >= idx + 8) {
+      const candidate = cleanAlnum.substring(idx, idx + 8);
+      // Validar formato Z89 + 5 alfanuméricos
+      if (/^Z89[A-Z0-9]{5}$/.test(candidate)) {
+        // Match exacto en índice GLS, byOdooTracking o byTracking
+        const inGls = glsIndex && glsIndex[candidate];
+        const inOdoo = trackingIndex && trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[candidate];
+        const inTrk = trackingIndex && trackingIndex.byTracking && trackingIndex.byTracking[candidate];
+        if (inGls || inOdoo || inTrk) {
+          result.patterns.push(candidate);
+          result.detectedCarrier = 'GLS';
+          console.log('   🔍 Patrón GLS extraído (Z89 sliding): ' + candidate + ' (pos ' + idx + ')');
+        } else {
+          // Aunque no esté en índice, si el formato encaja añadirlo como candidato
+          // para que se busque en Odoo
+          result.patterns.push(candidate);
+          if (!result.detectedCarrier) result.detectedCarrier = 'GLS';
+          console.log('   🔍 Patrón GLS candidato (Z89 sliding, no en índice): ' + candidate);
+        }
+      }
+    }
   }
 
   // SPRING: Extraer tracking embebido de barcodes GS1-128 largos
