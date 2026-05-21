@@ -938,6 +938,25 @@ async function getCarrierFromTracking(tracking) {
     };
   }
 
+  // 1.5 ATAJO: Si Sendcloud cache tiene el tracking + tenemos el orderId en el índice
+  // de pedidos, podemos saltar la búsqueda lenta en Odoo (3-5 segundos)
+  const directCache = findInSendcloudCache(clean);
+  if (directCache && directCache.carrier && directCache.orderId) {
+    const orderRefUpper = directCache.orderId.toUpperCase();
+    const byOrderEntries = trackingIndex.byOrderRef && trackingIndex.byOrderRef[orderRefUpper];
+    if (byOrderEntries && byOrderEntries.length > 0) {
+      const e = byOrderEntries[0];
+      const finalCarrier = overrideCarrier(directCache.carrier, clean);
+      const elapsed = Date.now() - startTime;
+      console.log('   ⚡ Cache+OrderRef: ' + finalCarrier + ' via ' + orderRefUpper + ' (' + elapsed + 'ms)');
+      return {
+        carrier: finalCarrier,
+        picking: { id: e.pickingId, name: e.pickingName, carrier_tracking_ref: e.tracking, origin: orderRefUpper, partner_id: [null, e.clientName] },
+        source: 'cache+order', elapsed
+      };
+    }
+  }
+
   // Si el índice tenía DESCONOCIDO, reusar datos del picking pero seguir detectando carrier
   let picking;
   let odooTracking;
@@ -1116,7 +1135,8 @@ app.post('/api/scan', async (req, res) => {
   const packageData = { tracking: clean, pickingId: det.picking.id, orderRef: orderRef, clientName: det.picking.partner_id ? det.picking.partner_id[1] : '', scannedAt: new Date().toISOString() };
   addPackageToSession(expected, packageData);
   const updatedSession = getSession(expected);
-  invalidateOdooOutsCache(); // refrescar informe en próximo poll
+  // NO invalidamos el caché aquí: el TTL de 30s + auto-refresh del frontend ya da datos frescos
+  // sin penalizar la performance del servidor en cada escaneo
 
   console.log('   ✅ ' + det.carrier + ' | ' + det.source + ' | ' + (det.elapsed || '?') + 'ms | Pedido: ' + packageData.orderRef);
   res.json({ success: true, tracking: clean, detectedCarrier: det.carrier, package: packageData, sessionCount: updatedSession.packages.length, source: det.source, responseTime: det.elapsed });
