@@ -577,18 +577,53 @@ function extractAsendiaTracking(scannedClean) {
 }
 
 // INPOST: Barcodes largos (todo numérico) contienen tracking de 8 dígitos embebido
-// Formato observado: 13 + [8 dígitos tracking] + sufijo numérico
-// Ejemplo: 130486133001010401330148898 → tracking = 04861330
+// Formato observado:
+//   130486133001010401330148898 → tracking = 04861330 (posición 2-10)
+//   13083299791010104013        → tracking = 83299791 (posición 3-11)
+// La posición exacta del tracking varía según el formato del barcode,
+// por eso usamos sliding window que busca cualquier subcadena de 8 dígitos
+// que coincida con un tracking INPOST conocido en el índice.
 function extractInpostTracking(scannedClean) {
   // Match directo: tracking de 8 dígitos
   if (/^\d{8}$/.test(scannedClean)) {
     return { extracted: scannedClean, isDirectMatch: true };
   }
-  // Barcode largo numérico: extraer 8 dígitos desde posición 2
   if (scannedClean.length >= 10 && /^\d+$/.test(scannedClean)) {
-    var candidate = scannedClean.substring(2, 10);
+    // SLIDING WINDOW: probar todas las posiciones de 8 dígitos consecutivos
+    // y verificar si alguna coincide con un INPOST conocido en el índice
+    const inpostIndex = trackingIndex && trackingIndex.byCarrier && trackingIndex.byCarrier['INPOST'];
+    const byOdoo = trackingIndex && trackingIndex.byOdooTracking;
+    const byTrk = trackingIndex && trackingIndex.byTracking;
+
+    for (let i = 0; i <= scannedClean.length - 8; i++) {
+      const candidate = scannedClean.substring(i, i + 8);
+      // Match exacto en índice INPOST
+      if (inpostIndex && inpostIndex[candidate]) {
+        return { extracted: candidate, isDirectMatch: false, position: i, source: 'index-inpost' };
+      }
+      // Match en byOdooTracking con carrier INPOST
+      if (byOdoo && byOdoo[candidate] && byOdoo[candidate].carrier === 'INPOST') {
+        return { extracted: candidate, isDirectMatch: false, position: i, source: 'index-odoo' };
+      }
+      // Match en byTracking con carrier INPOST
+      if (byTrk && byTrk[candidate] && byTrk[candidate].carrier === 'INPOST') {
+        return { extracted: candidate, isDirectMatch: false, position: i, source: 'index-tracking' };
+      }
+    }
+
+    // Si el barcode contiene patrón INPOST típico (prefijos 04/81 + 6 dígitos)
+    // intentar extracción posicional como fallback
+    for (let i = 0; i <= scannedClean.length - 8; i++) {
+      const candidate = scannedClean.substring(i, i + 8);
+      if (/^(04|81|83)\d{6}$/.test(candidate)) {
+        return { extracted: candidate, isDirectMatch: false, position: i, source: 'prefix' };
+      }
+    }
+
+    // Fallback histórico: posición 2-10 (formato 13 + 8 dígitos + sufijo)
+    const candidate = scannedClean.substring(2, 10);
     if (/^\d{8}$/.test(candidate)) {
-      return { extracted: candidate, isDirectMatch: false };
+      return { extracted: candidate, isDirectMatch: false, source: 'legacy' };
     }
   }
   return { extracted: null, isDirectMatch: false };
@@ -679,7 +714,19 @@ function overrideCarrier(carrier, tracking) {
   if (!carrier || !tracking) return carrier;
   const t = tracking.toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
   if (/^H103/.test(t) && carrier === 'SPRING') return 'ASENDIA';
+  // 8 dígitos exactos = INPOST (override directo)
   if (/^\d{8}$/.test(t)) return 'INPOST';
+  // Barcode largo numérico que CONTIENE un INPOST conocido en el índice
+  // Esto previene que se clasifique como CORREOS por colisión accidental
+  if (t.length >= 10 && /^\d+$/.test(t)) {
+    const inpostIndex = trackingIndex && trackingIndex.byCarrier && trackingIndex.byCarrier['INPOST'];
+    if (inpostIndex) {
+      for (let i = 0; i <= t.length - 8; i++) {
+        const win = t.substring(i, i + 8);
+        if (inpostIndex[win]) return 'INPOST';
+      }
+    }
+  }
   return carrier;
 }
 
@@ -758,6 +805,8 @@ async function getCarrierFromTracking(tracking) {
     const inpostResult = extractInpostTracking(cleanAlnum);
     if (inpostResult.extracted && !inpostResult.isDirectMatch) {
       const ipTracking = inpostResult.extracted;
+      console.log('   🔍 INPOST extraído de barcode: ' + ipTracking + ' (pos ' + (inpostResult.position || '?') + ', source: ' + (inpostResult.source || '?') + ')');
+
       // Buscar en índice
       const ipIndex = findInTrackingIndex(ipTracking);
       if (ipIndex && ipIndex.carrier === 'INPOST') {
@@ -769,9 +818,13 @@ async function getCarrierFromTracking(tracking) {
           source: 'index (INPOST extraído: ' + ipTracking + ')', elapsed
         };
       }
-      // Solo buscar en Odoo si el tracking parece genuinamente INPOST (prefijos 04/81)
-      // Evita llamadas Odoo innecesarias para barcodes numéricos de otros carriers
-      if (/^(04|81)\d{6}$/.test(ipTracking)) {
+
+      // Si la extracción viene del índice (source = index-*) buscar en Odoo igualmente
+      // (puede que el sync no haya capturado el match pero el tracking existe)
+      const fromIndex = inpostResult.source && inpostResult.source.startsWith('index');
+      const looksInpost = /^(04|81|83)\d{6}$/.test(ipTracking);
+
+      if (fromIndex || looksInpost) {
         console.log('   🔍 Buscando INPOST en Odoo: ' + ipTracking);
         const ipPicking = await odooClient.findPickingByTracking(ipTracking);
         if (ipPicking) {

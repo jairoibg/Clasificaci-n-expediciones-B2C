@@ -61,6 +61,7 @@ function overrideCarrier(carrier, tracking) {
   if (!carrier || !tracking) return carrier;
   const t = tracking.toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
   if (/^H103/.test(t) && carrier === 'SPRING') return 'ASENDIA';
+  // 8 dígitos exactos = INPOST (formato estándar)
   if (/^\d{8}$/.test(t)) return 'INPOST';
   return carrier;
 }
