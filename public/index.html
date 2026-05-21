@@ -234,6 +234,16 @@
       display: grid; grid-template-columns: auto 1fr auto auto; gap: 12px;
       align-items: center;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+      transition: opacity 200ms;
+    }
+    .d3 .pkg.pending { opacity: 0.55; }
+    .d3 .pkg.pending .check {
+      background: linear-gradient(135deg, #fbbf24, #d97706);
+      animation: pulse-pending 1.2s infinite;
+    }
+    @keyframes pulse-pending {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(0.92); }
     }
     .d3 .pkg .check {
       width: 22px; height: 22px; border-radius: 50%;
@@ -1184,27 +1194,99 @@
     });
 
     async function scanPackage(tracking) {
+      // ── UI OPTIMISTA: incrementar contador INMEDIATAMENTE (rollback si falla) ──
+      // Detección rápida del transportista por prefijo (instantáneo, sin servidor)
+      const clean = tracking.trim().toUpperCase();
+      const optimisticCarrier = detectCarrierClientSide(clean);
+
+      // Si el carrier detectado por prefijo NO coincide con el esperado, mostrar error sin esperar
+      if (optimisticCarrier && optimisticCarrier !== state.selectedCarrier) {
+        showModal('!', `Paquete de ${optimisticCarrier}`, `Este paquete es de ${optimisticCarrier}, no de ${state.selectedCarrier}`);
+        playSound('error');
+        if (navigator.vibrate) navigator.vibrate([200,100,200]);
+        document.getElementById('scanInput').focus();
+        return;
+      }
+
+      // Duplicado: comprobar en local antes de ir al servidor
+      if (state.packages.find(p => p.tracking === clean)) {
+        showToast('Ya escaneado', 'warning');
+        document.getElementById('scanInput').focus();
+        return;
+      }
+
+      // OPTIMISTA: añadir al contador y sonar OK al instante
+      const optimisticEntry = {
+        tracking: clean,
+        orderRef: '...',
+        clientName: 'Procesando…',
+        scannedAt: new Date().toISOString(),
+        pending: true
+      };
+      state.packages.push(optimisticEntry);
+      state.sessions[state.selectedCarrier] = (state.sessions[state.selectedCarrier] || 0) + 1;
+      renderPackages(); renderCarriers();
+      playSound('success'); // beep instantáneo
+
       try {
         const r = await apiCall('/scan', { method: 'POST', body: JSON.stringify({ tracking, expectedCarrier: state.selectedCarrier }) });
+
+        // Encontrar la entry optimista para reemplazarla o eliminarla
+        const idx = state.packages.findIndex(p => p === optimisticEntry || (p.pending && p.tracking === clean));
+
         if (r.success) {
-          state.packages.push(r.package);
+          // Confirmar: reemplazar entry optimista con datos reales
+          if (idx >= 0) state.packages[idx] = r.package;
+          else state.packages.push(r.package);
           state.sessions[state.selectedCarrier] = r.sessionCount;
           renderPackages(); renderCarriers();
           showToast(`✓ ${r.package.orderRef || tracking.slice(-8)}`, 'success');
-          playSound('success');
-        } else if (r.error === 'NO_ENCONTRADO' || r.error === 'NO_VERIFICADO') {
-          showSearchModal(tracking, r.message); playSound('error');
-        } else if (r.error === 'TRANSPORTISTA_INCORRECTO') {
-          showModal('!', `Paquete de ${r.detectedCarrier}`, r.message);
-          playSound('error');
-          if (navigator.vibrate) navigator.vibrate([200,100,200]);
-        } else if (r.error === 'DUPLICADO') {
-          showToast('Ya escaneado', 'warning');
         } else {
-          showModal('!', 'Error', r.message || 'Error'); playSound('error');
+          // ROLLBACK: eliminar entry optimista
+          if (idx >= 0) state.packages.splice(idx, 1);
+          state.sessions[state.selectedCarrier] = Math.max(0, (state.sessions[state.selectedCarrier] || 0) - 1);
+          renderPackages(); renderCarriers();
+
+          if (r.error === 'NO_ENCONTRADO' || r.error === 'NO_VERIFICADO') {
+            showSearchModal(tracking, r.message); playSound('error');
+          } else if (r.error === 'TRANSPORTISTA_INCORRECTO') {
+            showModal('!', `Paquete de ${r.detectedCarrier}`, r.message);
+            playSound('error');
+            if (navigator.vibrate) navigator.vibrate([200,100,200]);
+          } else if (r.error === 'DUPLICADO') {
+            showToast('Ya escaneado', 'warning');
+          } else {
+            showModal('!', 'Error', r.message || 'Error'); playSound('error');
+          }
         }
-      } catch { showToast('Error de conexión', 'error'); }
+      } catch {
+        // ROLLBACK también en error de red
+        const idx = state.packages.findIndex(p => p === optimisticEntry || (p.pending && p.tracking === clean));
+        if (idx >= 0) state.packages.splice(idx, 1);
+        state.sessions[state.selectedCarrier] = Math.max(0, (state.sessions[state.selectedCarrier] || 0) - 1);
+        renderPackages(); renderCarriers();
+        showToast('Error de conexión', 'error');
+      }
       document.getElementById('scanInput').focus();
+    }
+
+    // Detección de carrier por prefijo en cliente — INSTANTÁNEA sin red
+    function detectCarrierClientSide(t) {
+      if (/^PK/.test(t)) return 'CORREOS';
+      if (/^MI/.test(t)) return 'CORREOS EXPRESS';
+      if (/^Z89/.test(t)) return 'GLS';
+      if (/^6C20/.test(t)) return 'ASENDIA';
+      if (/^H103/.test(t)) return 'ASENDIA';
+      if (/^6A/.test(t)) return 'SPRING';
+      if (/^LS\d{9}[A-Z]{2}$/.test(t)) return 'ASENDIA';
+      if (/^LS|^LX|^LV|^LT|^3[A-Z]|^CP|^Z96|^XSMT|^0008|^0626|^H10/.test(t)) return 'SPRING';
+      if (/^CTT|^EA/.test(t)) return 'CTT';
+      if (/^C0/.test(t)) return 'CORREOS';
+      if (/^\d{8}$/.test(t)) return 'INPOST';
+      // Barcode largo con tracking embebido
+      const cleanAlnum = t.replace(/[^A-Z0-9]/g, '');
+      if (cleanAlnum.indexOf('Z89') >= 0 && /Z89[A-Z0-9]{5}/.test(cleanAlnum)) return 'GLS';
+      return null; // desconocido, dejar que el servidor decida
     }
 
     function renderPackages() {
@@ -1218,9 +1300,10 @@
       }
       list.innerHTML = [...state.packages].reverse().map((p, i) => {
         const time = p.scannedAt ? new Date(p.scannedAt).toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit' }) : '';
+        const pendingCls = p.pending ? ' pending' : '';
         return `
-          <div class="pkg">
-            <div class="check">✓</div>
+          <div class="pkg${pendingCls}">
+            <div class="check">${p.pending ? '…' : '✓'}</div>
             <div class="info">
               <div class="t">${p.tracking}</div>
               <div class="d">${p.orderRef ? `<span class="or">${p.orderRef}</span> · ` : ''}${p.clientName || 'Sin cliente'}</div>
