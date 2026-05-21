@@ -85,6 +85,7 @@
     $('searchInput').addEventListener('input', () => { state.page = 1; renderTable(); });
     $('filterCarrier').addEventListener('change', () => { state.page = 1; renderTable(); });
     $('filterStatus').addEventListener('change', () => { state.page = 1; renderTable(); });
+    if ($('filterDivision')) $('filterDivision').addEventListener('change', () => { state.page = 1; renderTable(); });
 
     document.querySelectorAll('.va-th').forEach(th => {
       th.onclick = () => sortBy(th.dataset.sort);
@@ -479,11 +480,17 @@
     const q = $('searchInput').value.toLowerCase();
     const carrier = $('filterCarrier').value;
     const status = $('filterStatus').value;
+    const division = $('filterDivision') ? $('filterDivision').value : '';
 
     state.filtered = state.allRecs.filter(r => {
       if (carrier && r.carrier !== carrier) return false;
       if (status === 'scanned' && !r.scanned) return false;
       if (status === 'missing' && r.scanned) return false;
+      // Filtro por compañía/division: extraer prefijo del albarán (CLABD, CLAGD, CLAWD)
+      if (division) {
+        const name = r.name || '';
+        if (!name.startsWith(division + '/')) return false;
+      }
       if (q) {
         const hay = ((r.tracking||'') + (r.origin||'') + (r.client||'') + (r.name||'')).toLowerCase();
         if (!hay.includes(q)) return false;
