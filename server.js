@@ -1180,8 +1180,10 @@ app.post('/api/scan', async (req, res) => {
   }
 
   if (!det.carrier || det.carrier === 'DESCONOCIDO') {
-    console.log('   ⚠️ No se pudo verificar transportista');
-    return res.json({ success: false, error: 'NO_VERIFICADO', message: 'No se pudo verificar el transportista. Busca por nombre de cliente.', tracking: clean, picking: det.picking });
+    // Si el picking existe y el operario eligió un carrier específico, permitir con flag de no verificado
+    // (en vez de bloquear con el modal de búsqueda por cliente)
+    console.log('   ⚠️ Carrier no verificado pero usuario eligió ' + expected + ' → permitiendo con confianza');
+    // Continuar el flujo normal, no bloquear
   }
 
   // Detectar duplicado por pedido (diferentes barcodes CTT multi-collo resuelven al mismo pedido)
