@@ -59,13 +59,19 @@ const CARRIERS = ['ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST
 // CACHÉ SENDCLOUD
 // =============================================
 let sendcloudCache = { parcels: {} };
+let sendcloudCacheUpper = {}; // Índice O(1) case-insensitive
 
 function loadSendcloudCache() {
   try {
     if (fs.existsSync(SENDCLOUD_CACHE_FILE)) {
       const data = fs.readFileSync(SENDCLOUD_CACHE_FILE, 'utf8');
       sendcloudCache = JSON.parse(data);
-      console.log('📦 Caché Sendcloud cargada: ' + Object.keys(sendcloudCache.parcels || {}).length + ' envíos');
+      // Construir índice uppercase para O(1) lookup case-insensitive
+      sendcloudCacheUpper = {};
+      for (const [key, value] of Object.entries(sendcloudCache.parcels || {})) {
+        sendcloudCacheUpper[key.toUpperCase()] = value;
+      }
+      console.log('📦 Caché Sendcloud cargada: ' + Object.keys(sendcloudCache.parcels || {}).length + ' envíos (index O(1) listo)');
     }
   } catch (err) {
     console.error('Error cargando caché Sendcloud:', err.message);
@@ -74,11 +80,11 @@ function loadSendcloudCache() {
 
 function findInSendcloudCache(tracking) {
   if (!tracking || !sendcloudCache.parcels) return null;
-  const trackingUpper = tracking.toUpperCase().trim();
+  // Match directo
   if (sendcloudCache.parcels[tracking]) return sendcloudCache.parcels[tracking];
-  for (const [key, value] of Object.entries(sendcloudCache.parcels)) {
-    if (key.toUpperCase() === trackingUpper) return value;
-  }
+  // Match case-insensitive vía índice O(1) (antes iteraba 50k entradas)
+  const trackingUpper = tracking.toUpperCase().trim();
+  if (sendcloudCacheUpper[trackingUpper]) return sendcloudCacheUpper[trackingUpper];
   return null;
 }
 
@@ -470,25 +476,28 @@ class OdooClient {
   }
 
   async findPickingByTracking(tracking) {
+    const t0 = Date.now();
     try {
-      let pickings = await this.execute('stock.picking', 'search_read', [[['carrier_tracking_ref', '=', tracking]]], { 
-        fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1 
+      // 1. Exact match (most common case, fast)
+      let pickings = await this.execute('stock.picking', 'search_read', [[['carrier_tracking_ref', '=', tracking]]], {
+        fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1
       });
-      if (pickings.length > 0) return pickings[0];
+      if (pickings.length > 0) { console.log('   🔍 Odoo exact match: ' + (Date.now()-t0) + 'ms'); return pickings[0]; }
 
-      pickings = await this.execute('stock.picking', 'search_read', [[['carrier_tracking_ref', 'ilike', tracking]]], { 
-        fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1 
+      // 2. ilike with full barcode
+      pickings = await this.execute('stock.picking', 'search_read', [[['carrier_tracking_ref', 'ilike', tracking]]], {
+        fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1
       });
-      if (pickings.length > 0) return pickings[0];
+      if (pickings.length > 0) { console.log('   🔍 Odoo ilike match: ' + (Date.now()-t0) + 'ms'); return pickings[0]; }
 
-      const patterns = this.extractTrackingPatterns(tracking);
+      // 3. Pattern matching - LIMITADO a top 3 patrones para evitar 10+ calls en cascada
+      const patterns = this.extractTrackingPatterns(tracking).slice(0, 3);
       for (const pattern of patterns) {
         if (pattern.length >= 7) {
           pickings = await this.execute('stock.picking', 'search_read', [
             [['carrier_tracking_ref', 'ilike', pattern], ['state', '=', 'done'], ['picking_type_code', '=', 'outgoing']]
           ], { fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 10 });
           if (pickings.length > 0) {
-            // Si hay múltiples resultados, elegir el que mejor coincida con el barcode escaneado
             const best = pickings.reduce((a, b) => {
               const cleanUpper = tracking.toUpperCase();
               const trackA = (a.carrier_tracking_ref || '').toUpperCase();
@@ -498,11 +507,12 @@ class OdooClient {
               while (scoreB < trackB.length && scoreB < cleanUpper.length && trackB[scoreB] === cleanUpper[scoreB]) scoreB++;
               return scoreB > scoreA ? b : a;
             });
-            console.log('   🔍 Match patrón Odoo: "' + pattern + '" → ' + best.carrier_tracking_ref + ' (mejor de ' + pickings.length + ')');
+            console.log('   🔍 Match patrón Odoo: "' + pattern + '" → ' + best.carrier_tracking_ref + ' (mejor de ' + pickings.length + ', ' + (Date.now()-t0) + 'ms)');
             return best;
           }
         }
       }
+      console.log('   🔍 Odoo not found: ' + (Date.now()-t0) + 'ms');
       return null;
     } catch (err) { console.error('   ❌ Error Odoo:', err.message); return null; }
   }
@@ -718,13 +728,33 @@ class SendcloudClient {
   }
 
   async getParcelByTracking(tracking) {
+    const t0 = Date.now();
+    // Timeout de 2.5s para evitar bloquear escaneos
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
     try {
       const response = await fetch(this.config.apiUrl + '/tracking/' + tracking, {
-        method: 'GET', headers: { 'Authorization': this.authHeader, 'Content-Type': 'application/json' }
+        method: 'GET',
+        headers: { 'Authorization': this.authHeader, 'Content-Type': 'application/json' },
+        signal: controller.signal
       });
-      if (!response.ok) { if (response.status === 404) return null; throw new Error('Sendcloud API error: ' + response.status); }
-      return await response.json();
-    } catch (err) { console.error('   ❌ Sendcloud error:', err.message); return null; }
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        if (response.status === 404) return null;
+        throw new Error('Sendcloud API error: ' + response.status);
+      }
+      const data = await response.json();
+      console.log('   🌐 Sendcloud API: ' + (Date.now()-t0) + 'ms');
+      return data;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        console.warn('   ⏱️ Sendcloud API timeout (2.5s)');
+      } else {
+        console.error('   ❌ Sendcloud error:', err.message);
+      }
+      return null;
+    }
   }
 
   normalizeCarrier(carrierCode) {
@@ -1086,7 +1116,8 @@ app.post('/api/scan', async (req, res) => {
   const packageData = { tracking: clean, pickingId: det.picking.id, orderRef: orderRef, clientName: det.picking.partner_id ? det.picking.partner_id[1] : '', scannedAt: new Date().toISOString() };
   addPackageToSession(expected, packageData);
   const updatedSession = getSession(expected);
-  
+  invalidateOdooOutsCache(); // refrescar informe en próximo poll
+
   console.log('   ✅ ' + det.carrier + ' | ' + det.source + ' | ' + (det.elapsed || '?') + 'ms | Pedido: ' + packageData.orderRef);
   res.json({ success: true, tracking: clean, detectedCarrier: det.carrier, package: packageData, sessionCount: updatedSession.packages.length, source: det.source, responseTime: det.elapsed });
 });
@@ -1564,9 +1595,22 @@ app.get('/api/scan-counts', (req, res) => {
   });
 });
 
+// Caché del informe: se invalida cada 30 segundos
+const odooOutsCache = new Map();
+const ODOO_OUTS_TTL = 30000; // 30 segundos
+
 app.get('/api/odoo-outs', async (req, res) => {
   const { from, to } = req.query;
   if (!from || !to) return res.status(400).json({ error: 'Parámetros from y to requeridos (YYYY-MM-DD)' });
+
+  // Cache hit: si tenemos resultado fresco para este rango, devolverlo
+  const cacheKey = from + '|' + to;
+  const cached = odooOutsCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp) < ODOO_OUTS_TTL) {
+    console.log('📊 ODOO-OUTS cache hit: ' + from + ' → ' + to + ' (age ' + ((Date.now() - cached.timestamp)/1000).toFixed(1) + 's)');
+    res.setHeader('X-Cache', 'HIT');
+    return res.json(cached.data);
+  }
 
   const dateFrom = from + ' 00:00:00';
   const dateTo   = to   + ' 23:59:59';
@@ -1744,20 +1788,38 @@ app.get('/api/odoo-outs', async (req, res) => {
     console.log('   ✅ ' + totalScanned + ' / ' + totalAll + ' escaneados (' +
       (totalAll > 0 ? ((totalScanned / totalAll) * 100).toFixed(1) : 0) + '%)');
 
-    res.json({
+    const response = {
       from, to,
       total:    totalAll,
       scanned:  totalScanned,
       missing:  totalAll - totalScanned,
       coverage: totalAll > 0 ? Math.min(100, (totalScanned / totalAll) * 100) : 0,
       byCarrier: summary
-    });
+    };
+
+    // Guardar en caché para respuestas instantáneas en los próximos 30s
+    odooOutsCache.set(cacheKey, { data: response, timestamp: Date.now() });
+    // Limpiar caché viejo (evitar fugas de memoria)
+    if (odooOutsCache.size > 50) {
+      const oldestKey = odooOutsCache.keys().next().value;
+      odooOutsCache.delete(oldestKey);
+    }
+
+    res.setHeader('X-Cache', 'MISS');
+    res.json(response);
 
   } catch (err) {
     console.error('   ❌ Error:', err.message);
     res.status(500).json({ error: 'Error consultando Odoo: ' + err.message });
   }
 });
+
+// Invalidar caché cuando hay un escaneo nuevo
+function invalidateOdooOutsCache() {
+  if (odooOutsCache.size > 0) {
+    odooOutsCache.clear();
+  }
+}
 
 // ============================================
 // INICIAR SERVIDOR

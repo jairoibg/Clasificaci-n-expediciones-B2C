@@ -67,7 +67,32 @@
     setInterval(loadLiveCounts, 30000);
     updateReportMeta();
     setInterval(updateReportMeta, 60000);
+    // Auto-refresh del informe cada 45 segundos (silencioso)
+    setInterval(silentRefresh, 45000);
   });
+
+  // ─── Auto-refresh silencioso ───
+  let lastSilentRefresh = null;
+  async function silentRefresh() {
+    if (!state.report || !state.report.from || !state.report.to) return;
+    // No interrumpir si el usuario está cargando manualmente
+    if ($('loadBtn').disabled) return;
+    try {
+      const data = await apiGet('/api/odoo-outs?from=' + state.report.from + '&to=' + state.report.to);
+      state.report = { ...data, from: state.report.from, to: state.report.to };
+      state.allRecs = [];
+      for (const info of Object.values(data.byCarrier || {})) {
+        state.allRecs.push(...(info.records || []));
+      }
+      renderAll();
+      lastSilentRefresh = new Date();
+      const t = lastSilentRefresh.toLocaleTimeString('es-ES');
+      setApiStatus('ok', 'OK · ' + fmtNum(state.allRecs.length) + ' OUTs · auto ' + t);
+    } catch (e) {
+      // silencioso, no molestar al operario
+      console.warn('Auto-refresh fallido:', e.message);
+    }
+  }
 
   function bindControls() {
     document.querySelectorAll('#periodSeg button').forEach(btn => {
