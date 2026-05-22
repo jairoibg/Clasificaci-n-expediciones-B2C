@@ -371,15 +371,25 @@ async function runSync() {
 }
 
 function setupScheduledSync() {
-  const SYNC_HOURS = [0, 6, 10, 12, 14];
+  // Sync cada 30 minutos en horario laboral (6-22h) para que el índice
+  // siempre tenga los pickings más recientes y los scans no caigan a Odoo lento
   setInterval(() => {
     const now = new Date();
-    if (SYNC_HOURS.includes(now.getHours()) && now.getMinutes() === 0) {
-      console.log('\n⏰ Sync programado (' + now.getHours() + ':00)');
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    // En horario laboral 6-22h: cada 30 min (en :00 y :30)
+    if (hour >= 6 && hour <= 22 && (minute === 0 || minute === 30)) {
+      console.log('\n⏰ Sync programado (' + hour + ':' + String(minute).padStart(2,'0') + ')');
+      runSync();
+      return;
+    }
+    // Fuera de horario: cada 4 horas (00:00, 04:00)
+    if ((hour === 0 || hour === 4) && minute === 0) {
+      console.log('\n⏰ Sync nocturno (' + hour + ':00)');
       runSync();
     }
   }, 60000);
-  console.log('⏰ Sync programado para las ' + SYNC_HOURS.join(':00, ') + ':00');
+  console.log('⏰ Sync programado cada 30 min (6h-22h) + 2 nocturnos (00, 04)');
 }
 
 // ============================================
@@ -418,10 +428,38 @@ function loadData() {
   } catch (err) { console.error('Error cargando datos:', err.message); }
 }
 
+// Throttled save: agrupa múltiples saveData en 2 segundos para no saturar I/O
+// con database.json de 30+ MB en cada escaneo
+let saveTimer = null;
+let savePending = false;
+
 function saveData() {
-  try { fs.writeFileSync(DATA_FILE, JSON.stringify(database, null, 2)); }
+  savePending = true;
+  if (saveTimer) return; // ya hay uno pendiente
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    if (!savePending) return;
+    savePending = false;
+    try {
+      // Sin pretty-print: ahorra ~30% del tamaño y tiempo de escritura
+      fs.writeFileSync(DATA_FILE, JSON.stringify(database));
+    } catch (err) {
+      console.error('Error guardando:', err.message);
+    }
+  }, 2000);
+}
+
+// Save síncrono para situaciones críticas (shutdown, etc.)
+function saveDataSync() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  savePending = false;
+  try { fs.writeFileSync(DATA_FILE, JSON.stringify(database)); }
   catch (err) { console.error('Error guardando:', err.message); }
 }
+
+// Garantizar guardado si el proceso se cierra
+process.on('SIGTERM', () => { saveDataSync(); process.exit(0); });
+process.on('SIGINT', () => { saveDataSync(); process.exit(0); });
 
 loadData();
 loadSendcloudCache();
@@ -1140,6 +1178,60 @@ app.post('/api/reload-index', async (req, res) => {
   console.log('🔄 Recarga de índice solicitada');
   const success = await runSync();
   res.json({ success, message: success ? 'Índice regenerado' : 'Error regenerando índice', stats: { lastSync: trackingIndex.lastSync, matched: trackingIndex.matched } });
+});
+
+// Endpoint de limpieza: elimina palets y recogidas más antiguos que N días
+// Reduce database.json (que llega a tener 185k+ paquetes acumulados de meses)
+app.post('/api/cleanup-old', (req, res) => {
+  const daysParam = parseInt(req.query.days || '60', 10);
+  const days = isNaN(daysParam) || daysParam < 7 ? 60 : daysParam;
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  let removedPallets = 0;
+  let removedPickups = 0;
+  let removedManifests = 0;
+  let removedPackages = 0;
+
+  // Limpiar palets viejos
+  for (const [id, pallet] of Object.entries(database.pallets)) {
+    if (pallet.date && pallet.date < cutoff) {
+      removedPackages += (pallet.packages || []).length;
+      delete database.pallets[id];
+      removedPallets++;
+    }
+  }
+
+  // Limpiar recogidas viejas
+  for (const [id, pickup] of Object.entries(database.pickups)) {
+    if (pickup.date && pickup.date < cutoff) {
+      delete database.pickups[id];
+      removedPickups++;
+    }
+  }
+
+  // Limpiar manifiestos huérfanos
+  for (const pickupId of Object.keys(database.manifests || {})) {
+    if (!database.pickups[pickupId]) {
+      delete database.manifests[pickupId];
+      removedManifests++;
+    }
+  }
+
+  saveDataSync(); // forzar guardado inmediato
+
+  console.log('🧹 Limpieza: ' + removedPallets + ' palets, ' + removedPickups + ' recogidas, ' + removedManifests + ' manifiestos, ' + removedPackages + ' paquetes (corte: ' + cutoff + ')');
+
+  res.json({
+    success: true,
+    cutoffDate: cutoff,
+    removedPallets,
+    removedPickups,
+    removedManifests,
+    removedPackages,
+    remainingPallets: Object.keys(database.pallets).length,
+    remainingPickups: Object.keys(database.pickups).length,
+    remainingManifests: Object.keys(database.manifests).length
+  });
 });
 
 // Sesiones

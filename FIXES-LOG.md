@@ -662,6 +662,60 @@ servir para nada.
 
 ---
 
+### #021 · Database.json gigante y sync poco frecuente
+
+**Síntoma**
+Logs muestran constantes "No en índice, buscando en Odoo... → Odoo not
+found: 3369ms" incluso cuando el usuario cree que nadie escanea. El
+informe muestra `Trackings en app: 185486 | PickingIDs: 184603` —
+acumulación de MESES de palets.
+
+**Causa raíz (múltiple)**
+1. **Sync infrecuente**: solo a las 0/6/10/12/14h. Entre sync y sync hay
+   2-6 horas durante las cuales los pickings nuevos creados en Odoo no
+   están en el índice. Los scans de esos pickings caen al path lento
+   (3-5s por Odoo XML-RPC).
+
+2. **`saveData()` síncrono y completo** en cada escaneo: serializa y
+   escribe el `database.json` completo (~30MB con 185k packages) en
+   disco en cada `/api/scan`. Esto bloquea el event loop.
+
+3. **Pretty-print JSON**: `JSON.stringify(database, null, 2)` añade
+   indentación que hace el fichero ~30% más grande.
+
+4. **Sin limpieza**: palets de hace 6 meses siguen en memoria y disco.
+
+**Solución**
+
+1. **Sync cada 30 min** en horario laboral (6-22h) + 2 nocturnos (0h, 4h).
+   Antes: 5 syncs al día. Ahora: 36 syncs/día. Pickings recién creados
+   están en el índice en máximo 30 min (antes podía tardar hasta 6h).
+
+2. **Throttled saveData**: agrupar múltiples escaneos en escrituras cada
+   2 segundos. Si 20 operarios escanean a la vez, solo 1 write/2s en
+   vez de 20 writes/segundo.
+
+3. **JSON compacto** (sin `, null, 2`): 30% más pequeño y más rápido.
+
+4. **Endpoint `/api/cleanup-old?days=60`**: elimina palets/recogidas
+   anteriores a N días. Reduce el tamaño del database.json
+   considerablemente (de 185k packages a sólo los últimos 60 días).
+
+5. **Save síncrono al SIGTERM/SIGINT**: garantiza guardado en restart.
+
+**Archivos**: `server.js` (saveData, setupScheduledSync, cleanup-old)
+**Commit**: pendiente
+**Lección**:
+- En sistemas con almacenamiento en JSON file, **throttle writes** es
+  esencial. fs.writeFileSync con archivos grandes bloquea el event loop.
+- Datos históricos deben tener política de retención. No hay nada que
+  ganar manteniendo palets de hace 6 meses en memoria.
+- La frecuencia de sync debe coincidir con la velocidad de creación de
+  datos. Si crean 100+ pickings/hora, sync cada 30 min mantiene el
+  índice fresco.
+
+---
+
 ## Problemas técnicos generales (no del código)
 
 ### #G1 · Railway deploy atascado / cola bloqueada
