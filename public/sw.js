@@ -1,7 +1,8 @@
-const CACHE_NAME = 'expediciones-v1';
+// Cache version: BUMPEAR esta cifra cada vez que se haga un deploy
+// para forzar la invalidación de caché viejo en navegadores de operarios.
+const CACHE_NAME = 'expediciones-v2-2026-05-22';
 const urlsToCache = [
   '/',
-  '/index.html',
   '/manifest.json'
 ];
 
@@ -30,28 +31,34 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Fetch - Network first, cache fallback
+// Fetch strategy:
+// - HTML, JS, CSS: SIEMPRE network (sin caché) para que operarios vean la última versión
+// - API: pass-through (sin cachear)
+// - Otros recursos estáticos: network-first con fallback a caché
 self.addEventListener('fetch', event => {
-  // Solo cachear peticiones GET
   if (event.request.method !== 'GET') return;
-  
-  // No cachear llamadas a la API
-  if (event.request.url.includes('/api/')) {
+  const url = event.request.url;
+
+  // API: no interceptar
+  if (url.includes('/api/')) return;
+
+  // HTML/JS/CSS: SIEMPRE network, sin caché
+  if (url.endsWith('.html') || url.endsWith('.js') || url.endsWith('.css') || url.endsWith('/')) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' })
+        .catch(() => caches.match(event.request))
+    );
     return;
   }
-  
+
+  // Otros (imágenes, fonts, manifest): network-first con fallback
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        // Clonar la respuesta para guardarla en cache
         const responseClone = response.clone();
-        caches.open(CACHE_NAME)
-          .then(cache => cache.put(event.request, responseClone));
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
         return response;
       })
-      .catch(() => {
-        // Si falla la red, usar cache
-        return caches.match(event.request);
-      })
+      .catch(() => caches.match(event.request))
   );
 });

@@ -537,6 +537,69 @@ grandes.
 
 ---
 
+### #019 · Operarios reportan que la app sigue muy lenta
+
+**Síntoma**
+A pesar de las optimizaciones #014-#018, los operarios siguen sintiendo
+la app lenta. "Sigue yendo muy lento."
+
+**Diagnóstico**
+1. **Bug en cache-control**: en la rama de cache-hit del endpoint
+   `/api/scanning-index` quedó `no-cache` en lugar de `max-age=300`.
+   El navegador descargaba el índice cada vez.
+2. **Service Worker servía HTML/JS viejo**: la versión cacheada del SW
+   no se invalidaba, los operarios usaban código antiguo.
+3. **Cold starts de Railway**: el servidor en Singapore se "duerme" y
+   tarda 5-15s en responder la primera petición tras inactividad.
+4. **Input bloqueado por `await`**: el handler de Enter hacía
+   `await scanPackage(t); e.target.value = ''` → el input no se
+   limpiaba hasta que la petición al servidor terminaba (250-500ms+).
+   Si el operario escaneaba rápido, sentía que cada scan tardaba.
+
+**Solución (múltiple)**
+
+1. **Fix cache-control en cache-hit branch**:
+   ```javascript
+   res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+   ```
+   (antes: `'no-cache'`)
+
+2. **Bump cache version del Service Worker** + estrategia
+   "network-first sin caché" para HTML/JS/CSS. Los operarios siempre
+   obtienen la última versión. CACHE_NAME ahora incluye fecha
+   (`expediciones-v2-2026-05-22`).
+
+3. **Keep-alive ping** cada 30 segundos desde el cliente al
+   `/api/health` para evitar que Railway duerma el container.
+
+4. **🔥 Input NO bloquea**: cambiar `await scanPackage(t)` a llamada
+   síncrona sin await. El input se limpia INMEDIATAMENTE.
+   ```javascript
+   if (e.key === 'Enter') {
+     const t = e.target.value.trim();
+     if (t) {
+       e.target.value = '';     // ← limpia YA
+       scanPackage(t);          // ← background, no espera
+     }
+   }
+   ```
+   Aplicado en scanInput y pickupScanInput.
+
+5. **Refresh de índice cada 2 min** (antes 5 min) para que pickings
+   recientes estén disponibles antes.
+
+**Archivos**: `server.js`, `public/sw.js`, `public/index.html`,
+`package.json`
+**Commit**: pendiente
+**Lección**:
+- Cualquier `await` en un handler de input bloquea la UI.
+- Los Service Workers DEBEN invalidar caché cuando hay cambios.
+- Cold starts son reales en Railway, mitigar con pings periódicos.
+- Cuando una optimización no se nota, verificar primero que se
+  desplegó correctamente y que el navegador no está usando caché viejo.
+
+---
+
 ## Problemas técnicos generales (no del código)
 
 ### #G1 · Railway deploy atascado / cola bloqueada

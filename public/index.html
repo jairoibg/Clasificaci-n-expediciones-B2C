@@ -1189,8 +1189,16 @@
       setTimeout(() => document.getElementById('scanInput').focus(), 100);
     }
 
-    document.getElementById('scanInput').addEventListener('keypress', async (e) => {
-      if (e.key === 'Enter') { const t = e.target.value.trim(); if (t) { await scanPackage(t); e.target.value = ''; } }
+    document.getElementById('scanInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        const t = e.target.value.trim();
+        if (t) {
+          // CRÍTICO: limpiar input INMEDIATAMENTE para no bloquear el siguiente escaneo
+          e.target.value = '';
+          // scanPackage corre en background sin bloquear el input
+          scanPackage(t);
+        }
+      }
     });
 
     // ─── ÍNDICE CLIENTE-SIDE ─── (0ms matching)
@@ -1631,8 +1639,14 @@
       setTimeout(() => document.getElementById('pickupScanInput').focus(), 100);
       updateTopbar('recogida');
     }
-    document.getElementById('pickupScanInput').addEventListener('keypress', async (e) => {
-      if (e.key === 'Enter') { const id = e.target.value.trim().toUpperCase(); if (id) { await scanPalletForPickup(id); e.target.value = ''; } }
+    document.getElementById('pickupScanInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        const id = e.target.value.trim().toUpperCase();
+        if (id) {
+          e.target.value = ''; // limpiar input al instante
+          scanPalletForPickup(id);
+        }
+      }
     });
     async function scanPalletForPickup(id) {
       if (state.pickupPallets.find(p => p.id === id)) { showToast('Ya escaneado', 'warning'); return; }
@@ -1819,13 +1833,18 @@
       updateHeaderStats();
       updateTopbar('clasificar');
 
-      // Cargar índice cliente para matcheo 0ms
+      // Cargar índice cliente para matcheo 0ms (en paralelo, no bloquea UI)
       loadClientIndex().then(() => {
         if (clientIndexLoaded) showToast(`⚡ Índice cliente: ${clientIndex.size} trackings`, 'success');
       });
 
-      // Refresh del índice cada 5 minutos
-      setInterval(loadClientIndex, 5 * 60 * 1000);
+      // Refresh del índice cada 2 minutos para tener los pickings más recientes
+      setInterval(loadClientIndex, 2 * 60 * 1000);
+
+      // Keep-alive: ping cada 30s para evitar cold starts del servidor Railway
+      setInterval(() => {
+        fetch(`${API_URL}/api/health`, { cache: 'no-store' }).catch(() => {});
+      }, 30000);
     }
     init();
   </script>

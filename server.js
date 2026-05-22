@@ -1088,7 +1088,7 @@ app.get('/api/scanning-index', (req, res) => {
   // Reusar caché si el sync no ha cambiado
   if (scanningIndexCache && scanningIndexCacheKey === etag) {
     res.setHeader('ETag', etag);
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
     return res.json(scanningIndexCache);
   }
 
