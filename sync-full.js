@@ -60,6 +60,8 @@ function normalizeCarrier(carrierCode) {
 function overrideCarrier(carrier, tracking) {
   if (!carrier || !tracking) return carrier;
   const t = tracking.toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
+  // CORREOS EXPRESS: prefijo 9300500 característico
+  if (/^9300500/.test(t)) return 'CORREOS EXPRESS';
   if (/^H103/.test(t) && carrier === 'SPRING') return 'ASENDIA';
   // 8 dígitos exactos = INPOST (formato estándar)
   if (/^\d{8}$/.test(t)) return 'INPOST';
@@ -479,6 +481,7 @@ async function sync() {
       if (/^Z89/.test(t)) detectedCarrier = 'GLS';
       else if (/^PK/.test(t)) detectedCarrier = 'CORREOS';
       else if (/^MI/.test(t)) detectedCarrier = 'CORREOS EXPRESS';
+      else if (/^9300500/.test(t)) detectedCarrier = 'CORREOS EXPRESS';
       else if (/^6C20/.test(t)) detectedCarrier = 'ASENDIA';
       else if (/^H103/.test(t)) detectedCarrier = 'ASENDIA';
       else if (/^6A/.test(t)) detectedCarrier = 'SPRING';

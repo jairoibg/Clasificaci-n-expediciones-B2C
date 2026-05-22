@@ -600,6 +600,68 @@ la app lenta. "Sigue yendo muy lento."
 
 ---
 
+### #020 · Fallback legacy de INPOST extraía substrings aleatorios
+
+**Síntoma**
+Operario escaneaba CRX `93005001313132701335831` y el sistema hacía
+3+ búsquedas a Odoo de ~3.5s cada una, sin encontrar nada. Total:
+10-15 segundos de espera por scan.
+
+Logs en servidor:
+```
+INPOST extraído de barcode: 00500131 (pos ?, source: legacy)
+Índice DESCONOCIDO, intentando Sendcloud...
+Consultando Sendcloud API...
+No se pudo verificar transportista
+No en índice, buscando en Odoo...
+Odoo not found: 3478ms (×3)
+```
+
+**Causa raíz**
+En `extractInpostTracking` había un fallback histórico:
+```javascript
+const candidate = scannedClean.substring(2, 10);
+if (/^\d{8}$/.test(candidate)) {
+  return { extracted: candidate, source: 'legacy' };
+}
+```
+
+Para barcodes CRX/CORREOS de 23 dígitos como `93005001313132701335831`,
+esto extraía posiciones 2-10 = `00500131` (un 8-dígito aleatorio que
+NO es un tracking INPOST real).
+
+El código intentaba buscar en Odoo con ilike `00500131`, que devolvía
+**10+ resultados falsos** (esa secuencia aparece en muchos trackings
+PK/PQ/93005 distintos). Todo el proceso tardaba 10+ segundos sin
+servir para nada.
+
+**Solución**
+
+1. **Eliminar el fallback legacy** de `extractInpostTracking`. Solo
+   devolver extracciones cuando:
+   - Hay match exacto en índice INPOST
+   - O cumple `^(04|81|83)\d{6}$` (prefijos INPOST verificados)
+
+2. **Añadir prefijo `9300500` → CORREOS EXPRESS** en:
+   - Detección por prefijo en `/api/odoo-outs`
+   - sync-full.js fallback prefix
+   - `overrideCarrier` para forzar CRX aunque Sendcloud diga otra cosa
+
+3. **Forzar resync** para reclasificar todos los CRX existentes con
+   tracking `93005...` que estaban como DESCONOCIDO o CORREOS.
+
+**Archivos**: `server.js`, `sync-full.js`
+**Commit**: pendiente
+**Lección**:
+- **NUNCA usar substring posiciones fijas para extraer trackings** sin
+  validar contra un índice real. Los "fallbacks legacy" introducen
+  más problemas que los que resuelven.
+- Cuando se añade un prefijo de transportista (ej. `93005`),
+  documentarlo en `MATCHING-RULES.md` y actualizar `overrideCarrier`
+  para que sea autoritativo aunque Sendcloud no lo reconozca.
+
+---
+
 ## Problemas técnicos generales (no del código)
 
 ### #G1 · Railway deploy atascado / cola bloqueada

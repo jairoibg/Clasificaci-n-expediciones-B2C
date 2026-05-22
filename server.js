@@ -635,7 +635,7 @@ function extractInpostTracking(scannedClean) {
       }
     }
 
-    // Si el barcode contiene patrón INPOST típico (prefijos 04/81 + 6 dígitos)
+    // Si el barcode contiene patrón INPOST típico (prefijos 04/81/83 + 6 dígitos)
     // intentar extracción posicional como fallback
     for (let i = 0; i <= scannedClean.length - 8; i++) {
       const candidate = scannedClean.substring(i, i + 8);
@@ -644,11 +644,9 @@ function extractInpostTracking(scannedClean) {
       }
     }
 
-    // Fallback histórico: posición 2-10 (formato 13 + 8 dígitos + sufijo)
-    const candidate = scannedClean.substring(2, 10);
-    if (/^\d{8}$/.test(candidate)) {
-      return { extracted: candidate, isDirectMatch: false, source: 'legacy' };
-    }
+    // ELIMINADO el fallback legacy substring(2, 10): causaba falsos positivos
+    // para trackings CRX/CORREOS de 23 dígitos como 93005001313132701335831
+    // que extraía 00500131 → disparaba búsquedas Odoo innecesarias (~10s)
   }
   return { extracted: null, isDirectMatch: false };
 }
@@ -786,6 +784,8 @@ const sendcloudClient = new SendcloudClient(CONFIG.sendcloud);
 function overrideCarrier(carrier, tracking) {
   if (!carrier || !tracking) return carrier;
   const t = tracking.toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
+  // CORREOS EXPRESS: prefijo 9300500 característico
+  if (/^9300500/.test(t)) return 'CORREOS EXPRESS';
   if (/^H103/.test(t) && carrier === 'SPRING') return 'ASENDIA';
   // 8 dígitos exactos = INPOST (override directo)
   if (/^\d{8}$/.test(t)) return 'INPOST';
@@ -1817,6 +1817,7 @@ app.get('/api/odoo-outs', async (req, res) => {
         const t = picking.carrier_tracking_ref.toUpperCase().trim();
         if (/^PK/.test(t)) carrier = 'CORREOS';
         else if (/^MI/.test(t)) carrier = 'CORREOS EXPRESS';
+        else if (/^9300500/.test(t)) carrier = 'CORREOS EXPRESS';
         else if (/^Z89/.test(t)) carrier = 'GLS';
         else if (/^6C20/.test(t)) carrier = 'ASENDIA';
         else if (/^H103/.test(t)) carrier = 'ASENDIA';
