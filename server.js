@@ -4,9 +4,23 @@ const xmlrpc = require('xmlrpc');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+let compression;
+try { compression = require('compression'); } catch (e) { console.warn('⚠️ compression not installed'); }
 
 const app = express();
 app.use(cors());
+if (compression) {
+  app.use(compression({
+    level: 6,           // balance velocidad/compresión
+    threshold: 1024,    // solo comprimir respuestas > 1 KB
+    filter: (req, res) => {
+      // No comprimir si el cliente no lo acepta
+      if (req.headers['x-no-compression']) return false;
+      return compression.filter(req, res);
+    }
+  }));
+  console.log('✅ Gzip compression habilitada');
+}
 app.use(express.json({ limit: '10mb' }));
 
 // ==============================================
@@ -1115,7 +1129,9 @@ app.get('/api/scanning-index', (req, res) => {
   scanningIndexCacheKey = etag;
 
   res.setHeader('ETag', etag);
-  res.setHeader('Cache-Control', 'no-cache');
+  // Caché del navegador 5 minutos: durante ese tiempo el navegador usa la versión local sin red
+  // Después de 5 min hace revalidación con ETag (304 si no cambió)
+  res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
   res.json(result);
 });
 
