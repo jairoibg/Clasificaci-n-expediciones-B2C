@@ -490,11 +490,19 @@ function rebuildGlobalScans() {
       count++;
     }
   }
-  // Sesiones activas
+  // Sesiones activas (nuevo formato: array de sesiones por carrier)
   for (const carrier of CARRIERS) {
-    const session = database.activeSessions[carrier];
-    if (session && session.packages) {
-      for (const pkg of session.packages) {
+    const sessions = database.activeSessions[carrier];
+    if (Array.isArray(sessions)) {
+      for (const s of sessions) {
+        for (const pkg of (s.packages || [])) {
+          _addPackageToGlobalSets(pkg);
+          count++;
+        }
+      }
+    } else if (sessions && Array.isArray(sessions.packages)) {
+      // Formato antiguo (por si rebuild se llama antes de migrate)
+      for (const pkg of sessions.packages) {
         _addPackageToGlobalSets(pkg);
         count++;
       }
@@ -538,42 +546,154 @@ function removePackageFromGlobalScans(pkg) {
 
 loadData();
 loadSendcloudCache();
-rebuildGlobalScans();
 
 // ============================================
-// FUNCIONES DE SESIÓN (ESTRUCTURA SIMPLE)
+// FUNCIONES DE SESIÓN (MÚLTIPLES SESIONES POR CARRIER)
 // ============================================
-function getSession(carrier) {
-  const c = carrier.toUpperCase();
-  if (!database.activeSessions[c]) database.activeSessions[c] = { packages: [], lastUpdate: null };
-  const session = database.activeSessions[c];
-  if (!session.packages || !Array.isArray(session.packages)) session.packages = [];
-  return session;
+// Estructura nueva: database.activeSessions[carrier] es un ARRAY de sesiones
+// Cada sesión: { id, letter, packages: [], createdAt, lastUpdate, fromPalletId? }
+// Múltiples palets simultáneos del mismo transportista
+
+const SESSION_LETTERS = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T'];
+
+function migrateSessionsFormat() {
+  for (const carrier of CARRIERS) {
+    const current = database.activeSessions[carrier];
+    if (Array.isArray(current)) continue; // ya migrado
+    if (!current) {
+      database.activeSessions[carrier] = [];
+      continue;
+    }
+    // Formato antiguo: { packages: [], lastUpdate }
+    if (current.packages && Array.isArray(current.packages) && current.packages.length > 0) {
+      database.activeSessions[carrier] = [{
+        id: 'sess-' + Date.now() + '-' + carrier.replace(/\s+/g, '_'),
+        letter: 'A',
+        packages: current.packages,
+        createdAt: current.lastUpdate || new Date().toISOString(),
+        lastUpdate: current.lastUpdate || new Date().toISOString()
+      }];
+    } else {
+      database.activeSessions[carrier] = [];
+    }
+  }
+  console.log('📋 Sesiones migradas a formato array (múltiples palets)');
 }
 
-function addPackageToSession(carrier, packageData) {
-  const session = getSession(carrier);
-  if (session.packages.find(p => p.tracking === packageData.tracking)) return { added: false, reason: 'duplicate' };
-  if (packageData.orderRef && session.packages.find(p => p.orderRef === packageData.orderRef)) return { added: false, reason: 'duplicate-order' };
+function getSessionsArray(carrier) {
+  const c = carrier.toUpperCase();
+  if (!Array.isArray(database.activeSessions[c])) {
+    database.activeSessions[c] = [];
+  }
+  return database.activeSessions[c];
+}
+
+// Devuelve la primera sesión (default cuando hay solo una o cuando el cliente no especifica)
+function getDefaultSession(carrier) {
+  const sessions = getSessionsArray(carrier);
+  return sessions.length > 0 ? sessions[0] : null;
+}
+
+function getSessionById(carrier, sessionId) {
+  return getSessionsArray(carrier).find(s => s.id === sessionId);
+}
+
+function nextAvailableLetter(sessions) {
+  const used = new Set(sessions.map(s => s.letter));
+  for (const l of SESSION_LETTERS) {
+    if (!used.has(l)) return l;
+  }
+  return 'X'; // fallback
+}
+
+function createNewSession(carrier, opts = {}) {
+  const sessions = getSessionsArray(carrier);
+  const newSession = {
+    id: 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    letter: opts.letter || nextAvailableLetter(sessions),
+    packages: opts.packages || [],
+    createdAt: new Date().toISOString(),
+    lastUpdate: new Date().toISOString(),
+    fromPalletId: opts.fromPalletId || null
+  };
+  sessions.push(newSession);
+  saveData();
+  return newSession;
+}
+
+function addPackageToSession(carrier, packageData, sessionId = null) {
+  const sessions = getSessionsArray(carrier);
+
+  // Buscar duplicados en CUALQUIER sesión del carrier
+  for (const s of sessions) {
+    if (s.packages.find(p => p.tracking === packageData.tracking)) {
+      return { added: false, reason: 'duplicate', sessionId: s.id, sessionLetter: s.letter };
+    }
+    if (packageData.orderRef && s.packages.find(p => p.orderRef === packageData.orderRef)) {
+      return { added: false, reason: 'duplicate-order', sessionId: s.id, sessionLetter: s.letter };
+    }
+  }
+
+  // Elegir sesión
+  let session = sessionId ? getSessionById(carrier, sessionId) : null;
+  if (!session) {
+    // Si no se especificó o no se encontró, usar la primera o crear nueva
+    session = sessions[0] || createNewSession(carrier);
+  }
+
   session.packages.push(packageData);
   session.lastUpdate = new Date().toISOString();
   addPackageToGlobalScans(packageData);
   saveData();
-  return { added: true };
+  return { added: true, sessionId: session.id, sessionLetter: session.letter };
 }
 
-function clearSession(carrier) {
-  database.activeSessions[carrier.toUpperCase()] = { packages: [], lastUpdate: null };
+function clearSession(carrier, sessionId = null) {
+  const sessions = getSessionsArray(carrier);
+  if (sessionId) {
+    // Limpiar solo una sesión específica
+    const idx = sessions.findIndex(s => s.id === sessionId);
+    if (idx >= 0) sessions.splice(idx, 1);
+  } else {
+    // Limpiar todas (legacy behavior)
+    database.activeSessions[carrier.toUpperCase()] = [];
+  }
   saveData();
 }
 
-function removePackageFromSession(carrier, tracking) {
-  const session = getSession(carrier);
-  const len = session.packages.length;
-  session.packages = session.packages.filter(p => p.tracking !== tracking);
-  if (session.packages.length < len) { session.lastUpdate = new Date().toISOString(); saveData(); return true; }
-  return false;
+function removePackageFromSession(carrier, tracking, sessionId = null) {
+  const sessions = getSessionsArray(carrier);
+  const targets = sessionId ? sessions.filter(s => s.id === sessionId) : sessions;
+  let removed = false;
+  for (const session of targets) {
+    const len = session.packages.length;
+    session.packages = session.packages.filter(p => p.tracking !== tracking);
+    if (session.packages.length < len) {
+      session.lastUpdate = new Date().toISOString();
+      removed = true;
+    }
+  }
+  if (removed) saveData();
+  return removed;
 }
+
+// Wrapper para compatibilidad con código que espera estructura antigua
+function getSession(carrier) {
+  const sessions = getSessionsArray(carrier);
+  if (sessions.length === 0) return { packages: [], lastUpdate: null, _emptyVirtual: true };
+  // Combinar todos los paquetes para vista agregada (usado por endpoints legacy)
+  const allPackages = [];
+  let latestUpdate = null;
+  for (const s of sessions) {
+    allPackages.push(...s.packages);
+    if (!latestUpdate || s.lastUpdate > latestUpdate) latestUpdate = s.lastUpdate;
+  }
+  return { packages: allPackages, lastUpdate: latestUpdate, _sessionsCount: sessions.length };
+}
+
+// Ejecutar migración + reconstruir Sets ahora que las funciones están definidas
+migrateSessionsFormat();
+rebuildGlobalScans();
 
 // ============================================
 // CLIENTE ODOO
@@ -1275,43 +1395,88 @@ app.get('/api/history-stats', (req, res) => {
 });
 
 // Sesiones
+// Sesión agregada (legacy compat): devuelve TODOS los paquetes del carrier combinados
 app.get('/api/session/:carrier', (req, res) => {
   const session = getSession(req.params.carrier);
-  res.json({ carrier: req.params.carrier.toUpperCase(), packages: session.packages, count: session.packages.length, lastUpdate: session.lastUpdate });
+  res.json({ carrier: req.params.carrier.toUpperCase(), packages: session.packages, count: session.packages.length, lastUpdate: session.lastUpdate, sessionsCount: session._sessionsCount || 0 });
+});
+
+// Sesiones de un carrier: devuelve TODOS los palets abiertos
+app.get('/api/sessions/:carrier', (req, res) => {
+  const sessions = getSessionsArray(req.params.carrier);
+  res.json({
+    carrier: req.params.carrier.toUpperCase(),
+    sessions: sessions.map(s => ({
+      id: s.id,
+      letter: s.letter,
+      packages: s.packages,
+      count: s.packages.length,
+      createdAt: s.createdAt,
+      lastUpdate: s.lastUpdate,
+      fromPalletId: s.fromPalletId || null
+    })),
+    totalCount: sessions.reduce((a, s) => a + s.packages.length, 0)
+  });
+});
+
+// Crear nueva sesión (nuevo palet) para un carrier
+app.post('/api/sessions/:carrier/open', (req, res) => {
+  const carrier = req.params.carrier.toUpperCase();
+  if (!CARRIERS.includes(carrier)) return res.status(400).json({ error: 'Carrier inválido' });
+  const newSession = createNewSession(carrier);
+  console.log('🆕 Nueva sesión ' + newSession.letter + ' para ' + carrier + ' (id: ' + newSession.id + ')');
+  res.json({ success: true, session: { id: newSession.id, letter: newSession.letter, packages: [], count: 0, createdAt: newSession.createdAt } });
+});
+
+// Cerrar/eliminar una sesión específica
+app.delete('/api/sessions/:carrier/:sessionId', (req, res) => {
+  clearSession(req.params.carrier, req.params.sessionId);
+  res.json({ success: true, message: 'Sesión eliminada' });
 });
 
 app.get('/api/sessions', (req, res) => {
+  // Devuelve resumen agregado por carrier (cuenta total + número de palets abiertos)
   const sessions = {};
   for (const carrier of CARRIERS) {
-    const session = database.activeSessions[carrier];
-    if (session && session.packages && session.packages.length > 0) {
-      sessions[carrier] = { count: session.packages.length, lastUpdate: session.lastUpdate };
-    }
+    const arr = getSessionsArray(carrier);
+    if (arr.length === 0) continue;
+    const totalCount = arr.reduce((a, s) => a + s.packages.length, 0);
+    if (totalCount === 0 && arr.length === 0) continue;
+    sessions[carrier] = {
+      count: totalCount,
+      palletCount: arr.length,
+      lastUpdate: arr.reduce((m, s) => (!m || s.lastUpdate > m) ? s.lastUpdate : m, null),
+      sessions: arr.map(s => ({ id: s.id, letter: s.letter, count: s.packages.length, lastUpdate: s.lastUpdate, fromPalletId: s.fromPalletId || null }))
+    };
   }
   res.json({ sessions });
 });
 
 app.delete('/api/session/:carrier', (req, res) => {
+  // Legacy: limpia TODAS las sesiones del carrier
   clearSession(req.params.carrier);
-  res.json({ success: true, message: 'Sesión de ' + req.params.carrier.toUpperCase() + ' limpiada' });
+  res.json({ success: true, message: 'Todas las sesiones de ' + req.params.carrier.toUpperCase() + ' limpiadas' });
 });
 
 app.delete('/api/session/:carrier/package/:tracking', (req, res) => {
-  const removed = removePackageFromSession(req.params.carrier, req.params.tracking.toUpperCase());
+  // sessionId opcional vía query (?sessionId=...) o body
+  const sessionId = req.query.sessionId || (req.body && req.body.sessionId) || null;
+  const removed = removePackageFromSession(req.params.carrier, req.params.tracking.toUpperCase(), sessionId);
   res.json({ success: removed, message: removed ? 'Paquete eliminado' : 'Paquete no encontrado' });
 });
 
 // Escaneo
 app.post('/api/scan', async (req, res) => {
-  const { tracking, expectedCarrier } = req.body;
+  const { tracking, expectedCarrier, sessionId } = req.body;
   if (!tracking || !expectedCarrier) return res.status(400).json({ error: 'Faltan datos' });
 
   const clean = tracking.trim().toUpperCase();
   const expected = expectedCarrier.toUpperCase();
-  console.log('\n📦 SCAN: ' + clean + ' → ' + expected);
-  
-  const session = getSession(expected);
-  if (session.packages.find(p => p.tracking === clean)) {
+  console.log('\n📦 SCAN: ' + clean + ' → ' + expected + (sessionId ? ' (sess ' + sessionId.slice(-8) + ')' : ''));
+
+  // Verificar duplicado en TODAS las sesiones del carrier (no solo la actual)
+  const aggregated = getSession(expected);
+  if (aggregated.packages.find(p => p.tracking === clean)) {
     return res.json({ success: false, error: 'DUPLICADO', message: 'Este paquete ya está escaneado', tracking: clean });
   }
 
@@ -1328,24 +1493,24 @@ app.post('/api/scan', async (req, res) => {
   }
 
   if (!det.carrier || det.carrier === 'DESCONOCIDO') {
-    // Si el picking existe y el operario eligió un carrier específico, permitir con flag de no verificado
-    // (en vez de bloquear con el modal de búsqueda por cliente)
     console.log('   ⚠️ Carrier no verificado pero usuario eligió ' + expected + ' → permitiendo con confianza');
-    // Continuar el flujo normal, no bloquear
   }
 
   // Detectar duplicado por pedido (diferentes barcodes CTT multi-collo resuelven al mismo pedido)
   const orderRef = det.picking.origin || '';
   if (orderRef) {
-    const existingByOrder = session.packages.find(p => p.orderRef === orderRef);
+    const existingByOrder = aggregated.packages.find(p => p.orderRef === orderRef);
     if (existingByOrder) {
-      console.log('   ⚠️ Pedido ' + orderRef + ' ya escaneado (barcode diferente: ' + existingByOrder.tracking.substring(0, 20) + '...)');
+      console.log('   ⚠️ Pedido ' + orderRef + ' ya escaneado');
       return res.json({ success: false, error: 'DUPLICADO', message: 'El pedido ' + orderRef + ' ya está escaneado (tracking diferente)', tracking: clean, orderRef: orderRef });
     }
   }
 
   const packageData = { tracking: clean, pickingId: det.picking.id, orderRef: orderRef, clientName: det.picking.partner_id ? det.picking.partner_id[1] : '', scannedAt: new Date().toISOString() };
-  addPackageToSession(expected, packageData);
+  const addResult = addPackageToSession(expected, packageData, sessionId);
+  if (!addResult.added) {
+    return res.json({ success: false, error: 'DUPLICADO', message: 'Ya escaneado en sesión ' + addResult.sessionLetter, tracking: clean });
+  }
   const updatedSession = getSession(expected);
   // NO invalidamos el caché aquí: el TTL de 30s + auto-refresh del frontend ya da datos frescos
   // sin penalizar la performance del servidor en cada escaneo
@@ -1355,26 +1520,30 @@ app.post('/api/scan', async (req, res) => {
 });
 
 app.post('/api/add-tracking', async (req, res) => {
-  const { tracking, carrier, pickingId, orderRef, clientName } = req.body;
+  const { tracking, carrier, pickingId, orderRef, clientName, sessionId } = req.body;
   if (!tracking || !carrier) return res.status(400).json({ error: 'Tracking y carrier requeridos' });
-  
+
   const clean = tracking.trim().toUpperCase();
   const carrierUpper = carrier.toUpperCase();
-  const session = getSession(carrierUpper);
-  
-  if (session.packages.find(p => p.tracking === clean)) {
+  const aggregated = getSession(carrierUpper);
+
+  if (aggregated.packages.find(p => p.tracking === clean)) {
     return res.json({ success: false, error: 'DUPLICADO', message: 'Este paquete ya está escaneado' });
   }
-  
+
   const det = await getCarrierFromTracking(clean);
   if (det.carrier && det.carrier !== 'DESCONOCIDO' && det.carrier !== carrierUpper) {
     return res.json({ success: false, error: 'TRANSPORTISTA_INCORRECTO', message: 'Este paquete es de ' + det.carrier + ', no de ' + carrierUpper, detectedCarrier: det.carrier });
   }
-  
+
   const packageData = { tracking: clean, pickingId: pickingId || det.picking?.id, orderRef: orderRef || det.picking?.origin || '', clientName: clientName || (det.picking?.partner_id ? det.picking.partner_id[1] : ''), scannedAt: new Date().toISOString(), addedManually: true };
-  addPackageToSession(carrierUpper, packageData);
-  
-  res.json({ success: true, tracking: clean, carrier: carrierUpper, package: packageData, sessionCount: getSession(carrierUpper).packages.length });
+  const addResult = addPackageToSession(carrierUpper, packageData, sessionId);
+  if (!addResult.added) {
+    return res.json({ success: false, error: 'DUPLICADO', message: 'Ya escaneado en sesión ' + addResult.sessionLetter, tracking: clean });
+  }
+
+  const updatedSession = getSession(carrierUpper);
+  res.json({ success: true, tracking: clean, carrier: carrierUpper, package: packageData, sessionCount: updatedSession.packages.length, sessionId: addResult.sessionId, sessionLetter: addResult.sessionLetter });
 });
 
 app.get('/api/detect-carrier/:tracking', async (req, res) => {
@@ -1538,26 +1707,44 @@ app.get('/api/search', (req, res) => {
 // PALETS
 // ============================================
 app.post('/api/pallets', (req, res) => {
-  const { carrier } = req.body;
+  const { carrier, sessionId } = req.body;
   if (!carrier) return res.status(400).json({ error: 'Carrier requerido' });
-  
+
   const carrierUpper = carrier.toUpperCase();
-  const session = getSession(carrierUpper);
-  if (!session.packages || session.packages.length === 0) return res.status(400).json({ error: 'No hay paquetes para crear el palet' });
-  
+  const sessions = getSessionsArray(carrierUpper);
+
+  // Si nos pasan sessionId, cerrar solo esa sesión. Si no, cerrar la primera (compat).
+  let targetSession;
+  if (sessionId) {
+    targetSession = sessions.find(s => s.id === sessionId);
+    if (!targetSession) return res.status(404).json({ error: 'Sesión no encontrada' });
+  } else {
+    targetSession = sessions[0];
+  }
+  if (!targetSession || !targetSession.packages || targetSession.packages.length === 0) {
+    return res.status(400).json({ error: 'No hay paquetes para crear el palet' });
+  }
+
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
   const count = Object.keys(database.pallets).filter(id => id.startsWith(carrierUpper + '-' + dateStr)).length + 1;
   const palletId = carrierUpper + '-' + dateStr + '-' + String(count).padStart(3, '0');
-  
+
   const pallet = {
-    id: palletId, carrier: carrierUpper, packages: [...session.packages], trackings: session.packages.map(p => p.tracking),
-    totalPackages: session.packages.length, createdAt: now.toISOString(), date: now.toISOString().split('T')[0], status: 'pending'
+    id: palletId,
+    carrier: carrierUpper,
+    packages: [...targetSession.packages],
+    trackings: targetSession.packages.map(p => p.tracking),
+    totalPackages: targetSession.packages.length,
+    createdAt: now.toISOString(),
+    date: now.toISOString().split('T')[0],
+    status: 'pending',
+    sessionLetter: targetSession.letter || 'A'
   };
-  
+
   database.pallets[palletId] = pallet;
-  clearSession(carrierUpper);
-  console.log('\n📦 PALET CREADO: ' + palletId + ' - ' + pallet.totalPackages + ' paquetes');
+  clearSession(carrierUpper, targetSession.id);
+  console.log('\n📦 PALET CREADO: ' + palletId + ' (Sesión ' + (targetSession.letter || 'A') + ') - ' + pallet.totalPackages + ' paquetes');
   res.json({ success: true, pallet });
 });
 
@@ -1587,6 +1774,65 @@ app.get('/api/pallets/:id', (req, res) => {
   const pallet = database.pallets[req.params.id];
   if (!pallet) return res.status(404).json({ error: 'Palet no encontrado' });
   res.json({ pallet });
+});
+
+// Reabrir un palet cerrado: crea una nueva sesión activa con sus paquetes
+app.post('/api/pallets/:id/reopen', (req, res) => {
+  const palletId = req.params.id;
+  const pallet = database.pallets[palletId];
+  if (!pallet) return res.status(404).json({ error: 'Palet no encontrado' });
+
+  if (pallet.status === 'picked_up') {
+    return res.status(400).json({ error: 'No se puede reabrir un palet ya recogido' });
+  }
+
+  const carrierUpper = (pallet.carrier || '').toUpperCase();
+  if (!CARRIERS.includes(carrierUpper)) {
+    return res.status(400).json({ error: 'Carrier inválido en el palet' });
+  }
+
+  // Verificar duplicados contra otras sesiones abiertas (no debería pasar, pero por seguridad)
+  const existingSessions = getSessionsArray(carrierUpper);
+  const trackingsInOtherSessions = new Set();
+  for (const s of existingSessions) {
+    for (const p of s.packages) trackingsInOtherSessions.add(p.tracking);
+  }
+
+  // Filtrar paquetes que NO estén en sesiones abiertas (evita doble conteo)
+  const packagesToRestore = (pallet.packages || []).filter(p => !trackingsInOtherSessions.has(p.tracking));
+
+  // Crear nueva sesión con los paquetes restaurados
+  const newSession = createNewSession(carrierUpper, {
+    packages: packagesToRestore,
+    fromPalletId: palletId
+  });
+
+  // Reconstruir Sets globales (los trackings ya estaban allí, pero por consistencia)
+  rebuildGlobalScans();
+
+  // Marcar el palet como reabierto en el histórico para audit trail
+  pallet.status = 'reopened';
+  pallet.reopenedAt = new Date().toISOString();
+  pallet.reopenedToSessionId = newSession.id;
+  pallet.reopenedToSessionLetter = newSession.letter;
+
+  // Guardar también el conteo original para referencia
+  if (!pallet.originalTotalPackages) pallet.originalTotalPackages = pallet.totalPackages;
+
+  saveData();
+
+  console.log('\n🔄 PALET REABIERTO: ' + palletId + ' → Sesión ' + newSession.letter + ' (' + carrierUpper + ') con ' + packagesToRestore.length + ' paquetes');
+
+  res.json({
+    success: true,
+    carrier: carrierUpper,
+    sessionId: newSession.id,
+    sessionLetter: newSession.letter,
+    packages: newSession.packages,
+    count: newSession.packages.length,
+    originalPalletId: palletId,
+    skipped: (pallet.packages || []).length - packagesToRestore.length
+  });
 });
 
 app.delete('/api/pallets/:id', (req, res) => {

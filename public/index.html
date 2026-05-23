@@ -173,6 +173,21 @@
       border: 2px solid rgba(255,255,255,0.9);
       box-shadow: 0 4px 10px rgba(255,107,107,0.4);
     }
+    .d3 .car .multi-bd {
+      position: absolute; bottom: 6px; right: 8px;
+      background: linear-gradient(135deg, var(--violet), #5b21b6);
+      color: white;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px; font-weight: 700;
+      letter-spacing: 0.05em;
+      padding: 2px 7px; border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(124,58,237,0.32);
+    }
+    .d3 .car.on .multi-bd {
+      background: rgba(255,255,255,0.22);
+      color: white;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.30);
+    }
 
     /* ─── SCANNER (glass card) ─── */
     .d3 .scanner { padding: 20px; margin-bottom: 16px; }
@@ -738,6 +753,150 @@
       color: var(--ink-3); margin-top: 4px;
     }
 
+    /* ─── ACTIVE PALLET BAR (multi-sesión) ─── */
+    .d3 .active-pallet-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+      background: linear-gradient(135deg, rgba(0,184,132,0.10), rgba(0,184,132,0.04));
+      border: 1px solid rgba(0,184,132,0.30);
+      border-radius: 14px;
+      backdrop-filter: blur(10px);
+    }
+    .d3 .apb-left { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+    .d3 .apb-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--jade);
+      box-shadow: 0 0 0 4px rgba(0,184,132,0.18);
+      flex-shrink: 0;
+    }
+    .d3 .apb-label {
+      font-size: 10.5px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--ink-3);
+    }
+    .d3 .apb-letter {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800; font-size: 14px;
+      color: white;
+      background: linear-gradient(135deg, var(--jade), var(--jade-deep));
+      padding: 3px 10px; border-radius: 8px;
+      box-shadow: 0 4px 10px rgba(0,184,132,0.32);
+    }
+    .d3 .apb-meta {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; color: var(--ink-3);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .d3 .apb-switch {
+      background: rgba(255,255,255,0.7);
+      border: 1px solid var(--line-2);
+      border-radius: 10px;
+      padding: 6px 14px;
+      font-family: 'Inter', sans-serif;
+      font-weight: 700; font-size: 11.5px;
+      color: var(--ink-2); cursor: pointer;
+      transition: all 150ms;
+    }
+    .d3 .apb-switch:hover { background: white; border-color: var(--jade); color: var(--jade-deep); }
+
+    /* ─── PALLET SELECTOR MODAL ─── */
+    .d3 .modal-content.pallet-selector { max-width: 460px; text-align: left; }
+    .d3 .ps-head { text-align: center; margin-bottom: 18px; }
+    .d3 .ps-carrier-tag {
+      display: inline-block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+      color: white;
+      padding: 4px 12px; border-radius: 999px;
+      background: linear-gradient(135deg, var(--jade), var(--jade-deep));
+      margin-bottom: 10px;
+    }
+    .d3 .ps-title { font-weight: 700; font-size: 18px; letter-spacing: -0.025em; margin-bottom: 4px; color: var(--ink); }
+    .d3 .ps-sub { font-size: 12px; color: var(--ink-3); }
+    .d3 .ps-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; max-height: 320px; overflow-y: auto; }
+    .d3 .ps-item {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px; align-items: center;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.65);
+      border: 1.5px solid var(--line);
+      border-radius: 14px;
+      cursor: pointer;
+      transition: all 150ms;
+    }
+    .d3 .ps-item:hover { border-color: var(--jade); background: var(--jade-soft); transform: translateY(-1px); }
+    .d3 .ps-item.active { border-color: var(--jade); background: var(--jade-soft); box-shadow: 0 4px 12px rgba(0,184,132,0.18); }
+    .d3 .ps-item .ps-letter {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--jade), var(--jade-deep));
+      color: white;
+      display: grid; place-items: center;
+      font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 16px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.30), 0 6px 14px rgba(0,184,132,0.30);
+    }
+    .d3 .ps-item .ps-info .ps-info-top { font-weight: 700; font-size: 13.5px; color: var(--ink); }
+    .d3 .ps-item .ps-info .ps-info-sub {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px; color: var(--ink-3); margin-top: 2px;
+    }
+    .d3 .ps-item .ps-count {
+      font-family: 'Inter', sans-serif;
+      font-weight: 800; font-size: 20px;
+      color: var(--jade-deep);
+      font-variant-numeric: tabular-nums;
+    }
+    .d3 .ps-item .ps-count .u {
+      font-size: 10px; color: var(--ink-3); font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.08em; display: block;
+      margin-top: -2px;
+    }
+    .d3 .ps-new {
+      width: 100%;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 14px;
+      background: rgba(255,255,255,0.45);
+      border: 1.5px dashed var(--line-2);
+      border-radius: 14px;
+      color: var(--ink-2); font-weight: 700; font-size: 13px;
+      cursor: pointer; transition: all 150ms;
+    }
+    .d3 .ps-new:hover {
+      border-color: var(--jade);
+      background: var(--jade-soft);
+      color: var(--jade-deep);
+    }
+    .d3 .ps-new-plus {
+      width: 22px; height: 22px; border-radius: 7px;
+      background: linear-gradient(135deg, var(--jade), var(--jade-deep));
+      color: white; display: grid; place-items: center;
+      font-weight: 800; font-size: 14px; line-height: 1;
+    }
+
+    /* ─── REOPEN BUTTON (palets tab) ─── */
+    .d3 .reopen-btn {
+      background: linear-gradient(135deg, var(--violet), #5b21b6);
+      color: white;
+      border: none; border-radius: 10px;
+      padding: 8px 14px;
+      font-family: 'Inter', sans-serif;
+      font-weight: 700; font-size: 11.5px;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(124,58,237,0.30);
+      transition: all 150ms;
+    }
+    .d3 .reopen-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(124,58,237,0.40); }
+    .d3 .reopen-badge {
+      display: inline-block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
+      background: rgba(124,58,237,0.12); color: var(--violet);
+      padding: 2px 7px; border-radius: 6px;
+      margin-left: 6px; text-transform: uppercase;
+    }
+
     /* ─── TOAST ─── */
     .toast {
       position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%);
@@ -917,6 +1076,15 @@
             <div class="l">Sesión <strong id="selectedCarrierName"></strong></div>
             <div class="c" id="packageCount">0</div>
           </div>
+          <div class="active-pallet-bar" id="activePalletBar" style="display:none">
+            <div class="apb-left">
+              <span class="apb-dot"></span>
+              <span class="apb-label">Palet activo</span>
+              <span class="apb-letter" id="activePalletLetter">A</span>
+              <span class="apb-meta" id="activePalletMeta"></span>
+            </div>
+            <button class="apb-switch" id="switchPalletBtn" onclick="showPalletSelector(state.selectedCarrier)">Cambiar</button>
+          </div>
           <input type="text" class="sc-input" id="scanInput" placeholder="Esperando barcode…" autocomplete="off">
           <div class="sc-hint">Pistola al código · <kbd>↵</kbd> valida</div>
           <div class="pkg-list" id="packageList"></div>
@@ -1089,6 +1257,25 @@
     </div>
   </div>
 
+  <!-- Selector de Palet (multi-sesión) -->
+  <div class="modal" id="palletSelectorModal">
+    <div class="modal-content pallet-selector">
+      <div class="ps-head">
+        <div class="ps-carrier-tag" id="psCarrierTag">—</div>
+        <div class="ps-title">Selecciona palet</div>
+        <div class="ps-sub" id="psSub">Elige a qué palet añadir los envíos</div>
+      </div>
+      <div class="ps-list" id="psList"></div>
+      <button class="ps-new" id="psNewBtn" onclick="openNewSessionForSelected()">
+        <span class="ps-new-plus">+</span>
+        <span class="ps-new-label">Abrir nuevo palet</span>
+      </button>
+      <div class="modal-buttons single" style="margin-top:14px">
+        <button class="btn btn-ghost" onclick="closePalletSelector()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <script>
@@ -1105,7 +1292,17 @@
       'SPRING':          'linear-gradient(135deg, #e879f9, #c026d3)',
     };
 
-    const state = { selectedCarrier: null, packages: [], sessions: {}, palletsData: null, selectedPallets: new Set(), pickupCarrier: null, pickupPallets: [] };
+    const state = {
+      selectedCarrier: null,
+      selectedSessionId: null,        // ID de la sesión activa dentro del carrier
+      packages: [],
+      sessions: {},                    // { carrier: totalCount } – compat
+      sessionsDetail: {},              // { carrier: { count, palletCount, sessions: [{id, letter, count, lastUpdate, fromPalletId}] } }
+      palletsData: null,
+      selectedPallets: new Set(),
+      pickupCarrier: null,
+      pickupPallets: []
+    };
 
     async function apiCall(endpoint, options = {}) {
       const response = await fetch(`${API_URL}/api${endpoint}`, { headers: { 'Content-Type': 'application/json' }, ...options });
@@ -1163,8 +1360,13 @@
       const total = Object.values(state.sessions).reduce((a, b) => a + b, 0) || 1;
       document.getElementById('carrierGrid').innerHTML = CARRIERS.map(c => {
         const count = state.sessions[c] || 0;
+        const detail = state.sessionsDetail[c];
+        const palletCount = detail ? detail.palletCount : 0;
         const selected = state.selectedCarrier === c;
         const pct = count > 0 ? Math.round((count / total) * 100) : 0;
+        const multiBadge = palletCount > 1
+          ? `<span class="multi-bd" title="${palletCount} palets abiertos">${palletCount} ABIERTOS</span>`
+          : '';
         return `
           <button class="car ${selected ? 'on' : ''}" onclick="selectCarrier('${c}')">
             ${count > 0 ? `<span class="bd">${count}</span>` : ''}
@@ -1173,6 +1375,7 @@
               <div class="c ${count===0?'c-zero':''}">${count}</div>
               ${count > 0 ? `<div class="pct">${pct}%</div>` : ''}
             </div>
+            ${multiBadge}
           </button>
         `;
       }).join('');
@@ -1180,13 +1383,148 @@
 
     async function selectCarrier(carrier) {
       state.selectedCarrier = carrier;
-      try { const r = await apiCall(`/session/${carrier}`); state.packages = r.packages || []; } catch { state.packages = []; }
+      // Refrescar el detalle de sesiones antes de decidir
+      await loadSessions();
+      const detail = state.sessionsDetail[carrier];
+
+      // Si hay 2+ palets abiertos → mostrar selector
+      if (detail && detail.palletCount > 1) {
+        showPalletSelector(carrier);
+        return;
+      }
+
+      // Si hay 1 palet abierto → cargarlo
+      if (detail && detail.sessions && detail.sessions.length >= 1) {
+        state.selectedSessionId = detail.sessions[0].id;
+      } else {
+        state.selectedSessionId = null; // se creará al primer escaneo
+      }
+
+      await loadSessionPackages(carrier, state.selectedSessionId);
+      openScannerForCarrier(carrier);
+    }
+
+    async function loadSessionPackages(carrier, sessionId) {
+      try {
+        if (sessionId) {
+          // Pedir todas las sesiones del carrier y extraer la nuestra
+          const r = await apiCall(`/sessions/${encodeURIComponent(carrier)}`);
+          const sess = (r.sessions || []).find(s => s.id === sessionId);
+          state.packages = sess ? (sess.packages || []) : [];
+        } else {
+          // Sin sessionId: pedir agregado (compat)
+          const r = await apiCall(`/session/${encodeURIComponent(carrier)}`);
+          state.packages = r.packages || [];
+        }
+      } catch {
+        state.packages = [];
+      }
+    }
+
+    function openScannerForCarrier(carrier) {
       renderCarriers();
       document.getElementById('scannerSection').style.display = 'block';
       document.getElementById('selectedCarrierName').textContent = carrier;
+      updateActivePalletBar();
       renderPackages();
       updateTopbar('clasificar');
       setTimeout(() => document.getElementById('scanInput').focus(), 100);
+    }
+
+    function updateActivePalletBar() {
+      const bar = document.getElementById('activePalletBar');
+      const detail = state.sessionsDetail[state.selectedCarrier];
+      // Mostrar solo si hay >1 palets abiertos
+      if (!detail || !detail.sessions || detail.sessions.length < 2) {
+        bar.style.display = 'none';
+        return;
+      }
+      const activeSess = state.selectedSessionId
+        ? detail.sessions.find(s => s.id === state.selectedSessionId)
+        : detail.sessions[0];
+      if (!activeSess) {
+        bar.style.display = 'none';
+        return;
+      }
+      bar.style.display = 'flex';
+      document.getElementById('activePalletLetter').textContent = activeSess.letter || '?';
+      // Para el conteo de la sesión activa usamos state.packages (más fresco que sessionsDetail)
+      const currentCount = state.selectedSessionId === activeSess.id
+        ? state.packages.length
+        : (activeSess.count || 0);
+      const otherCount = detail.sessions.length - 1;
+      const fromTag = activeSess.fromPalletId ? ' · reabierto' : '';
+      document.getElementById('activePalletMeta').textContent =
+        `${currentCount} envíos${fromTag} · ${otherCount} más abierto${otherCount === 1 ? '' : 's'}`;
+    }
+
+    // ─── PALLET SELECTOR ───
+    function showPalletSelector(carrier) {
+      const detail = state.sessionsDetail[carrier];
+      if (!detail || !detail.sessions || detail.sessions.length === 0) {
+        // No hay sesiones: directamente crear nueva
+        state.selectedCarrier = carrier;
+        state.selectedSessionId = null;
+        openScannerForCarrier(carrier);
+        return;
+      }
+      state.selectedCarrier = carrier;
+
+      document.getElementById('psCarrierTag').textContent = carrier;
+      document.getElementById('psSub').textContent =
+        `${detail.palletCount} palets abiertos · ${detail.count} envíos en total`;
+
+      const list = document.getElementById('psList');
+      // Ordenar por letra asc para mostrar A primero
+      const sorted = [...detail.sessions].sort((a, b) => (a.letter || '').localeCompare(b.letter || ''));
+      list.innerHTML = sorted.map(s => {
+        const lastUpd = s.lastUpdate ? new Date(s.lastUpdate).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '—';
+        const reopened = s.fromPalletId ? ' · reabierto' : '';
+        const active = state.selectedSessionId === s.id ? 'active' : '';
+        return `
+          <div class="ps-item ${active}" onclick="selectExistingSession('${s.id}')">
+            <div class="ps-letter">${s.letter || '?'}</div>
+            <div class="ps-info">
+              <div class="ps-info-top">Palet ${s.letter || '?'}</div>
+              <div class="ps-info-sub">${lastUpd}${reopened}</div>
+            </div>
+            <div class="ps-count">${s.count || 0}<span class="u">envíos</span></div>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('palletSelectorModal').classList.add('show');
+    }
+
+    function closePalletSelector() {
+      document.getElementById('palletSelectorModal').classList.remove('show');
+    }
+
+    async function selectExistingSession(sessionId) {
+      state.selectedSessionId = sessionId;
+      await loadSessionPackages(state.selectedCarrier, sessionId);
+      closePalletSelector();
+      openScannerForCarrier(state.selectedCarrier);
+      showToast(`Trabajando en palet activo`, 'success');
+    }
+
+    async function openNewSessionForSelected() {
+      const carrier = state.selectedCarrier;
+      try {
+        const r = await apiCall(`/sessions/${encodeURIComponent(carrier)}/open`, { method: 'POST' });
+        if (r.success && r.session) {
+          state.selectedSessionId = r.session.id;
+          await loadSessions();
+          state.packages = [];
+          closePalletSelector();
+          openScannerForCarrier(carrier);
+          showToast(`Palet ${r.session.letter} abierto`, 'success');
+        } else {
+          showModal('!', 'Error', r.error || 'No se pudo abrir nuevo palet');
+        }
+      } catch (err) {
+        showModal('×', 'Error', 'Error de conexión');
+      }
     }
 
     document.getElementById('scanInput').addEventListener('keypress', (e) => {
@@ -1309,12 +1647,17 @@
         document.getElementById('scanInput').focus();
 
         // Persistir en servidor en BACKGROUND (fire and forget)
-        apiCall('/scan', { method: 'POST', body: JSON.stringify({ tracking, expectedCarrier: state.selectedCarrier }) })
+        apiCall('/scan', { method: 'POST', body: JSON.stringify({ tracking, expectedCarrier: state.selectedCarrier, sessionId: state.selectedSessionId }) })
           .then(r => {
             if (r.success && r.package) {
               // Reemplazar con datos del servidor (más completos)
               const idx = state.packages.findIndex(p => p.tracking === clean);
               if (idx >= 0) state.packages[idx] = r.package;
+              // Si el servidor asignó/creó una sesión, alinearla en estado
+              if (r.sessionId && !state.selectedSessionId) {
+                state.selectedSessionId = r.sessionId;
+                loadSessions().then(updateActivePalletBar);
+              }
               renderPackages();
             } else if (!r.success) {
               // Server discrepancia: rollback
@@ -1344,13 +1687,17 @@
       playSound('success');
 
       try {
-        const r = await apiCall('/scan', { method: 'POST', body: JSON.stringify({ tracking, expectedCarrier: state.selectedCarrier }) });
+        const r = await apiCall('/scan', { method: 'POST', body: JSON.stringify({ tracking, expectedCarrier: state.selectedCarrier, sessionId: state.selectedSessionId }) });
         const idx = state.packages.findIndex(p => p === optimisticEntry || (p.pending && p.tracking === clean));
 
         if (r.success) {
           if (idx >= 0) state.packages[idx] = r.package;
           else state.packages.push(r.package);
           state.sessions[state.selectedCarrier] = r.sessionCount;
+          if (r.sessionId && !state.selectedSessionId) {
+            state.selectedSessionId = r.sessionId;
+            loadSessions().then(updateActivePalletBar);
+          }
           renderPackages(); renderCarriers();
           showToast(`✓ ${r.package.orderRef || tracking.slice(-8)}`, 'success');
         } else {
@@ -1408,10 +1755,11 @@
 
     async function deletePackage(t) {
       try {
-        await apiCall(`/session/${state.selectedCarrier}/package/${t}`, { method: 'DELETE' });
+        const qs = state.selectedSessionId ? `?sessionId=${encodeURIComponent(state.selectedSessionId)}` : '';
+        await apiCall(`/session/${encodeURIComponent(state.selectedCarrier)}/package/${encodeURIComponent(t)}${qs}`, { method: 'DELETE' });
         state.packages = state.packages.filter(p => p.tracking !== t);
-        state.sessions[state.selectedCarrier] = state.packages.length;
-        renderPackages(); renderCarriers();
+        await loadSessions();
+        renderPackages(); renderCarriers(); updateActivePalletBar();
         showToast('Eliminado', 'warning');
       } catch { showToast('Error', 'error'); }
     }
@@ -1419,21 +1767,42 @@
     document.getElementById('closePalletBtn').addEventListener('click', async () => {
       if (state.packages.length === 0) return;
       try {
-        const r = await apiCall('/pallets', { method: 'POST', body: JSON.stringify({ carrier: state.selectedCarrier }) });
+        const r = await apiCall('/pallets', {
+          method: 'POST',
+          body: JSON.stringify({ carrier: state.selectedCarrier, sessionId: state.selectedSessionId })
+        });
         if (r.success) {
           showLabelModal(r.pallet);
-          state.packages = []; state.sessions[state.selectedCarrier] = 0;
-          renderPackages(); renderCarriers();
+          // Limpiar estado local
+          state.packages = [];
+          state.selectedSessionId = null;
+          await loadSessions();
+          renderPackages(); renderCarriers(); updateActivePalletBar();
+
+          // Si quedan otras sesiones abiertas, ofrecer al usuario seleccionar la siguiente
+          const detail = state.sessionsDetail[state.selectedCarrier];
+          if (detail && detail.palletCount >= 1) {
+            // Auto-cargar el primer palet restante para continuar
+            state.selectedSessionId = detail.sessions[0].id;
+            await loadSessionPackages(state.selectedCarrier, state.selectedSessionId);
+            renderPackages(); updateActivePalletBar();
+          }
         } else { showModal('!', 'Error', r.error); }
       } catch { showModal('×', 'Error', 'No se pudo crear'); }
     });
 
     document.getElementById('clearSessionBtn').addEventListener('click', async () => {
       if (state.packages.length === 0) return;
-      if (confirm(`¿Limpiar ${state.packages.length} paquetes?`)) {
-        await apiCall(`/session/${state.selectedCarrier}`, { method: 'DELETE' });
-        state.packages = []; state.sessions[state.selectedCarrier] = 0;
-        renderPackages(); renderCarriers();
+      if (confirm(`¿Limpiar ${state.packages.length} paquetes de este palet?`)) {
+        if (state.selectedSessionId) {
+          await apiCall(`/sessions/${encodeURIComponent(state.selectedCarrier)}/${encodeURIComponent(state.selectedSessionId)}`, { method: 'DELETE' });
+        } else {
+          await apiCall(`/session/${encodeURIComponent(state.selectedCarrier)}`, { method: 'DELETE' });
+        }
+        state.packages = [];
+        state.selectedSessionId = null;
+        await loadSessions();
+        renderPackages(); renderCarriers(); updateActivePalletBar();
         showToast('Limpiado', 'warning');
       }
     });
@@ -1489,13 +1858,16 @@
       const pickupTime = p.pickedUpAt ? new Date(p.pickedUpAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : null;
       const checked = state.selectedPallets.has(p.id);
       const statusLabel = pickupTime ? `RECOGIDO ${pickupTime}` : 'PENDIENTE';
+      // canSelect true → pendiente (no recogido). Sólo permitimos reabrir si está pendiente, no recogido.
+      const canReopen = canSelect && !pickupTime;
+      const letterBadge = p.sessionLetter ? `<span class="reopen-badge">Palet ${p.sessionLetter}</span>` : '';
       return `
         <div class="pallet" onclick="togglePalletDetail('${p.id}')">
           ${canSelect
             ? `<div class="ck ${checked?'on':''}" onclick="event.stopPropagation(); togglePalletSelection('${p.id}')">${checked?'✓':''}</div>`
             : `<div class="ck done">✓</div>`}
           <div class="info">
-            <div class="id">${p.id}</div>
+            <div class="id">${p.id}${letterBadge}</div>
             <div class="m">${time} · ${statusLabel}</div>
           </div>
           <div class="t ${pickupTime?'done':''}">${p.totalPackages}</div>
@@ -1504,12 +1876,41 @@
           ${p.packages.map(pkg => `<div class="row"><span class="tk">${pkg.tracking}</span><span class="meta">${pkg.orderRef || ''}${pkg.clientName ? ' · ' + pkg.clientName : ''}</span></div>`).join('')}
           <div class="pa">
             <button onclick="event.stopPropagation(); printLabel('${p.id}')">Etiqueta</button>
+            ${canReopen ? `<button class="reopen-btn" onclick="event.stopPropagation(); reopenPallet('${p.id}')">↻ Reabrir</button>` : ''}
             <button class="danger" onclick="event.stopPropagation(); deletePallet('${p.id}', ${!canSelect})">Eliminar</button>
             ${p.pickupId ? `<button onclick="event.stopPropagation(); openManifest('${p.pickupId}')">Manifiesto</button>` : ''}
             ${p.pickupId ? `<button onclick="event.stopPropagation(); undoPickup('${p.pickupId}')">Deshacer</button>` : ''}
           </div>
         </div>
       `;
+    }
+
+    // Reabrir un palet cerrado: lleva al usuario al scanner con esos paquetes
+    async function reopenPallet(palletId) {
+      if (!confirm('¿Reabrir este palet? Los envíos volverán a la sesión activa.')) return;
+      try {
+        const r = await apiCall(`/pallets/${encodeURIComponent(palletId)}/reopen`, { method: 'POST' });
+        if (!r.success) {
+          showModal('!', 'Error', r.error || 'No se pudo reabrir');
+          return;
+        }
+        // Recargar sesiones y navegar al tab clasificar con el carrier+sesión cargados
+        await loadSessions();
+        state.selectedCarrier = r.carrier;
+        state.selectedSessionId = r.sessionId;
+        state.packages = r.packages || [];
+
+        // Cambiar al tab clasificar
+        document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('on'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector('.nav-item[data-tab="clasificar"]').classList.add('on');
+        document.getElementById('tab-clasificar').classList.add('active');
+
+        openScannerForCarrier(r.carrier);
+        showToast(`✓ Palet reabierto como ${r.sessionLetter} (${r.count} envíos)`, 'success');
+      } catch (err) {
+        showModal('×', 'Error', 'Error de conexión al reabrir');
+      }
     }
 
     function toggleCarrierGroup(c) {
@@ -1822,13 +2223,24 @@
       document.getElementById('headerStats').textContent = `${total} LIVE`;
     }
 
-    // ─── INIT ───
-    async function init() {
+    // ─── Carga estado de sesiones multi-palet ───
+    async function loadSessions() {
       try {
         const r = await apiCall('/sessions');
         state.sessions = {};
-        for (const [c, d] of Object.entries(r.sessions || {})) state.sessions[c] = d.count;
-      } catch {}
+        state.sessionsDetail = {};
+        for (const [c, d] of Object.entries(r.sessions || {})) {
+          state.sessions[c] = d.count;
+          state.sessionsDetail[c] = d;
+        }
+      } catch (err) {
+        console.warn('loadSessions error', err);
+      }
+    }
+
+    // ─── INIT ───
+    async function init() {
+      await loadSessions();
       renderCarriers();
       updateHeaderStats();
       updateTopbar('clasificar');

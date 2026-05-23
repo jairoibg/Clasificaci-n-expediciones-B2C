@@ -807,6 +807,78 @@ Si no funciona: DevTools → Application → Service Workers → Unregister
 
 ---
 
+## 2026-05-24 · Feature multi-palet + reabrir
+
+### #023 · Soporte multi-palet simultáneo por transportista
+
+**Síntoma / Necesidad**
+Carriers de alto volumen (SPRING con 800+/día) saturaban un único palet
+abierto. Los operarios necesitaban poder trabajar en varios palets a la
+vez del mismo transportista (Palet A, B, C…) sin perder el control.
+
+Además: si al final del día cerraban un palet por inactividad o para
+imprimir etiqueta, al día siguiente al continuar añadiendo envíos había
+que crear otro palet — fragmentando la operativa. Querían **reabrir**
+el palet cerrado y seguir añadiendo paquetes ahí.
+
+**Solución**
+Refactorización del modelo de sesiones en `database.json`:
+
+```diff
+- activeSessions[carrier] = { packages: [...], lastUpdate }
++ activeSessions[carrier] = [
++   { id, letter:'A', packages:[...], createdAt, lastUpdate, fromPalletId:null },
++   { id, letter:'B', packages:[...], createdAt, lastUpdate, fromPalletId:null }
++ ]
+```
+
+Migración automática al boot: si encuentra el formato viejo lo convierte
+a `[{ ..., letter:'A' }]` sin perder datos.
+
+**Endpoints nuevos / actualizados**
+- `GET  /api/sessions` → ahora devuelve `palletCount` y `sessions[]` por carrier
+- `GET  /api/sessions/:carrier` → devuelve todas las sesiones del carrier
+- `POST /api/sessions/:carrier/open` → abre una nueva sesión (siguiente letra)
+- `DELETE /api/sessions/:carrier/:sessionId` → cierra una sesión concreta
+- `POST /api/scan` y `POST /api/add-tracking` → aceptan `sessionId` opcional
+- `POST /api/pallets` → acepta `sessionId` para cerrar solo esa sesión
+- `DELETE /api/session/:carrier/package/:tracking?sessionId=…` → borra del palet correcto
+- `POST /api/pallets/:id/reopen` → **NUEVO**: reabre palet cerrado como sesión activa
+
+El endpoint de reabrir devuelve `{ carrier, sessionId, sessionLetter, packages }`
+para que el frontend pueda navegar al Scan con todo cargado.
+
+**Detección de duplicados**
+`addPackageToSession` busca el tracking en TODAS las sesiones del carrier
+(no solo la activa) para impedir doble escaneo en palets distintos.
+
+**Frontend (`public/index.html`)**
+- Estado nuevo: `selectedSessionId`, `sessionsDetail`
+- Modal selector de palet cuando hay 2+ palets abiertos al seleccionar carrier
+- Barra "Palet activo" en el scanner con botón "Cambiar" (solo si hay >1)
+- Badge "N ABIERTOS" en la tarjeta del carrier
+- Botón "↻ Reabrir" en cada palet pendiente del tab Palets
+- Al reabrir: navega automáticamente al tab Clasificar con los envíos
+  cargados en el carrier+sesión correspondiente
+- Service worker bumpeado a `expediciones-v3-2026-05-24-multipalet`
+
+**Archivos**:
+- `server.js` (refactor sesiones, 6 endpoints nuevos/actualizados)
+- `public/index.html` (estado, CSS, modal, JS handlers, render)
+- `public/sw.js` (bump CACHE_NAME)
+- `FIXES-LOG.md` (esta entrada)
+
+**Commit**: pendiente
+
+**Lección**:
+- Cambios de modelo (objeto → array) siempre con migración silenciosa al boot
+- Los duplicados deben revisarse a nivel agregado (todas las sesiones del
+  carrier), no por sesión individual
+- Status `reopened` permite mantener histórico sin contaminar las listas
+  de palets pendientes / recogidos
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
