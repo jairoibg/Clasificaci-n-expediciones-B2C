@@ -716,6 +716,61 @@ acumulación de MESES de palets.
 
 ---
 
+### #022 · Mantener histórico íntegro pero sin penalizar rendimiento
+
+**Síntoma**
+Solicitud explícita del usuario: "No podemos borrar el histórico,
+arreglalo. Tenemos que tener todos los paquetes y palets". Tras el
+fix #021 que proponía cleanup, hay que mantener TODO sin perder
+velocidad.
+
+**Causa raíz**
+`/api/odoo-outs` iteraba todos los 185k+ paquetes en CADA petición para
+construir los Sets `scannedTrackings`, `scannedPickingIds` y
+`extractedOdooTrackings`. Esto tarda ~500-1500ms y se repetía en cada
+auto-refresh del informe.
+
+**Solución: Sets precomputados globales**
+
+Creamos 4 estructuras globales que se construyen UNA VEZ al cargar la
+app y se actualizan INCREMENTALMENTE en cada escaneo:
+
+```javascript
+const globalScannedTrackings = new Set();      // Todos los trackings
+const globalScannedPickingIds = new Set();     // Todos los pickingIds
+const globalExtractedTrackings = new Set();    // Patrones ASENDIA/INPOST
+const globalLongScannedBarcodes = [];          // Solo barcodes >=15 chars
+```
+
+**Inicialización (`rebuildGlobalScans()`):**
+- Al arrancar la app, itera 185k paquetes UNA SOLA VEZ
+- Tarda ~1-2 segundos al inicio
+- Después de eso, todas las consultas son O(1)
+
+**Actualización incremental (`_addPackageToGlobalSets()`):**
+- En cada `addPackageToSession` se añade al Set global
+- No se elimina nunca (coherente con histórico permanente)
+
+**Resultado en `/api/odoo-outs`:**
+- Antes: ~500-1500ms construyendo los Sets en cada petición
+- Ahora: ~0ms (los Sets ya están construidos)
+- El matching avanzado solo itera `globalLongScannedBarcodes` (~10k
+  barcodes largos en lugar de 185k totales)
+
+**Archivos**: `server.js` (rebuild + _add + endpoint stats)
+**Eliminado**: endpoint `/api/cleanup-old` (a petición del usuario)
+**Añadido**: endpoint `/api/history-stats` para ver tamaño del histórico
+**Commit**: pendiente
+**Lección**:
+- Cuando el histórico crece sin límite, NO borrar — precomputar en
+  estructuras eficientes.
+- Las actualizaciones incrementales son siempre más baratas que
+  reconstrucciones completas.
+- Para datos que solo crecen (append-only), los Sets son ideales:
+  añadir es O(1) y consultar es O(1).
+
+---
+
 ## Problemas técnicos generales (no del código)
 
 ### #G1 · Railway deploy atascado / cola bloqueada

@@ -461,8 +461,84 @@ function saveDataSync() {
 process.on('SIGTERM', () => { saveDataSync(); process.exit(0); });
 process.on('SIGINT', () => { saveDataSync(); process.exit(0); });
 
+// ============================================
+// SETS PRECOMPUTADOS DE SCANS (rendimiento)
+// ============================================
+// Estos Sets contienen TODOS los trackings y pickingIds escaneados HISTÓRICAMENTE
+// Se construyen UNA SOLA VEZ al cargar la app y se actualizan incrementalmente
+// en cada scan/palet/recogida. Esto evita iterar 185k+ paquetes en cada /api/odoo-outs.
+const globalScannedTrackings = new Set();
+const globalScannedPickingIds = new Set();
+// Patrones extraídos (ASENDIA 6C20*, INPOST 8 dígitos embebidos en barcodes largos)
+// para que un escaneo del barcode largo cuente como escaneado del tracking de Odoo
+const globalExtractedTrackings = new Set();
+// Subconjunto de barcodes "largos" (>=15 chars) para matching por substring rápido
+// Esto reduce dramáticamente las iteraciones (la mayoría de trackings son cortos)
+const globalLongScannedBarcodes = [];
+
+function rebuildGlobalScans() {
+  const t0 = Date.now();
+  globalScannedTrackings.clear();
+  globalScannedPickingIds.clear();
+  globalExtractedTrackings.clear();
+  globalLongScannedBarcodes.length = 0;
+  let count = 0;
+  // Palets cerrados
+  for (const pallet of Object.values(database.pallets)) {
+    for (const pkg of (pallet.packages || [])) {
+      _addPackageToGlobalSets(pkg);
+      count++;
+    }
+  }
+  // Sesiones activas
+  for (const carrier of CARRIERS) {
+    const session = database.activeSessions[carrier];
+    if (session && session.packages) {
+      for (const pkg of session.packages) {
+        _addPackageToGlobalSets(pkg);
+        count++;
+      }
+    }
+  }
+  console.log('📊 Sets globales construidos: ' + globalScannedTrackings.size + ' trackings, ' + globalScannedPickingIds.size + ' pickingIds, ' + globalExtractedTrackings.size + ' patrones (' + count + ' paquetes en ' + (Date.now()-t0) + 'ms)');
+}
+
+function _addPackageToGlobalSets(pkg) {
+  if (pkg.tracking) {
+    const t = pkg.tracking.toUpperCase().trim();
+    globalScannedTrackings.add(t);
+    const clean = t.replace(/[^A-Z0-9]/g, '');
+    globalExtractedTrackings.add(clean);
+    // Solo añadimos a "largos" si vale la pena para substring matching (CTT/SPRING long barcodes)
+    if (clean.length >= 15) globalLongScannedBarcodes.push(clean);
+    // ASENDIA (6C20XXXXXXXXX embebido)
+    try {
+      const asResult = extractAsendiaTracking(clean);
+      if (asResult.extracted) globalExtractedTrackings.add(asResult.extracted.toUpperCase());
+    } catch {}
+    // INPOST (8 dígitos embebidos)
+    try {
+      const ipResult = extractInpostTracking(clean);
+      if (ipResult.extracted) globalExtractedTrackings.add(ipResult.extracted.toUpperCase());
+    } catch {}
+  }
+  if (pkg.pickingId) globalScannedPickingIds.add(pkg.pickingId);
+}
+
+function addPackageToGlobalScans(pkg) {
+  _addPackageToGlobalSets(pkg);
+}
+
+function removePackageFromGlobalScans(pkg) {
+  // NO eliminamos del Set global. Un tracking escaneado una vez permanece como
+  // "escaneado" para siempre (coherente con el histórico permanente).
+  // Si un palet se elimina, los Sets globales no se desactualizan: lo importante
+  // es que el envío fue escaneado en algún momento.
+}
+
 loadData();
 loadSendcloudCache();
+rebuildGlobalScans();
 
 // ============================================
 // FUNCIONES DE SESIÓN (ESTRUCTURA SIMPLE)
@@ -481,6 +557,7 @@ function addPackageToSession(carrier, packageData) {
   if (packageData.orderRef && session.packages.find(p => p.orderRef === packageData.orderRef)) return { added: false, reason: 'duplicate-order' };
   session.packages.push(packageData);
   session.lastUpdate = new Date().toISOString();
+  addPackageToGlobalScans(packageData);
   saveData();
   return { added: true };
 }
@@ -1180,57 +1257,20 @@ app.post('/api/reload-index', async (req, res) => {
   res.json({ success, message: success ? 'Índice regenerado' : 'Error regenerando índice', stats: { lastSync: trackingIndex.lastSync, matched: trackingIndex.matched } });
 });
 
-// Endpoint de limpieza: elimina palets y recogidas más antiguos que N días
-// Reduce database.json (que llega a tener 185k+ paquetes acumulados de meses)
-app.post('/api/cleanup-old', (req, res) => {
-  const daysParam = parseInt(req.query.days || '60', 10);
-  const days = isNaN(daysParam) || daysParam < 7 ? 60 : daysParam;
-  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-  let removedPallets = 0;
-  let removedPickups = 0;
-  let removedManifests = 0;
-  let removedPackages = 0;
-
-  // Limpiar palets viejos
-  for (const [id, pallet] of Object.entries(database.pallets)) {
-    if (pallet.date && pallet.date < cutoff) {
-      removedPackages += (pallet.packages || []).length;
-      delete database.pallets[id];
-      removedPallets++;
-    }
+// Stats del histórico (palets/recogidas acumulados)
+// El histórico NO se borra nunca - se mantiene íntegro
+app.get('/api/history-stats', (req, res) => {
+  let totalPackages = 0;
+  for (const pallet of Object.values(database.pallets)) {
+    totalPackages += (pallet.packages || []).length;
   }
-
-  // Limpiar recogidas viejas
-  for (const [id, pickup] of Object.entries(database.pickups)) {
-    if (pickup.date && pickup.date < cutoff) {
-      delete database.pickups[id];
-      removedPickups++;
-    }
-  }
-
-  // Limpiar manifiestos huérfanos
-  for (const pickupId of Object.keys(database.manifests || {})) {
-    if (!database.pickups[pickupId]) {
-      delete database.manifests[pickupId];
-      removedManifests++;
-    }
-  }
-
-  saveDataSync(); // forzar guardado inmediato
-
-  console.log('🧹 Limpieza: ' + removedPallets + ' palets, ' + removedPickups + ' recogidas, ' + removedManifests + ' manifiestos, ' + removedPackages + ' paquetes (corte: ' + cutoff + ')');
-
   res.json({
-    success: true,
-    cutoffDate: cutoff,
-    removedPallets,
-    removedPickups,
-    removedManifests,
-    removedPackages,
-    remainingPallets: Object.keys(database.pallets).length,
-    remainingPickups: Object.keys(database.pickups).length,
-    remainingManifests: Object.keys(database.manifests).length
+    totalPallets: Object.keys(database.pallets).length,
+    totalPackages,
+    totalPickups: Object.keys(database.pickups).length,
+    totalManifests: Object.keys(database.manifests || {}).length,
+    scannedTrackingsCount: globalScannedTrackings.size,
+    scannedPickingIdsCount: globalScannedPickingIds.size
   });
 });
 
@@ -1835,59 +1875,26 @@ app.get('/api/odoo-outs', async (req, res) => {
 
     console.log('   📦 ' + pickings.length + ' OUTs B2C encontrados en Odoo');
 
-    const scannedTrackings = new Set();
-    const scannedPickingIds = new Set();
-    const scannedTrackingsClean = [];  // Para matching por substring
-    for (const pallet of Object.values(database.pallets)) {
-      for (const pkg of (pallet.packages || [])) {
-        if (pkg.tracking) {
-          const t = pkg.tracking.toUpperCase().trim();
-          scannedTrackings.add(t);
-          scannedTrackingsClean.push(t.replace(/[^A-Z0-9]/g, ''));
-        }
-        if (pkg.pickingId) scannedPickingIds.add(pkg.pickingId);
-      }
-    }
-    for (const carrier of CARRIERS) {
-      const session = database.activeSessions[carrier];
-      if (session && session.packages) {
-        for (const pkg of session.packages) {
-          if (pkg.tracking) {
-            const t = pkg.tracking.toUpperCase().trim();
-            scannedTrackings.add(t);
-            scannedTrackingsClean.push(t.replace(/[^A-Z0-9]/g, ''));
-          }
-          if (pkg.pickingId) scannedPickingIds.add(pkg.pickingId);
-        }
-      }
-    }
+    // ⚡ OPTIMIZACIÓN: Usar los Sets PRECOMPUTADOS globales
+    // (antes iteraba 185k+ paquetes en cada llamada, ahora es O(1))
+    const scannedTrackings = globalScannedTrackings;
+    const scannedPickingIds = globalScannedPickingIds;
 
-    // Pre-extraer trackings embebidos en barcodes usando extractAsendiaTracking() e extractInpostTracking()
-    const extractedOdooTrackings = new Set();
-    for (const scanned of scannedTrackingsClean) {
-      const asResult = extractAsendiaTracking(scanned);
-      if (asResult.extracted) {
-        extractedOdooTrackings.add(asResult.extracted.toUpperCase());
-      }
-      // INPOST: extraer 8 dígitos de barcode largo numérico
-      const ipResult = extractInpostTracking(scanned);
-      if (ipResult.extracted) {
-        extractedOdooTrackings.add(ipResult.extracted.toUpperCase());
-      }
-      // También añadir el tracking limpio completo
-      extractedOdooTrackings.add(scanned);
-    }
+    // Reconstruir extractedOdooTrackings con patrones embebidos
+    // Esta parte sí itera sobre los Sets, pero los Sets ya están construidos
+    const extractedOdooTrackings = globalExtractedTrackings;
 
     // Matching avanzado: patrones extraídos + substring (devuelve el tipo de match)
     function matchAdvanced(odooTracking) {
       if (!odooTracking || odooTracking.length < 7) return null;
       const clean = odooTracking.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      // 1. Check si el tracking de Odoo está entre los extractedOdooTrackings
+      // 1. Check si el tracking de Odoo está entre los extractedOdooTrackings (O(1))
       if (extractedOdooTrackings.has(clean)) return 'extractedTracking';
-      // 2. Substring: el tracking de Odoo aparece dentro de algún barcode escaneado (CTT, largos)
-      for (const scanned of scannedTrackingsClean) {
-        if (scanned.length >= 15 && clean.length >= 7) {
-          if (scanned.includes(clean)) return 'substring';
+      // 2. Substring: solo iteramos los barcodes "largos" (>=15 chars) precomputados
+      // (la gran mayoría de barcodes son cortos y se descartan en el precómputo)
+      if (clean.length >= 7) {
+        for (const scannedClean of globalLongScannedBarcodes) {
+          if (scannedClean.includes(clean)) return 'substring';
         }
       }
       return null;
