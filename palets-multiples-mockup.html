@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mockup · Palets múltiples + reabrir</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: 'Inter', system-ui, sans-serif; letter-spacing: -0.005em; }
+
+    body {
+      background:
+        radial-gradient(60% 40% at 20% 10%, #d6f1e5 0%, transparent 50%),
+        radial-gradient(50% 40% at 80% 30%, #d8e0ff 0%, transparent 50%),
+        radial-gradient(60% 50% at 50% 90%, #f5e0d3 0%, transparent 50%),
+        #f5f7fa;
+      background-attachment: fixed;
+      color: #0a1421;
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+
+    :root {
+      --bg: rgba(255,255,255,0.65);
+      --paper: rgba(255,255,255,0.78);
+      --paper-2: rgba(255,255,255,0.55);
+      --ink: #0a1421;
+      --ink-2: #2d3849;
+      --ink-3: #5a6675;
+      --ink-4: #95a0ae;
+      --line: rgba(10,20,33,0.08);
+      --line-2: rgba(10,20,33,0.14);
+      --jade: #00b884;
+      --jade-deep: #009069;
+      --jade-soft: rgba(0,184,132,0.10);
+      --violet: #7c3aed;
+      --violet-soft: rgba(124,58,237,0.10);
+      --coral: #ff6b6b;
+      --coral-soft: rgba(255,107,107,0.10);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245,158,11,0.10);
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    .page-header {
+      margin-bottom: 32px;
+    }
+    .page-header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      margin-bottom: 8px;
+    }
+    .page-header p {
+      color: var(--ink-3);
+      font-size: 14px;
+    }
+
+    .scenario {
+      margin-bottom: 56px;
+    }
+    .scenario-label {
+      display: inline-block;
+      padding: 6px 14px;
+      background: rgba(124,58,237,0.10);
+      color: var(--violet);
+      border: 1px solid rgba(124,58,237,0.25);
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+    .scenario h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      letter-spacing: -0.015em;
+    }
+    .scenario .desc {
+      color: var(--ink-3);
+      font-size: 13px;
+      margin-bottom: 20px;
+      max-width: 720px;
+    }
+
+    .preview-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 900px) {
+      .preview-row { grid-template-columns: 1fr; }
+    }
+
+    .preview {
+      background: rgba(255,255,255,0.55);
+      backdrop-filter: blur(24px) saturate(180%);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.7),
+        0 12px 36px rgba(10,20,33,0.06);
+    }
+    .preview-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--ink-3);
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    /* ============ COMPONENTES MOCK ============ */
+
+    .h-section {
+      font-size: 11.5px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--ink-3); margin-bottom: 14px;
+      display: flex; align-items: baseline; gap: 10px;
+    }
+    .h-section em { font-style: normal; color: var(--jade-deep); }
+    .h-section .meta {
+      font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+      color: var(--ink-4); margin-left: auto;
+      letter-spacing: 0.04em; font-weight: 500; text-transform: none;
+    }
+
+    /* Grid de carriers */
+    .carriers-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    }
+    .carrier-card {
+      background: rgba(255,255,255,0.50);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px 12px;
+      cursor: pointer;
+      position: relative;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+    }
+    .carrier-card.selected {
+      background: linear-gradient(135deg, var(--jade), var(--jade-deep));
+      color: white; border-color: transparent;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.25),
+        0 8px 24px rgba(0,184,132,0.32);
+    }
+    .carrier-card.has-open {
+      background: rgba(245,158,11,0.08);
+      border-color: rgba(245,158,11,0.30);
+    }
+    .carrier-card .name {
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 0.04em; text-transform: uppercase;
+      color: var(--ink-2);
+    }
+    .carrier-card.selected .name { color: white; }
+    .carrier-card.has-open .name { color: var(--amber); }
+    .carrier-card .row { display: flex; align-items: baseline; gap: 5px; margin-top: 6px; }
+    .carrier-card .count {
+      font-weight: 800; font-size: 26px; letter-spacing: -0.035em;
+      line-height: 1; color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+    .carrier-card.selected .count { color: white; }
+    .carrier-card.has-open .count { color: var(--amber); }
+    .carrier-card .pct {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px; color: var(--ink-3);
+    }
+    .carrier-card.selected .pct { color: rgba(255,255,255,0.75); }
+    .carrier-card .badge {
+      position: absolute; top: -6px; right: -6px;
+      background: var(--amber); color: white;
+      font-family: 'JetBrains Mono', monospace; font-size: 10px;
+      font-weight: 700; padding: 2px 7px; border-radius: 999px;
+      border: 2px solid rgba(255,255,255,0.9);
+      box-shadow: 0 4px 10px rgba(245,158,11,0.4);
+    }
+    .carrier-card .pallet-count {
+      position: absolute; bottom: 10px; right: 12px;
+      font-family: 'JetBrains Mono', monospace; font-size: 10px;
+      color: var(--amber); font-weight: 700;
+      background: rgba(245,158,11,0.15);
+      padding: 2px 7px; border-radius: 999px;
+    }
+
+    /* ============ MODAL DE SELECCIÓN DE PALET ============ */
+    .pallet-selector {
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(40px) saturate(180%);
+      border: 1px solid rgba(255,255,255,0.5);
+      border-radius: 24px;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.8),
+        0 30px 60px rgba(10,20,33,0.30);
+      padding: 28px;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    .pallet-selector-head {
+      display: flex; align-items: center; gap: 14px;
+      margin-bottom: 8px;
+    }
+    .pallet-selector-head .ico {
+      width: 48px; height: 48px; border-radius: 14px;
+      background: linear-gradient(135deg, var(--jade), var(--jade-deep));
+      color: white; display: grid; place-items: center;
+      font-weight: 800; font-size: 14px; letter-spacing: -0.01em;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 6px 16px rgba(0,184,132,0.32);
+    }
+    .pallet-selector-head .info .title {
+      font-size: 18px; font-weight: 700; letter-spacing: -0.025em;
+    }
+    .pallet-selector-head .info .sub {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11.5px; color: var(--ink-3); margin-top: 3px;
+    }
+    .pallet-selector .desc {
+      font-size: 13px; color: var(--ink-3); margin: 14px 0 18px;
+      line-height: 1.5;
+    }
+
+    .open-pallets-list {
+      display: flex; flex-direction: column; gap: 10px;
+      margin-bottom: 18px;
+    }
+    .open-pallet-item {
+      background: rgba(255,255,255,0.7);
+      border: 1.5px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      gap: 14px;
+      align-items: center;
+      cursor: pointer;
+      transition: all 150ms;
+    }
+    .open-pallet-item:hover {
+      border-color: var(--jade);
+      background: var(--jade-soft);
+      transform: translateY(-1px);
+    }
+    .open-pallet-item .pallet-ico {
+      width: 38px; height: 38px; border-radius: 11px;
+      background: linear-gradient(135deg, #fbbf24, #d97706);
+      color: white;
+      display: grid; place-items: center;
+      font-weight: 800; font-size: 14px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.3);
+    }
+    .open-pallet-item .pallet-info { min-width: 0; }
+    .open-pallet-item .pallet-id {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11.5px; font-weight: 700; color: var(--ink);
+    }
+    .open-pallet-item .pallet-meta {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px; color: var(--ink-3); margin-top: 3px;
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    }
+    .open-pallet-item .pallet-meta .live-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--amber);
+      box-shadow: 0 0 8px var(--amber);
+      animation: pulse 1.4s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .open-pallet-item .pallet-count-big {
+      font-weight: 800; font-size: 20px; letter-spacing: -0.025em;
+      color: var(--ink); font-variant-numeric: tabular-nums;
+    }
+    .open-pallet-item .arrow {
+      color: var(--ink-4); font-size: 18px;
+    }
+
+    .new-pallet-btn {
+      width: 100%;
+      padding: 18px;
+      background: rgba(255,255,255,0.55);
+      border: 2px dashed var(--line-2);
+      border-radius: 16px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      font-weight: 700; font-size: 14px;
+      color: var(--ink-2);
+      transition: all 150ms;
+    }
+    .new-pallet-btn:hover {
+      border-style: solid;
+      border-color: var(--jade);
+      background: var(--jade-soft);
+      color: var(--jade-deep);
+    }
+    .new-pallet-btn svg { width: 18px; height: 18px; }
+
+    /* ============ ESCANNER CON BADGE DE PALET ACTIVO ============ */
+    .scanner-card {
+      padding: 20px;
+      background: rgba(255,255,255,0.55);
+      backdrop-filter: blur(24px) saturate(180%);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.7),
+        0 12px 36px rgba(10,20,33,0.06);
+    }
+    .scanner-head {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 14px;
+    }
+    .scanner-head .l {
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--ink-3);
+    }
+    .scanner-head .l strong { color: var(--ink); }
+    .scanner-head .c {
+      font-weight: 800; font-size: 32px; letter-spacing: -0.045em;
+      color: var(--jade-deep); line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .active-pallet-bar {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px; align-items: center;
+      padding: 12px 14px;
+      background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(217,119,6,0.08));
+      border: 1px solid rgba(245,158,11,0.30);
+      border-radius: 14px;
+      margin-bottom: 14px;
+    }
+    .active-pallet-bar .ico {
+      width: 32px; height: 32px; border-radius: 10px;
+      background: linear-gradient(135deg, #fbbf24, #d97706);
+      color: white;
+      display: grid; place-items: center;
+      font-weight: 800; font-size: 12px;
+    }
+    .active-pallet-bar .info { min-width: 0; }
+    .active-pallet-bar .name {
+      font-weight: 700; font-size: 13px;
+      letter-spacing: -0.01em; color: var(--ink);
+    }
+    .active-pallet-bar .meta {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px; color: var(--ink-3); margin-top: 2px;
+    }
+    .active-pallet-bar .switch-btn {
+      padding: 7px 12px;
+      background: rgba(255,255,255,0.85);
+      border: 1px solid var(--line-2);
+      border-radius: 10px;
+      font-size: 11px; font-weight: 700;
+      color: var(--ink-2); cursor: pointer;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .active-pallet-bar .switch-btn:hover {
+      border-color: var(--amber);
+      color: var(--amber);
+    }
+    .active-pallet-bar .switch-btn svg { width: 14px; height: 14px; }
+
+    .scan-input {
+      display: flex; align-items: center; gap: 12px;
+      padding: 18px;
+      background: rgba(255,255,255,0.4);
+      backdrop-filter: blur(10px);
+      border: 1.5px solid var(--line-2);
+      border-radius: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: var(--ink-3);
+      letter-spacing: 0.04em;
+    }
+    .scan-input::before {
+      content: ''; width: 16px; height: 16px; border-radius: 50%;
+      border: 2px solid currentColor; flex-shrink: 0;
+    }
+
+    /* ============ PALETS TAB CON REABRIR ============ */
+    .pallets-list { display: flex; flex-direction: column; gap: 8px; }
+    .pallet-row {
+      background: rgba(255,255,255,0.6);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      gap: 14px; align-items: center;
+    }
+    .pallet-row .ck {
+      width: 20px; height: 20px; border: 1.5px solid var(--line-2);
+      border-radius: 6px; background: rgba(255,255,255,0.6);
+      display: grid; place-items: center;
+    }
+    .pallet-row .ck.done {
+      background: var(--jade-soft);
+      border-color: var(--jade);
+      color: var(--jade-deep); font-weight: 700;
+    }
+    .pallet-row .info { min-width: 0; }
+    .pallet-row .id {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px; font-weight: 700; color: var(--ink);
+    }
+    .pallet-row .meta {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px; color: var(--ink-3); margin-top: 3px;
+    }
+    .pallet-row .count {
+      font-weight: 800; font-size: 20px; letter-spacing: -0.025em;
+      color: var(--jade-deep); font-variant-numeric: tabular-nums;
+    }
+    .pallet-row .actions {
+      display: flex; gap: 6px;
+    }
+    .pallet-row .action-btn {
+      padding: 7px 11px;
+      background: rgba(255,255,255,0.85);
+      border: 1px solid var(--line-2);
+      border-radius: 10px;
+      font-size: 11px; font-weight: 700;
+      color: var(--ink-2); cursor: pointer;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .pallet-row .action-btn:hover {
+      border-color: var(--jade);
+      color: var(--jade-deep);
+    }
+    .pallet-row .action-btn.reopen {
+      background: linear-gradient(135deg, var(--amber), #d97706);
+      color: white;
+      border-color: transparent;
+      box-shadow: 0 4px 12px rgba(245,158,11,0.25);
+    }
+    .pallet-row .action-btn.reopen:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(245,158,11,0.4);
+    }
+    .pallet-row .action-btn svg { width: 12px; height: 12px; }
+
+    .pallet-status-pill {
+      padding: 3px 9px; border-radius: 999px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+      display: inline-block;
+    }
+    .pallet-status-pill.closed {
+      background: var(--ink-3); color: white;
+    }
+    .pallet-status-pill.open {
+      background: linear-gradient(135deg, var(--amber), #d97706);
+      color: white;
+    }
+    .pallet-status-pill.picked {
+      background: linear-gradient(135deg, var(--jade), var(--jade-deep));
+      color: white;
+    }
+
+    /* ============ FLUJO VISUAL ============ */
+    .flow-diagram {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+      margin-top: 24px;
+    }
+    .flow-step {
+      background: rgba(255,255,255,0.55);
+      backdrop-filter: blur(24px);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      position: relative;
+    }
+    .flow-step .step-num {
+      position: absolute; top: -10px; left: 16px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--violet), #6d28d9);
+      color: white;
+      display: grid; place-items: center;
+      font-weight: 800; font-size: 12px;
+      box-shadow: 0 6px 16px rgba(124,58,237,0.3);
+    }
+    .flow-step h3 {
+      font-size: 13px; font-weight: 700;
+      letter-spacing: -0.005em; margin: 8px 0 8px;
+    }
+    .flow-step p {
+      font-size: 12px; color: var(--ink-3); line-height: 1.5;
+    }
+    .flow-step .arrow-r {
+      position: absolute; right: -20px; top: 50%;
+      transform: translateY(-50%);
+      color: var(--ink-4); font-size: 20px; font-weight: 700;
+    }
+    .flow-step:last-child .arrow-r { display: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="page-header">
+    <h1>Mockup · Palets múltiples + reabrir cerrados</h1>
+    <p>Propuesta visual de dos mejoras al flujo de palets:<br>
+    <strong>1)</strong> Trabajar simultáneamente con varios palets del mismo transportista.<br>
+    <strong>2)</strong> Reabrir palets cerrados para añadir más paquetes (estandariza el cierre diario).</p>
+  </div>
+
+  <!-- ============ ESCENARIO 1: SELECCIONAR PALET ============ -->
+  <div class="scenario">
+    <span class="scenario-label">Escenario 1 · Múltiples palets simultáneos</span>
+    <h2>El operario selecciona SPRING y ve los palets activos</h2>
+    <p class="desc">SPRING tiene mucho volumen (800+ envíos/día). Hoy hay 2 palets abiertos y el operario puede continuar en uno de ellos o abrir uno nuevo.</p>
+
+    <div class="preview-row">
+      <!-- Grid de carriers -->
+      <div class="preview">
+        <div class="preview-label">A · Click en SPRING desde el grid</div>
+        <div class="h-section">Transportistas <span class="meta">selecciona uno</span></div>
+        <div class="carriers-grid">
+          <div class="carrier-card">
+            <div class="name">ASENDIA</div>
+            <div class="row"><div class="count">12</div><div class="pct">3%</div></div>
+          </div>
+          <div class="carrier-card has-open">
+            <span class="badge">42</span>
+            <div class="name">CORREOS</div>
+            <div class="row"><div class="count">42</div><div class="pct">11%</div></div>
+            <div class="pallet-count">1 ABIERTO</div>
+          </div>
+          <div class="carrier-card">
+            <div class="name">CTT</div>
+            <div class="row"><div class="count">5</div><div class="pct">1%</div></div>
+          </div>
+          <div class="carrier-card">
+            <div class="name">GLS</div>
+            <div class="row"><div class="count">26</div><div class="pct">7%</div></div>
+          </div>
+          <div class="carrier-card">
+            <div class="name">INPOST</div>
+            <div class="row"><div class="count">18</div><div class="pct">5%</div></div>
+          </div>
+          <div class="carrier-card has-open selected" style="background: linear-gradient(135deg, var(--jade), var(--jade-deep)); color: white; border-color: transparent;">
+            <span class="badge">238</span>
+            <div class="name" style="color: white;">SPRING</div>
+            <div class="row"><div class="count" style="color: white;">238</div><div class="pct" style="color: rgba(255,255,255,0.75);">62%</div></div>
+            <div class="pallet-count" style="background: rgba(255,255,255,0.25); color: white;">2 ABIERTOS</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal de selección -->
+      <div class="preview">
+        <div class="preview-label">B · Aparece el selector de palet</div>
+        <div class="pallet-selector">
+          <div class="pallet-selector-head">
+            <div class="ico">SP</div>
+            <div class="info">
+              <div class="title">SPRING · Selecciona palet</div>
+              <div class="sub">2 palets abiertos · 238 envíos en curso</div>
+            </div>
+          </div>
+          <p class="desc">Hay palets ya abiertos para este transportista. Selecciona uno para continuar añadiendo paquetes o abre uno nuevo.</p>
+
+          <div class="open-pallets-list">
+            <div class="open-pallet-item">
+              <div class="pallet-ico">A</div>
+              <div class="pallet-info">
+                <div class="pallet-id">SPRING-20260524-001</div>
+                <div class="pallet-meta">
+                  <span class="live-dot"></span>
+                  <span>Activo · última actividad 17:42</span>
+                </div>
+              </div>
+              <div class="pallet-count-big">142</div>
+              <div class="arrow">→</div>
+            </div>
+            <div class="open-pallet-item">
+              <div class="pallet-ico">B</div>
+              <div class="pallet-info">
+                <div class="pallet-id">SPRING-20260524-002</div>
+                <div class="pallet-meta">
+                  <span class="live-dot"></span>
+                  <span>Activo · última actividad 17:38</span>
+                </div>
+              </div>
+              <div class="pallet-count-big">96</div>
+              <div class="arrow">→</div>
+            </div>
+          </div>
+
+          <button class="new-pallet-btn">
+            <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4v10M4 9h10" stroke-linecap="round"/></svg>
+            <span>Abrir nuevo palet (3.º)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ESCENARIO 2: TRABAJANDO EN UN PALET ============ -->
+  <div class="scenario">
+    <span class="scenario-label">Escenario 2 · Indicador del palet activo + cambiar</span>
+    <h2>Mientras escanea, sabe en qué palet está y puede saltar a otro</h2>
+    <p class="desc">El escáner muestra una barra naranja arriba con el palet activo. Un click en "Cambiar" abre el selector de nuevo sin perder lo escaneado.</p>
+
+    <div class="preview-row">
+      <div class="preview">
+        <div class="preview-label">Escáner con palet activo visible</div>
+        <div class="scanner-card">
+          <div class="scanner-head">
+            <div class="l">Sesión <strong>SPRING</strong></div>
+            <div class="c">142</div>
+          </div>
+          <div class="active-pallet-bar">
+            <div class="ico">A</div>
+            <div class="info">
+              <div class="name">Palet A · SPRING-20260524-001</div>
+              <div class="meta">142 envíos · activo desde 14:20</div>
+            </div>
+            <button class="switch-btn">
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7h8M8 4l3 3-3 3"/></svg>
+              <span>Cambiar</span>
+            </button>
+          </div>
+          <div class="scan-input">Escanea o escribe tracking…</div>
+        </div>
+      </div>
+
+      <div class="preview">
+        <div class="preview-label">Tooltip al cambiar</div>
+        <div class="scanner-card">
+          <div class="scanner-head">
+            <div class="l">Sesión <strong>SPRING</strong></div>
+            <div class="c">142</div>
+          </div>
+          <div class="active-pallet-bar" style="background: linear-gradient(135deg, var(--jade-soft), rgba(0,184,132,0.05)); border-color: rgba(0,184,132,0.30);">
+            <div class="ico" style="background: linear-gradient(135deg, var(--jade), var(--jade-deep));">B</div>
+            <div class="info">
+              <div class="name">Palet B · SPRING-20260524-002</div>
+              <div class="meta">96 envíos · cambiado ahora</div>
+            </div>
+            <button class="switch-btn">
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7h8M8 4l3 3-3 3"/></svg>
+              <span>Cambiar</span>
+            </button>
+          </div>
+          <div class="scan-input">Escanea o escribe tracking…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ESCENARIO 3: REABRIR PALETS ============ -->
+  <div class="scenario">
+    <span class="scenario-label">Escenario 3 · Reabrir palets cerrados</span>
+    <h2>Pestaña "Palets" · Botón "Reabrir" en palets cerrados de hoy/ayer</h2>
+    <p class="desc">Al final del día se cierran todos los palets. Al día siguiente, en vez de empezar nuevos, los operarios pueden REABRIR los del día anterior para continuar añadiendo paquetes. Esto estandariza el flujo: cierre diario obligatorio + reapertura matutina.</p>
+
+    <div class="preview">
+      <div class="preview-label">Pestaña Palets con palets cerrados de ayer</div>
+
+      <div class="h-section">SPRING · ayer 23/05 · 3 palets <span class="meta">2 cerrados · 1 recogido</span></div>
+      <div class="pallets-list">
+        <div class="pallet-row">
+          <div class="ck done">A</div>
+          <div class="info">
+            <div class="id">SPRING-20260523-001 <span class="pallet-status-pill closed" style="margin-left:8px">CERRADO</span></div>
+            <div class="meta">Cerrado 22:14 · 287 envíos · sin recoger todavía</div>
+          </div>
+          <div class="count">287</div>
+          <div class="actions">
+            <button class="action-btn reopen">
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6.5a4 4 0 1 0 1.5-3M2 3v3.5h3.5"/></svg>
+              <span>Reabrir</span>
+            </button>
+            <button class="action-btn">Etiqueta</button>
+          </div>
+        </div>
+
+        <div class="pallet-row">
+          <div class="ck done">B</div>
+          <div class="info">
+            <div class="id">SPRING-20260523-002 <span class="pallet-status-pill closed" style="margin-left:8px">CERRADO</span></div>
+            <div class="meta">Cerrado 22:20 · 154 envíos · sin recoger todavía</div>
+          </div>
+          <div class="count">154</div>
+          <div class="actions">
+            <button class="action-btn reopen">
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6.5a4 4 0 1 0 1.5-3M2 3v3.5h3.5"/></svg>
+              <span>Reabrir</span>
+            </button>
+            <button class="action-btn">Etiqueta</button>
+          </div>
+        </div>
+
+        <div class="pallet-row" style="opacity: 0.7;">
+          <div class="ck done">C</div>
+          <div class="info">
+            <div class="id">SPRING-20260523-003 <span class="pallet-status-pill picked" style="margin-left:8px">RECOGIDO</span></div>
+            <div class="meta">Recogido por Spring Truck #4271 a las 19:08</div>
+          </div>
+          <div class="count">412</div>
+          <div class="actions">
+            <button class="action-btn">Manifiesto</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="h-section" style="margin-top: 22px;">CORREOS · ayer 23/05 · 1 palet <span class="meta">1 cerrado</span></div>
+      <div class="pallets-list">
+        <div class="pallet-row">
+          <div class="ck done">A</div>
+          <div class="info">
+            <div class="id">CORREOS-20260523-001 <span class="pallet-status-pill closed" style="margin-left:8px">CERRADO</span></div>
+            <div class="meta">Cerrado 21:45 · 89 envíos · sin recoger todavía</div>
+          </div>
+          <div class="count">89</div>
+          <div class="actions">
+            <button class="action-btn reopen">
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6.5a4 4 0 1 0 1.5-3M2 3v3.5h3.5"/></svg>
+              <span>Reabrir</span>
+            </button>
+            <button class="action-btn">Etiqueta</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ FLUJO COMPLETO ============ -->
+  <div class="scenario">
+    <span class="scenario-label">Flujo completo</span>
+    <h2>Cómo trabaja el operario en el día a día</h2>
+
+    <div class="flow-diagram">
+      <div class="flow-step">
+        <div class="step-num">1</div>
+        <h3>Mañana · Reabrir</h3>
+        <p>El operario abre la app, va a "Palets", ve los palets cerrados de ayer y pulsa "Reabrir" en cada uno que necesite seguir trabajando.</p>
+        <span class="arrow-r">→</span>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">2</div>
+        <h3>Día · Múltiples palets</h3>
+        <p>Selecciona transportista en la pestaña Scan. Si hay >1 palet abierto, elige cuál usar (A, B, C…) o abre uno nuevo. Puede cambiar entre palets sin perder lo escaneado.</p>
+        <span class="arrow-r">→</span>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">3</div>
+        <h3>Tarde · Cerrar todos</h3>
+        <p>Al final del turno, cierra todos los palets abiertos. Esto genera las etiquetas finales y queda el día estandarizado. Mañana se reabren si hace falta.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ NOTAS TÉCNICAS ============ -->
+  <div class="scenario">
+    <span class="scenario-label">Notas técnicas para implementación</span>
+    <h2>Cambios necesarios en el backend</h2>
+
+    <div class="preview" style="padding: 24px;">
+      <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 12px;">Modelo de datos</h3>
+      <ul style="font-size: 13px; line-height: 1.7; color: var(--ink-2); padding-left: 24px;">
+        <li><code style="font-family:'JetBrains Mono',monospace; background: rgba(0,184,132,0.10); padding: 2px 6px; border-radius: 4px;">database.activeSessions[carrier]</code> pasa de ser <strong>una sesión</strong> a ser un <strong>array de sesiones</strong> (una por palet abierto).</li>
+        <li>Cada sesión tiene: <code style="font-family:'JetBrains Mono',monospace; background: rgba(124,58,237,0.10); padding: 2px 6px; border-radius: 4px;">{ id, palletId, letter (A/B/C), packages, createdAt, lastUpdate }</code></li>
+        <li>Los palets cerrados ganan un campo <code style="font-family:'JetBrains Mono',monospace; background: rgba(245,158,11,0.10); padding: 2px 6px; border-radius: 4px;">reopenedFrom: [palletId, ...]</code> para auditoría.</li>
+      </ul>
+
+      <h3 style="font-size: 14px; font-weight: 700; margin: 24px 0 12px;">Nuevos endpoints</h3>
+      <ul style="font-size: 13px; line-height: 1.7; color: var(--ink-2); padding-left: 24px; font-family: 'JetBrains Mono', monospace;">
+        <li><span style="color: var(--jade-deep); font-weight: 700;">GET</span> /api/sessions/:carrier → devuelve <strong>array</strong> de sesiones (palets en curso)</li>
+        <li><span style="color: var(--violet); font-weight: 700;">POST</span> /api/sessions/:carrier/open → crea un nuevo palet (sesión) vacío</li>
+        <li><span style="color: var(--coral); font-weight: 700;">POST</span> /api/scan → ahora requiere <code>palletSessionId</code> en el body</li>
+        <li><span style="color: var(--amber); font-weight: 700;">POST</span> /api/pallets/:id/reopen → convierte palet cerrado en sesión activa</li>
+      </ul>
+
+      <h3 style="font-size: 14px; font-weight: 700; margin: 24px 0 12px;">Reglas de negocio</h3>
+      <ul style="font-size: 13px; line-height: 1.7; color: var(--ink-2); padding-left: 24px;">
+        <li><strong>No se puede reabrir</strong> un palet ya recogido (manifiesto firmado) — solo cerrados.</li>
+        <li>Al reabrir, todos los paquetes del palet pasan a la sesión activa. El palet original queda marcado como <code style="font-family:'JetBrains Mono',monospace; background: rgba(245,158,11,0.10); padding: 2px 6px; border-radius: 4px;">superseded_by: nuevo_palet_id</code>.</li>
+        <li>Si se reabre un palet de hace >3 días, mostrar confirmación de seguridad.</li>
+        <li>Al cerrar la sesión del día, todos los palets activos se convierten en cerrados automáticamente (con timestamp del cierre).</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
