@@ -410,10 +410,22 @@
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: 12px 14px; margin-bottom: 6px;
-      display: grid; grid-template-columns: auto 1fr auto; gap: 12px;
+      display: flex; gap: 12px;
       align-items: center;
       cursor: pointer;
     }
+    .d3 .pallet .reopen-btn-row {
+      background: linear-gradient(135deg, var(--violet), #5b21b6);
+      color: white;
+      border: none; border-radius: 10px;
+      padding: 7px 14px;
+      font-family: 'Inter', sans-serif;
+      font-weight: 700; font-size: 11.5px;
+      cursor: pointer; flex-shrink: 0;
+      box-shadow: 0 4px 10px rgba(124,58,237,0.30);
+      transition: all 150ms;
+    }
+    .d3 .pallet .reopen-btn-row:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(124,58,237,0.40); }
     .d3 .pallet .ck {
       width: 22px; height: 22px; border: 1.5px solid var(--line-2);
       border-radius: 6px; flex-shrink: 0;
@@ -431,7 +443,7 @@
       border-color: var(--jade);
       color: var(--jade-deep); font-weight: 700;
     }
-    .d3 .pallet .info { min-width: 0; }
+    .d3 .pallet .info { min-width: 0; flex: 1; }
     .d3 .pallet .id { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 700; color: var(--ink); }
     .d3 .pallet .m { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--ink-3); margin-top: 3px; }
     .d3 .pallet .t {
@@ -789,17 +801,29 @@
       font-size: 11px; color: var(--ink-3);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
+    .d3 .apb-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .d3 .apb-switch, .d3 .apb-new {
+      border-radius: 10px;
+      padding: 6px 12px;
+      font-family: 'Inter', sans-serif;
+      font-weight: 700; font-size: 11.5px;
+      cursor: pointer;
+      transition: all 150ms;
+      white-space: nowrap;
+    }
     .d3 .apb-switch {
       background: rgba(255,255,255,0.7);
       border: 1px solid var(--line-2);
-      border-radius: 10px;
-      padding: 6px 14px;
-      font-family: 'Inter', sans-serif;
-      font-weight: 700; font-size: 11.5px;
-      color: var(--ink-2); cursor: pointer;
-      transition: all 150ms;
+      color: var(--ink-2);
     }
     .d3 .apb-switch:hover { background: white; border-color: var(--jade); color: var(--jade-deep); }
+    .d3 .apb-new {
+      background: linear-gradient(135deg, var(--jade), var(--jade-deep));
+      border: 1px solid rgba(0,184,132,0.3);
+      color: white;
+      box-shadow: 0 4px 10px rgba(0,184,132,0.30);
+    }
+    .d3 .apb-new:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(0,184,132,0.40); }
 
     /* ─── PALLET SELECTOR MODAL ─── */
     .d3 .modal-content.pallet-selector { max-width: 460px; text-align: left; }
@@ -1083,7 +1107,10 @@
               <span class="apb-letter" id="activePalletLetter">A</span>
               <span class="apb-meta" id="activePalletMeta"></span>
             </div>
-            <button class="apb-switch" id="switchPalletBtn" onclick="showPalletSelector(state.selectedCarrier)">Cambiar</button>
+            <div class="apb-actions">
+              <button class="apb-new" id="newPalletBtn" onclick="openNewSessionForSelected()" title="Abrir nuevo palet">+ Nuevo</button>
+              <button class="apb-switch" id="switchPalletBtn" onclick="showPalletSelector(state.selectedCarrier)">Cambiar</button>
+            </div>
           </div>
           <input type="text" class="sc-input" id="scanInput" placeholder="Esperando barcode…" autocomplete="off">
           <div class="sc-hint">Pistola al código · <kbd>↵</kbd> valida</div>
@@ -1433,12 +1460,26 @@
 
     function updateActivePalletBar() {
       const bar = document.getElementById('activePalletBar');
+      const switchBtn = document.getElementById('switchPalletBtn');
       const detail = state.sessionsDetail[state.selectedCarrier];
-      // Mostrar solo si hay >1 palets abiertos
-      if (!detail || !detail.sessions || detail.sessions.length < 2) {
+
+      // Si no hay carrier seleccionado o no se ha tocado scanner: ocultar
+      if (!state.selectedCarrier) {
         bar.style.display = 'none';
         return;
       }
+
+      // Si no hay sesiones todavía (primer escaneo va a crear una): mostrar
+      // barra con letra 'A' tentativa y solo el botón + Nuevo
+      if (!detail || !detail.sessions || detail.sessions.length === 0) {
+        bar.style.display = 'flex';
+        document.getElementById('activePalletLetter').textContent = 'A';
+        document.getElementById('activePalletMeta').textContent =
+          `${state.packages.length} envíos · primer palet`;
+        if (switchBtn) switchBtn.style.display = 'none';
+        return;
+      }
+
       const activeSess = state.selectedSessionId
         ? detail.sessions.find(s => s.id === state.selectedSessionId)
         : detail.sessions[0];
@@ -1446,6 +1487,7 @@
         bar.style.display = 'none';
         return;
       }
+
       bar.style.display = 'flex';
       document.getElementById('activePalletLetter').textContent = activeSess.letter || '?';
       // Para el conteo de la sesión activa usamos state.packages (más fresco que sessionsDetail)
@@ -1454,8 +1496,12 @@
         : (activeSess.count || 0);
       const otherCount = detail.sessions.length - 1;
       const fromTag = activeSess.fromPalletId ? ' · reabierto' : '';
-      document.getElementById('activePalletMeta').textContent =
-        `${currentCount} envíos${fromTag} · ${otherCount} más abierto${otherCount === 1 ? '' : 's'}`;
+      let metaText = `${currentCount} envíos${fromTag}`;
+      if (otherCount > 0) metaText += ` · ${otherCount} más abierto${otherCount === 1 ? '' : 's'}`;
+      document.getElementById('activePalletMeta').textContent = metaText;
+
+      // Si solo hay 1 palet, ocultar "Cambiar" (no hay nada a lo que cambiar)
+      if (switchBtn) switchBtn.style.display = detail.sessions.length > 1 ? '' : 'none';
     }
 
     // ─── PALLET SELECTOR ───
@@ -1870,6 +1916,7 @@
             <div class="id">${p.id}${letterBadge}</div>
             <div class="m">${time} · ${statusLabel}</div>
           </div>
+          ${canReopen ? `<button class="reopen-btn-row" onclick="event.stopPropagation(); reopenPallet('${p.id}')" title="Reabrir este palet">↻ Reabrir</button>` : ''}
           <div class="t ${pickupTime?'done':''}">${p.totalPackages}</div>
         </div>
         <div class="pallet-detail" id="detail-${p.id}">
