@@ -117,14 +117,18 @@ class OdooClient {
     // AND sale_id.team_id ilike 'shopify'
     // AND location_dest_id ilike 'customer'
     // AND scheduled_date >= dateFilter
-    // AND carrier_tracking_ref != false
+    // AND (carrier_tracking_ref != false OR carrier_id.name ilike 'mika')
+    //   ↑ Incluye CRX (MIKA) aunque tenga tracking vacío, porque MIKA
+    //     actualiza el carrier_tracking_ref con delay; así el operario al
+    //     menos puede buscar el pedido por nº o cliente.
     const domain = [
       "|", ["name", "ilike", "out"], ["origin", "ilike", "out"],
       ["state", "in", ["done", "assigned", "confirmed", "waiting"]],
       ["sale_id.team_id", "ilike", "shopify"],
       ["location_dest_id", "ilike", "customer"],
       ["scheduled_date", ">=", dateFilter],
-      ["carrier_tracking_ref", "!=", false]
+      // OR explícito en lógica Odoo: prefijo "|"
+      "|", ["carrier_tracking_ref", "!=", false], ["carrier_id.name", "ilike", "mika"]
     ];
 
     console.log(`   🔍 Dominio: OUTs Shopify B2C con tracking, últimos ${daysBack} días`);
@@ -383,11 +387,41 @@ async function sync() {
 
   for (const picking of pickings) {
     const odooTracking = picking.carrier_tracking_ref;
-    if (!odooTracking) continue;
 
     // Detectar CORREOS EXPRESS por carrier de Odoo (empieza por MI)
     const odooCarrierName = picking.carrier_id ? picking.carrier_id[1] : '';
     const isCorreosExpress = odooCarrierName.toUpperCase().startsWith('MI');
+
+    // CASO ESPECIAL: CRX sin tracking todavía (MIKA actualiza con delay).
+    // Lo metemos en un array de pendientes — el PASO 3.5 lo incluirá en byOrderRef
+    // para que sea encontrable por nº de pedido o cliente desde la app.
+    if (!odooTracking && isCorreosExpress) {
+      const orderRef = (picking.origin || '').toUpperCase().trim();
+      if (!orderRef) { unmatched++; continue; }
+      if (!trackingIndex.pendingCrx) trackingIndex.pendingCrx = [];
+      trackingIndex.pendingCrx.push({
+        pickingId: picking.id,
+        pickingName: picking.name,
+        orderRef: orderRef,
+        clientName: picking.partner_id ? picking.partner_id[1] : '',
+        partnerId: picking.partner_id ? picking.partner_id[0] : null,
+        saleId: picking.sale_id ? picking.sale_id[0] : null,
+        saleName: picking.sale_id ? picking.sale_id[1] : '',
+        weight: picking.weight || null,
+        dateDone: picking.date_done || null,
+        odooTracking: null,
+        odooCarrierName: odooCarrierName || '',
+        state: picking.state,
+        tracking: null,
+        carrier: 'CORREOS EXPRESS',
+        source: 'odoo-carrier-pending',
+        pendingTracking: true
+      });
+      matched++;
+      continue;
+    }
+
+    if (!odooTracking) continue;
 
     const pickingData = {
       pickingId: picking.id,
@@ -525,6 +559,8 @@ async function sync() {
   const allEntries = new Set();
   Object.values(trackingIndex.byOdooTracking || {}).forEach(e => allEntries.add(e));
   Object.values(trackingIndex.byTracking || {}).forEach(e => allEntries.add(e));
+  // Incluir pendientes CRX (sin tracking aún) para que sean encontrables por orderRef
+  (trackingIndex.pendingCrx || []).forEach(e => allEntries.add(e));
 
   let dupTrackings = 0;
   const trackingCounts = {};

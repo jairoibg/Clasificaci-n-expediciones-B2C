@@ -1500,6 +1500,17 @@ app.post('/api/scan', async (req, res) => {
 
   if (!det.picking) {
     console.log('   ❌ No existe en Odoo');
+    // Caso especial CRX: detectamos el carrier por prefijo (9300500...) pero
+    // el pedido aún no está en Odoo (MIKA actualiza con delay). Mensaje útil:
+    if (/^9300500\d/.test(clean)) {
+      return res.json({
+        success: false,
+        error: 'CRX_NO_SINCRONIZADO',
+        detectedCarrier: 'CORREOS EXPRESS',
+        message: 'Etiqueta CRX detectada pero el pedido aún no se ha sincronizado en Odoo (MIKA tarda unos minutos). Reintenta en breve o busca el pedido por nº (CO...SF) y selecciónalo desde la búsqueda.',
+        tracking: clean
+      });
+    }
     return res.json({ success: false, error: 'NO_ENCONTRADO', message: 'El tracking ' + clean + ' no existe en Odoo', tracking: clean });
   }
 

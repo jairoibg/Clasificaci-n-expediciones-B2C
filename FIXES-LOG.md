@@ -925,6 +925,74 @@ ANTES de cualquier sliding INPOST:
 
 ---
 
+## 2026-05-25 · Diagnóstico CRX y sync pendientes
+
+### #025 · CRX (CORREOS EXPRESS / MIKA) no se reconoce: pickings en Odoo sin tracking
+
+**Síntoma**
+Operario reporta que pedidos como `DF122521SF` (CRX) no se reconocen
+al escanear la etiqueta física `9300500...`. La app dice "no existe
+en Odoo" pese a que la detección de carrier por prefijo es correcta.
+
+**Diagnóstico exhaustivo** (vía nuevo endpoint `/api/diag-tracking`)
+
+1. La detección de carrier funciona: `9300500...` → CRX vía prefijo.
+2. El tracking físico **no está en Odoo** (`carrier_tracking_ref` no
+   coincide con ninguno).
+3. **CRX no usa Sendcloud** para generar etiquetas (integración MIKA
+   directa Odoo↔CRX). Sendcloud devuelve `parcels: []` incluso para
+   trackings CRX que sí están en Odoo desde hace días.
+4. Los pickings CRX se crean en Odoo en `state: waiting` con
+   `carrier_tracking_ref: false`. MIKA actualiza el tracking con
+   retraso (horas).
+5. Nuestro sync filtraba `carrier_tracking_ref != false` → los CRX
+   pendientes quedaban FUERA del índice.
+6. Resultado: solo 17 CRX en el índice (vs 5682 CORREOS, 9818 SPRING)
+   porque solo entraban los que ya tenían tracking sincronizado.
+
+**Solución**
+- `sync-full.js`:
+  - Domain Odoo: `OR carrier_id.name ilike 'mika'` (incluir CRX
+    aunque no tengan tracking todavía).
+  - Procesamiento: pickings CRX sin tracking → array
+    `trackingIndex.pendingCrx` (no entran en `byTracking` pero sí
+    en `byOrderRef` y `byClientName` vía paso 3.5).
+- `server.js`:
+  - `/api/scan`: si el tracking matchea `^9300500\d` y no se encuentra
+    en Odoo, devolver `error: 'CRX_NO_SINCRONIZADO'` con mensaje
+    específico explicando el delay de MIKA y sugiriendo buscar por
+    nº de pedido.
+- `public/index.html`: nuevo handler para `CRX_NO_SINCRONIZADO`
+  mostrando el modal con info útil (en vez de búsqueda por cliente).
+- Endpoint `/api/diag-tracking/:tracking` para diagnóstico futuro
+  (con flags `?live=1`, `?sendcloud=1`, `?scTrack=1`, `?scOrder=…`,
+  `?odooOrigin=…`, `?listCrx=1`).
+
+**Limitación**
+Cuando el tracking físico CRX se escanea ANTES de que MIKA registre
+el `carrier_tracking_ref` en Odoo, no hay forma técnica de hacer
+match automático: ni Sendcloud ni Odoo conocen ese tracking en ese
+momento. La única solución estructural es presionar a CRX/MIKA para
+que actualicen Odoo más rápido (webhook en lugar de cron).
+
+**Archivos**:
+- `server.js` (endpoint diag + manejo CRX_NO_SINCRONIZADO en /api/scan)
+- `sync-full.js` (dominio Odoo ampliado + procesamiento CRX pendientes)
+- `public/index.html` (handler nuevo error)
+- `public/sw.js` (cache bump)
+- `FIXES-LOG.md` (esta entrada)
+
+**Lección**:
+- No todas las "no encontrado" son bugs de detección: pueden ser
+  problemas de SINCRONIZACIÓN aguas arriba.
+- Tener un endpoint de diagnóstico (`/api/diag-tracking`) que muestre
+  TODO lo que el sistema sabe sobre un input es invaluable para
+  diagnosticar este tipo de casos sin desplegar versiones nuevas.
+- Cuando una integración tiene formato/flujo distinto al estándar
+  (CRX vs Sendcloud), documentarlo en el código y en este log.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío

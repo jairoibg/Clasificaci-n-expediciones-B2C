@@ -1781,7 +1781,11 @@
           state.sessions[state.selectedCarrier] = Math.max(0, (state.sessions[state.selectedCarrier] || 0) - 1);
           renderPackages(); renderCarriers();
 
-          if (r.error === 'NO_ENCONTRADO' || r.error === 'NO_VERIFICADO') {
+          if (r.error === 'CRX_NO_SINCRONIZADO') {
+            showModal('!', 'CRX sin sincronizar', r.message);
+            playSound('error');
+            if (navigator.vibrate) navigator.vibrate([200,100,200]);
+          } else if (r.error === 'NO_ENCONTRADO' || r.error === 'NO_VERIFICADO') {
             showSearchModal(tracking, r.message); playSound('error');
           } else if (r.error === 'TRANSPORTISTA_INCORRECTO') {
             showModal('!', `Paquete de ${r.detectedCarrier}`, r.message);
