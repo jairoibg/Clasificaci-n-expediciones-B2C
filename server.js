@@ -1790,6 +1790,71 @@ app.get('/api/diag-tracking/:tracking', async (req, res) => {
     }
   }
 
+  // Buscar parcels en Sendcloud por external_reference (que CRX/MIKA podría usar)
+  if (req.query.scExt) {
+    try {
+      const ext = String(req.query.scExt).trim();
+      const url = `${CONFIG.sendcloud.apiUrl}/parcels?external_reference=${encodeURIComponent(ext)}&limit=5`;
+      const authHeader = 'Basic ' + Buffer.from(`${CONFIG.sendcloud.publicKey}:${CONFIG.sendcloud.secretKey}`).toString('base64');
+      const r = await fetch(url, { headers: { Authorization: authHeader } });
+      out.sendcloudByExternal = r.ok ? await r.json() : { error: r.status };
+    } catch (err) {
+      out.sendcloudByExternal = { error: err.message };
+    }
+  }
+
+  // Buscar parcels en Sendcloud por shipment_uuid u order_id alterno
+  if (req.query.scOrderId) {
+    try {
+      const oid = String(req.query.scOrderId).trim();
+      const url = `${CONFIG.sendcloud.apiUrl}/parcels?order_id=${encodeURIComponent(oid)}&limit=5`;
+      const authHeader = 'Basic ' + Buffer.from(`${CONFIG.sendcloud.publicKey}:${CONFIG.sendcloud.secretKey}`).toString('base64');
+      const r = await fetch(url, { headers: { Authorization: authHeader } });
+      out.sendcloudByOrderId = r.ok ? await r.json() : { error: r.status };
+    } catch (err) {
+      out.sendcloudByOrderId = { error: err.message };
+    }
+  }
+
+  // Buscar en Odoo por cualquier campo donde aparezca este id (sale, partner_id, name)
+  if (req.query.odooSearch) {
+    try {
+      const q = String(req.query.odooSearch).trim();
+      const out2 = {};
+      // Buscar por sale_id (sale_order name)
+      try {
+        const sales = await odooClient.execute('sale.order', 'search_read', [
+          [['name', 'ilike', q]]
+        ], { fields: ['id', 'name', 'partner_id', 'state', 'date_order'], limit: 5 });
+        out2.byOrderName = sales;
+      } catch (e) { out2.byOrderName = { error: e.message }; }
+      // Buscar por origin en pickings
+      try {
+        const picks = await odooClient.execute('stock.picking', 'search_read', [
+          [['origin', 'ilike', q]]
+        ], { fields: ['id', 'name', 'origin', 'state', 'carrier_id', 'carrier_tracking_ref'], limit: 5 });
+        out2.byOrigin = picks;
+      } catch (e) { out2.byOrigin = { error: e.message }; }
+      // Buscar por carrier_tracking_ref parcial
+      try {
+        const picks2 = await odooClient.execute('stock.picking', 'search_read', [
+          [['carrier_tracking_ref', 'ilike', q]]
+        ], { fields: ['id', 'name', 'origin', 'state', 'carrier_id', 'carrier_tracking_ref'], limit: 5 });
+        out2.byCarrierTracking = picks2;
+      } catch (e) { out2.byCarrierTracking = { error: e.message }; }
+      // Buscar por shopify external_id en sale (campo custom?)
+      try {
+        const sales2 = await odooClient.execute('sale.order', 'search_read', [
+          [['client_order_ref', 'ilike', q]]
+        ], { fields: ['id', 'name', 'client_order_ref', 'partner_id'], limit: 5 });
+        out2.byClientOrderRef = sales2;
+      } catch (e) { out2.byClientOrderRef = { error: e.message }; }
+      out.odooSearch = out2;
+    } catch (err) {
+      out.odooSearch = { error: err.message };
+    }
+  }
+
   // Buscar parcels en Sendcloud por tracking number (no por endpoint /tracking)
   if (req.query.scTrack === '1') {
     try {
