@@ -1779,6 +1779,18 @@ app.get('/api/diag-tracking/:tracking', async (req, res) => {
     }
   }
 
+  // Buscar parcels en Sendcloud por tracking number (no por endpoint /tracking)
+  if (req.query.scTrack === '1') {
+    try {
+      const url = `${CONFIG.sendcloud.apiUrl}/parcels?tracking_number=${encodeURIComponent(clean)}&limit=5`;
+      const authHeader = 'Basic ' + Buffer.from(`${CONFIG.sendcloud.publicKey}:${CONFIG.sendcloud.secretKey}`).toString('base64');
+      const r = await fetch(url, { headers: { Authorization: authHeader } });
+      out.sendcloudByTracking = r.ok ? await r.json() : { error: r.status, statusText: r.statusText };
+    } catch (err) {
+      out.sendcloudByTracking = { error: err.message };
+    }
+  }
+
   // Listar parcels de Sendcloud con order_id que matchee ?scOrder=CO123
   if (req.query.scOrder) {
     try {
