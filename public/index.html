@@ -1609,14 +1609,44 @@
     }
 
     // Match instantáneo (0ms) en cliente con sliding window para INPOST/GLS
+    // GUARD: ¿el barcode tiene patrón SPRING (0626... o 0008...)?
+    // Si sí, NUNCA hacemos sliding INPOST sobre él para evitar falsos positivos.
+    function looksLikeSpringBarcode(clean) {
+      if (!/^\d+$/.test(clean)) return false;
+      if (clean.length < 18) return false;
+      return /0626\d{8,}/.test(clean) || /0008\d{8,}/.test(clean);
+    }
+
     function localLookup(tracking) {
       const clean = tracking.toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
       // 1. Match directo
       let r = clientIndex.get(clean);
       if (r) return { ...r, source: 'client-exact' };
 
-      // 2. INPOST sliding window (8 dígitos)
-      if (clean.length >= 8 && /^\d+$/.test(clean)) {
+      const isSpringBarcode = looksLikeSpringBarcode(clean);
+
+      // 2. SPRING sliding window (probamos varios cortes desde 0626/0008)
+      // Lo hacemos ANTES de INPOST para que un barcode SPRING no se clasifique
+      // como INPOST por colisión accidental de 8 dígitos consecutivos.
+      if (isSpringBarcode) {
+        const prefixes = ['0626', '0008'];
+        for (const prefix of prefixes) {
+          const idx = clean.indexOf(prefix);
+          if (idx < 0) continue;
+          // Probar longitudes típicas del tracking SPRING: 12 a 16 chars
+          for (let len = 16; len >= 12; len--) {
+            if (idx + len > clean.length) continue;
+            const cand = clean.substring(idx, idx + len);
+            const match = clientIndex.get(cand);
+            if (match && match.carrier === 'SPRING') {
+              return { ...match, source: 'client-spring-' + len };
+            }
+          }
+        }
+      }
+
+      // 3. INPOST sliding window (8 dígitos) — sólo si NO parece SPRING
+      if (!isSpringBarcode && clean.length >= 8 && /^\d+$/.test(clean)) {
         for (let i = 0; i <= clean.length - 8; i++) {
           const cand = clean.substring(i, i + 8);
           const match = clientIndex.get(cand);
@@ -1626,7 +1656,7 @@
         }
       }
 
-      // 3. GLS sliding (Z89 + 5 chars)
+      // 4. GLS sliding (Z89 + 5 chars)
       const z89 = clean.indexOf('Z89');
       if (z89 >= 0 && clean.length >= z89 + 8) {
         const cand = clean.substring(z89, z89 + 8);
@@ -1636,7 +1666,7 @@
         }
       }
 
-      // 4. ASENDIA sliding (6C20 + 9 chars)
+      // 5. ASENDIA sliding (6C20 + 9 chars)
       const c620 = clean.indexOf('6C20');
       if (c620 >= 0 && clean.length >= c620 + 13) {
         const cand = clean.substring(c620, c620 + 13);

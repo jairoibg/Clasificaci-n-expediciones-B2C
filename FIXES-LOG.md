@@ -879,6 +879,52 @@ para que el frontend pueda navegar al Scan con todo cargado.
 
 ---
 
+## 2026-05-25 · Spring guard
+
+### #024 · Falsos positivos SPRING → INPOST por sliding window de 8 dígitos
+
+**Síntoma**
+Operarios reportan que pedidos SPRING se detectan como INPOST. Casos
+concretos: `DF1289908EU` y `DF1290868EU` (ambos SPRING) la app dice
+"es de INPOST".
+
+**Causa raíz**
+El sliding window de 8 dígitos consecutivos que usamos para detectar
+INPOST embebido en barcodes largos numéricos es muy permisivo. Los
+barcodes físicos de SPRING también son largos numéricos (GS1-128 con
+tracking embebido tras prefijos `0626` o `0008`). Si dentro del
+barcode SPRING aparecen 8 dígitos consecutivos que casualmente coinciden
+con un tracking INPOST del índice → falso match.
+
+Esto ocurría tanto en:
+1. `localLookup` del cliente (sliding INPOST en frontend)
+2. `extractInpostTracking` del servidor
+3. `overrideCarrier` del servidor (sliding de 8 dígitos como override)
+
+**Solución**
+Nuevo helper `looksLikeSpringBarcode(clean)` que detecta barcodes con
+patrón `0626\d{8,}` o `0008\d{8,}` (al menos 18 chars). Como guard
+ANTES de cualquier sliding INPOST:
+
+- `localLookup` (frontend): añade paso "SPRING sliding window" ANTES
+  de INPOST. Prueba substrings de longitud 12-16 desde `0626`/`0008`.
+- `extractInpostTracking` (server): si parece SPRING, no hace sliding.
+- `overrideCarrier` (server): el override INPOST por sliding ya no se
+  dispara si parece SPRING.
+
+**Archivos**: `server.js`, `public/index.html`, `public/sw.js`
+
+**Commit**: pendiente
+
+**Lección**:
+- Cuando varias reglas heurísticas compiten sobre el mismo formato
+  (largo numérico), añadir guards específicos por carrier ANTES de la
+  regla más permisiva (la de menos dígitos).
+- El sliding INPOST de 8 dígitos es la regla más débil → debe ir
+  siempre al final del cascade.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío

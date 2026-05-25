@@ -835,6 +835,15 @@ function extractAsendiaTracking(scannedClean) {
   return { extracted: null, isDirectMatch: false };
 }
 
+// GUARD: detectar barcodes SPRING para evitar que el sliding INPOST los capture.
+// SPRING usa GS1-128 con tracking embebido que empieza por 0626 o 0008 seguido
+// de al menos 8 dígitos más. Si el barcode contiene este patrón, NO es INPOST.
+function looksLikeSpringBarcode(clean) {
+  if (!/^\d+$/.test(clean)) return false;
+  if (clean.length < 18) return false; // barcodes SPRING son largos
+  return /0626\d{8,}/.test(clean) || /0008\d{8,}/.test(clean);
+}
+
 // INPOST: Barcodes largos (todo numérico) contienen tracking de 8 dígitos embebido
 // Formato observado:
 //   130486133001010401330148898 → tracking = 04861330 (posición 2-10)
@@ -848,6 +857,12 @@ function extractInpostTracking(scannedClean) {
     return { extracted: scannedClean, isDirectMatch: true };
   }
   if (scannedClean.length >= 10 && /^\d+$/.test(scannedClean)) {
+    // GUARD CRÍTICO: si el barcode tiene patrón SPRING (0626... o 0008...),
+    // NO hacer sliding INPOST — evita falsos positivos como
+    //   DF1289908EU/DF1290868EU clasificados como INPOST cuando son SPRING.
+    if (looksLikeSpringBarcode(scannedClean)) {
+      return { extracted: null, isDirectMatch: false, skipped: 'spring-pattern' };
+    }
     // SLIDING WINDOW: probar todas las posiciones de 8 dígitos consecutivos
     // y verificar si alguna coincide con un INPOST conocido en el índice
     const inpostIndex = trackingIndex && trackingIndex.byCarrier && trackingIndex.byCarrier['INPOST'];
@@ -1025,8 +1040,9 @@ function overrideCarrier(carrier, tracking) {
   // 8 dígitos exactos = INPOST (override directo)
   if (/^\d{8}$/.test(t)) return 'INPOST';
   // Barcode largo numérico que CONTIENE un INPOST conocido en el índice
-  // Esto previene que se clasifique como CORREOS por colisión accidental
-  if (t.length >= 10 && /^\d+$/.test(t)) {
+  // Esto previene que se clasifique como CORREOS por colisión accidental.
+  // GUARD: si tiene patrón SPRING (0626... o 0008...), NO forzar INPOST.
+  if (t.length >= 10 && /^\d+$/.test(t) && !looksLikeSpringBarcode(t)) {
     const inpostIndex = trackingIndex && trackingIndex.byCarrier && trackingIndex.byCarrier['INPOST'];
     if (inpostIndex) {
       for (let i = 0; i <= t.length - 8; i++) {
