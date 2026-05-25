@@ -1700,6 +1700,77 @@ app.get('/api/index-diagnostic', (req, res) => {
   });
 });
 
+// Diagnóstico exhaustivo de un tracking: muestra todo lo que el sistema sabe
+// para diagnosticar falsos positivos / no-encontrados (ej: trackings CRX nuevos).
+app.get('/api/diag-tracking/:tracking', async (req, res) => {
+  const raw = (req.params.tracking || '').trim();
+  const clean = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const out = {
+    raw, clean,
+    prefix: null,
+    looksLikeSpring: typeof looksLikeSpringBarcode === 'function' ? looksLikeSpringBarcode(clean) : false,
+    inIndex: { byTracking: null, byOdooTracking: null, byCarrier: {} },
+    inSendcloudCache: null,
+    inSendcloudCacheUpper: null,
+    inByOrderRef: null,
+    extractInpost: null,
+    extractSpecial: null,
+    override: null,
+    odooLive: null
+  };
+  // Prefijo simple
+  if (/^9300500/.test(clean)) out.prefix = 'CORREOS EXPRESS (9300500)';
+  else if (/^MI/.test(clean)) out.prefix = 'CORREOS EXPRESS (MI)';
+  else if (/^PK/.test(clean)) out.prefix = 'CORREOS (PK)';
+  else if (/^Z89/.test(clean)) out.prefix = 'GLS (Z89)';
+  else if (/^6C20/.test(clean)) out.prefix = 'ASENDIA (6C20)';
+  else if (/^H103/.test(clean)) out.prefix = 'ASENDIA (H103)';
+  else if (/^(0626|0008)/.test(clean)) out.prefix = 'SPRING (0626/0008)';
+  else if (/^\d{8}$/.test(clean)) out.prefix = 'INPOST (8 dígitos)';
+  else if (/^CTT|^EA/.test(clean)) out.prefix = 'CTT';
+
+  // Índice
+  if (trackingIndex.byTracking && trackingIndex.byTracking[clean]) out.inIndex.byTracking = trackingIndex.byTracking[clean];
+  if (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[clean]) out.inIndex.byOdooTracking = trackingIndex.byOdooTracking[clean];
+  if (trackingIndex.byCarrier) {
+    for (const c of CARRIERS) {
+      if (trackingIndex.byCarrier[c] && trackingIndex.byCarrier[c][clean]) {
+        out.inIndex.byCarrier[c] = trackingIndex.byCarrier[c][clean];
+      }
+    }
+  }
+  // Cache Sendcloud (directo y upper)
+  if (sendcloudCache && sendcloudCache.parcels) {
+    if (sendcloudCache.parcels[raw]) out.inSendcloudCache = sendcloudCache.parcels[raw];
+    if (sendcloudCacheUpper && sendcloudCacheUpper[clean]) out.inSendcloudCacheUpper = sendcloudCacheUpper[clean];
+  }
+  // Si encontramos orderId en cache, verificar si está en byOrderRef
+  const orderId = (out.inSendcloudCache && out.inSendcloudCache.orderId) || (out.inSendcloudCacheUpper && out.inSendcloudCacheUpper.orderId);
+  if (orderId && trackingIndex.byOrderRef) {
+    out.inByOrderRef = trackingIndex.byOrderRef[orderId.toUpperCase()] || null;
+  }
+  // Extracciones especiales
+  try { out.extractInpost = extractInpostTracking(clean); } catch {}
+  try { out.extractSpecial = extractSpecialPatterns(raw); } catch {}
+  // Override
+  try { out.override = overrideCarrier((out.inIndex.byTracking && out.inIndex.byTracking.carrier) || null, clean); } catch {}
+  // Búsqueda LIVE en Odoo (puede ser lenta, ~2-5s)
+  if (req.query.live === '1') {
+    try {
+      const picking = await odooClient.findPickingByTracking(clean);
+      out.odooLive = picking || null;
+      // Si hay orderId del cache, buscar también por origin
+      if (orderId) {
+        const pickingsByOrder = await odooClient.findPickingsByOrderRef(orderId);
+        out.odooByOrder = pickingsByOrder.slice(0, 5);
+      }
+    } catch (err) {
+      out.odooLive = { error: err.message };
+    }
+  }
+  res.json(out);
+});
+
 // Búsqueda global
 app.get('/api/search', (req, res) => {
   const query = (req.query.q || '').trim().toUpperCase();
