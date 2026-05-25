@@ -134,7 +134,7 @@ class OdooClient {
     console.log(`   🔍 Dominio: OUTs Shopify B2C con tracking, últimos ${daysBack} días`);
 
     const pickings = await this.execute('stock.picking', 'search_read', [domain], {
-      fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state', 'carrier_id', 'sale_id', 'weight', 'date_done'],
+      fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state', 'carrier_id', 'sale_id', 'weight', 'date_done', 'note'],
       order: 'scheduled_date desc',
       limit: 30000
     });
@@ -398,6 +398,12 @@ async function sync() {
     if (!odooTracking && isCorreosExpress) {
       const orderRef = (picking.origin || '').toUpperCase().trim();
       if (!orderRef) { unmatched++; continue; }
+      // Extraer "ID del pedido" CRX del campo note (formato típico: <p>8954434852216</p>)
+      let crxOrderId = null;
+      if (picking.note && typeof picking.note === 'string') {
+        const m = picking.note.replace(/<[^>]+>/g, '').trim().match(/\d{10,}/);
+        if (m) crxOrderId = m[0];
+      }
       if (!trackingIndex.pendingCrx) trackingIndex.pendingCrx = [];
       trackingIndex.pendingCrx.push({
         pickingId: picking.id,
@@ -415,13 +421,21 @@ async function sync() {
         tracking: null,
         carrier: 'CORREOS EXPRESS',
         source: 'odoo-carrier-pending',
-        pendingTracking: true
+        pendingTracking: true,
+        crxOrderId: crxOrderId
       });
       matched++;
       continue;
     }
 
     if (!odooTracking) continue;
+
+    // Extraer "ID del pedido" del campo note (formato típico: <p>NUMERO</p>)
+    let crxOrderIdFromNote = null;
+    if (picking.note && typeof picking.note === 'string') {
+      const m = picking.note.replace(/<[^>]+>/g, '').trim().match(/\d{10,}/);
+      if (m) crxOrderIdFromNote = m[0];
+    }
 
     const pickingData = {
       pickingId: picking.id,
@@ -435,7 +449,8 @@ async function sync() {
       dateDone: picking.date_done || null,
       odooTracking: odooTracking,
       odooCarrierName: odooCarrierName || '',
-      state: picking.state
+      state: picking.state,
+      crxOrderId: crxOrderIdFromNote
     };
 
     // Si es CORREOS EXPRESS (carrier Odoo empieza por MI), añadir directamente sin Sendcloud
@@ -555,6 +570,7 @@ async function sync() {
   trackingIndex.byOrderRef = {};      // orderRef → [pickings]
   trackingIndex.byClientName = {};    // clientName lowercase → [pickings]
   trackingIndex.byPartnerId = {};     // partnerId → [pickings]
+  trackingIndex.byCrxOrderId = {};    // ID del pedido CRX (note) → [pickings] (para vincular etiqueta física)
 
   const allEntries = new Set();
   Object.values(trackingIndex.byOdooTracking || {}).forEach(e => allEntries.add(e));
@@ -596,6 +612,20 @@ async function sync() {
     const trk = entry.odooTracking || entry.tracking;
     if (trk) {
       trackingCounts[trk] = (trackingCounts[trk] || 0) + 1;
+    }
+    // Indexar por ID del pedido CRX (note) si está disponible
+    if (entry.crxOrderId) {
+      const k = entry.crxOrderId;
+      if (!trackingIndex.byCrxOrderId[k]) trackingIndex.byCrxOrderId[k] = [];
+      trackingIndex.byCrxOrderId[k].push({
+        pickingId: entry.pickingId,
+        pickingName: entry.pickingName,
+        orderRef: entry.orderRef,
+        clientName: entry.clientName,
+        carrier: entry.carrier,
+        state: entry.state,
+        pendingTracking: !!entry.pendingTracking
+      });
     }
   }
 

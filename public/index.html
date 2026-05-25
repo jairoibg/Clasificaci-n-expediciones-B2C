@@ -1782,7 +1782,9 @@
           renderPackages(); renderCarriers();
 
           if (r.error === 'CRX_NO_SINCRONIZADO') {
-            showModal('!', 'CRX sin sincronizar', r.message);
+            // Abrir buscador en modo CRX: el operario tipea el "ID del pedido"
+            // que aparece en la etiqueta (13 dígitos) para localizar el picking
+            showSearchModal(tracking, r.message, 'crx');
             playSound('error');
             if (navigator.vibrate) navigator.vibrate([200,100,200]);
           } else if (r.error === 'NO_ENCONTRADO' || r.error === 'NO_VERIFICADO') {
@@ -2222,12 +2224,22 @@
       document.getElementById('printLabelBtn').onclick = () => window.open(`${API_URL}/api/pallets/${pallet.id}/label`, '_blank');
     }
     function closeLabelModal() { document.getElementById('labelModal').classList.remove('show'); }
-    function showSearchModal(tracking, message) {
+    function showSearchModal(tracking, message, mode) {
       document.getElementById('searchErrorMessage').textContent = message;
+      // Guardar tracking físico para asociarlo al picking seleccionado luego
+      window._pendingCrxTracking = (mode === 'crx') ? tracking : null;
+      const input = document.getElementById('clientSearchInput');
+      if (mode === 'crx') {
+        input.placeholder = 'ID del pedido (13 dígitos junto al barcode)…';
+        document.querySelector('#searchModal .modal-title').textContent = 'CRX: busca el ID del pedido';
+      } else {
+        input.placeholder = 'Nombre del cliente…';
+        document.querySelector('#searchModal .modal-title').textContent = 'Buscar por cliente';
+      }
       document.getElementById('searchModal').classList.add('show');
-      document.getElementById('clientSearchInput').value = '';
+      input.value = '';
       document.getElementById('searchResults').innerHTML = '';
-      setTimeout(() => document.getElementById('clientSearchInput').focus(), 100);
+      setTimeout(() => input.focus(), 100);
     }
     function closeSearchModal() { document.getElementById('searchModal').classList.remove('show'); document.getElementById('scanInput').focus(); }
     async function searchClient() {
@@ -2238,20 +2250,32 @@
         const container = document.getElementById('searchResults');
         if (r.count === 0) { container.innerHTML = '<div class="empty">No hay resultados</div>'; return; }
         window.searchResultsData = r.results;
-        container.innerHTML = r.results.map((item, idx) => `<div class="search-result-item" onclick="selectSearchResultByIndex(${idx})"><div class="search-result-tracking">${item.tracking}</div><div class="search-result-info">${item.origin || 'Sin ref'} · ${item.client}</div></div>`).join('');
+        container.innerHTML = r.results.map((item, idx) => {
+          const trackLabel = item.tracking || (item.pendingTracking ? '⏳ Tracking pendiente' : 'Sin tracking');
+          return `<div class="search-result-item" onclick="selectSearchResultByIndex(${idx})"><div class="search-result-tracking">${trackLabel}</div><div class="search-result-info">${item.origin || 'Sin ref'} · ${item.client}</div></div>`;
+        }).join('');
       } catch { showToast('Error', 'error'); }
     }
     function selectSearchResultByIndex(idx) {
       const item = window.searchResultsData[idx];
       if (!item) return;
-      selectSearchResult(item.tracking, item.id, item.origin || '', item.client || '');
+      // Si veníamos de un CRX no encontrado, usamos el tracking físico que escaneó
+      // en lugar del tracking del picking (que está null porque MIKA aún no actualizó).
+      const trackingToUse = window._pendingCrxTracking || item.tracking;
+      selectSearchResult(trackingToUse, item.id, item.origin || '', item.client || '');
     }
     async function selectSearchResult(tracking, pickingId, orderRef, clientName) {
+      if (!tracking) { showModal('×', 'Sin tracking', 'Este pedido no tiene tracking aún. Espera unos minutos y reintenta.'); return; }
       try {
-        const r = await apiCall('/add-tracking', { method: 'POST', body: JSON.stringify({ tracking, carrier: state.selectedCarrier, pickingId, orderRef, clientName }) });
+        const r = await apiCall('/add-tracking', { method: 'POST', body: JSON.stringify({ tracking, carrier: state.selectedCarrier, pickingId, orderRef, clientName, sessionId: state.selectedSessionId }) });
         if (r.success) {
           state.packages.push(r.package); state.sessions[state.selectedCarrier] = r.sessionCount;
+          if (r.sessionId && !state.selectedSessionId) {
+            state.selectedSessionId = r.sessionId;
+            loadSessions().then(updateActivePalletBar);
+          }
           renderPackages(); renderCarriers(); closeSearchModal();
+          window._pendingCrxTracking = null;
           showToast(`✓ ${orderRef || tracking}`, 'success'); playSound('success');
         } else { showModal('×', 'Error', r.message); playSound('error'); }
       } catch { showToast('Error', 'error'); }

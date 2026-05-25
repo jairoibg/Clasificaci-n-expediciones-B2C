@@ -1585,13 +1585,30 @@ app.get('/api/search-client/:name', async (req, res) => {
   const startTime = Date.now();
   console.log('\n🔎 BÚSQUEDA: "' + searchTerm + '"');
   const isOrderRef = /^(DF|SO|PO|WH|S|CO|KA)\d/i.test(searchTerm);
+  // ID del pedido CRX: número de 10-15 dígitos (típico Shopify order id)
+  const isCrxOrderId = /^\d{10,15}$/.test(searchTerm);
   const upperTerm = searchTerm.toUpperCase();
 
   // 1. Buscar primero en el ÍNDICE LOCAL (instantáneo, O(1))
   let indexResults = [];
 
+  // Por ID del pedido CRX (note) — exacto
+  if (isCrxOrderId && trackingIndex.byCrxOrderId && trackingIndex.byCrxOrderId[searchTerm]) {
+    indexResults = trackingIndex.byCrxOrderId[searchTerm].map(e => ({
+      id: e.pickingId,
+      name: e.pickingName,
+      tracking: null,
+      client: e.clientName || 'Sin cliente',
+      origin: e.orderRef,
+      carrier: e.carrier,
+      state: e.state,
+      source: 'index-crx-id',
+      pendingTracking: e.pendingTracking
+    }));
+  }
+
   // Por pedido exacto
-  if (trackingIndex.byOrderRef && trackingIndex.byOrderRef[upperTerm]) {
+  if (indexResults.length === 0 && trackingIndex.byOrderRef && trackingIndex.byOrderRef[upperTerm]) {
     indexResults = trackingIndex.byOrderRef[upperTerm].map(e => ({
       id: e.pickingId,
       name: e.pickingName,
