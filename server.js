@@ -1939,8 +1939,8 @@ app.get('/api/diag-tracking/:tracking', async (req, res) => {
     try {
       const origin = String(req.query.odooOrigin).trim();
       const pickings = await odooClient.execute('stock.picking', 'search_read', [
-        [['origin', 'ilike', origin], ['picking_type_code', '=', 'outgoing']]
-      ], { fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state', 'carrier_id'], limit: 10 });
+        [['origin', 'ilike', origin]]
+      ], { fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state', 'carrier_id', 'picking_type_id', 'note'], limit: 20 });
       out.odooByOriginUnfiltered = pickings;
     } catch (err) {
       out.odooByOriginUnfiltered = { error: err.message };
