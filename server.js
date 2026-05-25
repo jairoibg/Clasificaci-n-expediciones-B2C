@@ -1507,7 +1507,7 @@ app.post('/api/scan', async (req, res) => {
         success: false,
         error: 'CRX_NO_SINCRONIZADO',
         detectedCarrier: 'CORREOS EXPRESS',
-        message: 'Etiqueta CRX detectada pero el pedido aún no se ha sincronizado en Odoo (MIKA tarda unos minutos). Reintenta en breve o busca el pedido por nº (CO...SF) y selecciónalo desde la búsqueda.',
+        message: 'Etiqueta CRX detectada. Mira el "ID del pedido" en la etiqueta (13 dígitos junto al barcode) y tipéalo en el buscador.',
         tracking: clean
       });
     }

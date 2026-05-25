@@ -968,12 +968,35 @@ en Odoo" pese a que la detección de carrier por prefijo es correcta.
   (con flags `?live=1`, `?sendcloud=1`, `?scTrack=1`, `?scOrder=…`,
   `?odooOrigin=…`, `?listCrx=1`).
 
-**Limitación**
-Cuando el tracking físico CRX se escanea ANTES de que MIKA registre
-el `carrier_tracking_ref` en Odoo, no hay forma técnica de hacer
-match automático: ni Sendcloud ni Odoo conocen ese tracking en ese
-momento. La única solución estructural es presionar a CRX/MIKA para
-que actualicen Odoo más rápido (webhook en lugar de cron).
+**Vínculo encontrado** (actualización tras imagen de etiqueta)
+La etiqueta CRX imprime el "ID del pedido" (13 dígitos, ej.
+`8954434852216`) junto al barcode. Ese mismo ID se guarda en el campo
+`note` del picking de Odoo (formato `<p>NUMERO</p>`).
+
+Aprovechando esto:
+- `sync-full.js` extrae `crxOrderId` del `note` para TODOS los pickings
+  (no solo carrier MIKA — el caso DF122521SF tenía `carrier_id="Correos"`
+  en Odoo pero etiqueta física CRX, un mismatch que solo se resuelve
+  por el ID en `note`).
+- Se quita el filtro `carrier_tracking_ref != false` del dominio Odoo
+  para incluir pickings sin tracking todavía.
+- Nuevo índice `trackingIndex.byCrxOrderId` para lookup O(1) por ID
+  externo.
+- `/api/search-client/:name` detecta inputs de 10-15 dígitos y consulta
+  `byCrxOrderId` antes de Odoo (instantáneo).
+- Frontend: cuando el operario escanea un CRX no encontrado, el modal
+  CRX le pide el "ID del pedido" (no el nº de pedido ni el cliente).
+  Al seleccionar el resultado, se usa el tracking físico que escaneó
+  para asociarlo con el picking encontrado.
+
+**Flujo final del operario**:
+1. Selecciona palet CRX
+2. Escanea barcode `9300500...`
+3. Si la app no lo encuentra (MIKA aún no ha actualizado), aparece
+   modal "CRX: busca el ID del pedido"
+4. Operario lee de la etiqueta el ID (`8954434852216`) y lo tipea
+5. Aparece `DF122521SF | CORREOS EXPRESS | ⏳ Tracking pendiente`
+6. Lo selecciona → entra al palet CRX con el tracking físico
 
 **Archivos**:
 - `server.js` (endpoint diag + manejo CRX_NO_SINCRONIZADO en /api/scan)
