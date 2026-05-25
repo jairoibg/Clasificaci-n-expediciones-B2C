@@ -1779,6 +1779,19 @@ app.get('/api/diag-tracking/:tracking', async (req, res) => {
     }
   }
 
+  // Listar parcels de Sendcloud con order_id que matchee ?scOrder=CO123
+  if (req.query.scOrder) {
+    try {
+      const orderId = String(req.query.scOrder).trim();
+      const url = `${CONFIG.sendcloud.apiUrl}/parcels?order_number=${encodeURIComponent(orderId)}&limit=10`;
+      const authHeader = 'Basic ' + Buffer.from(`${CONFIG.sendcloud.publicKey}:${CONFIG.sendcloud.secretKey}`).toString('base64');
+      const r = await fetch(url, { headers: { Authorization: authHeader } });
+      out.sendcloudByOrder = r.ok ? await r.json() : { error: r.status };
+    } catch (err) {
+      out.sendcloudByOrder = { error: err.message };
+    }
+  }
+
   // Listar pickings recientes con carrier MIKA (CRX) para investigar formato del tracking
   if (req.query.listCrx === '1') {
     try {
