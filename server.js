@@ -1768,6 +1768,29 @@ app.get('/api/diag-tracking/:tracking', async (req, res) => {
       out.odooLive = { error: err.message };
     }
   }
+
+  // Consulta directa a Sendcloud API por tracking
+  if (req.query.sendcloud === '1') {
+    try {
+      const scData = await sendcloudClient.getParcelByTracking(clean);
+      out.sendcloudApi = scData || null;
+    } catch (err) {
+      out.sendcloudApi = { error: err.message };
+    }
+  }
+
+  // Búsqueda Odoo SIN filtros (state cualquiera, sin scheduled_date) por origin si pasan ?odooOrigin=ORDER
+  if (req.query.odooOrigin) {
+    try {
+      const origin = String(req.query.odooOrigin).trim();
+      const pickings = await odooClient.execute('stock.picking', 'search_read', [
+        [['origin', 'ilike', origin], ['picking_type_code', '=', 'outgoing']]
+      ], { fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state', 'carrier_id'], limit: 10 });
+      out.odooByOriginUnfiltered = pickings;
+    } catch (err) {
+      out.odooByOriginUnfiltered = { error: err.message };
+    }
+  }
   res.json(out);
 });
 
