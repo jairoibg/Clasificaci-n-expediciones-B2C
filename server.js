@@ -1849,6 +1849,30 @@ app.get('/api/diag-tracking/:tracking', async (req, res) => {
         ], { fields: ['id', 'name', 'client_order_ref', 'partner_id'], limit: 5 });
         out2.byClientOrderRef = sales2;
       } catch (e) { out2.byClientOrderRef = { error: e.message }; }
+      // Probar varios campos custom típicos de Shopify
+      const customFields = ['shopify_order_id', 'shopify_id', 'x_shopify_order_id', 'x_studio_shopify_id', 'origin', 'x_studio_id_pedido'];
+      out2.customSearches = {};
+      for (const f of customFields) {
+        try {
+          const r = await odooClient.execute('sale.order', 'search_read', [
+            [[f, 'ilike', q]]
+          ], { fields: ['id', 'name', f, 'partner_id'], limit: 3 });
+          if (r && r.length > 0) out2.customSearches[f] = r;
+          else out2.customSearches[f] = 'empty';
+        } catch (e) { out2.customSearches[f] = 'field_not_exists'; }
+      }
+      // Buscar también en stock.picking campos custom
+      const pickFields = ['x_studio_shopify_id', 'x_shopify_id', 'origin', 'note'];
+      out2.pickingCustom = {};
+      for (const f of pickFields) {
+        try {
+          const r = await odooClient.execute('stock.picking', 'search_read', [
+            [[f, 'ilike', q]]
+          ], { fields: ['id', 'name', f, 'origin'], limit: 3 });
+          if (r && r.length > 0) out2.pickingCustom[f] = r;
+          else out2.pickingCustom[f] = 'empty';
+        } catch (e) { out2.pickingCustom[f] = 'field_not_exists'; }
+      }
       out.odooSearch = out2;
     } catch (err) {
       out.odooSearch = { error: err.message };
