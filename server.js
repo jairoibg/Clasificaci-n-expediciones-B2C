@@ -1779,6 +1779,19 @@ app.get('/api/diag-tracking/:tracking', async (req, res) => {
     }
   }
 
+  // Listar pickings recientes con carrier MIKA (CRX) para investigar formato del tracking
+  if (req.query.listCrx === '1') {
+    try {
+      const dateFilter = new Date(Date.now() - 3*24*60*60*1000).toISOString().split('T')[0];
+      const pickings = await odooClient.execute('stock.picking', 'search_read', [
+        [['carrier_id.name', 'ilike', 'mika'], ['scheduled_date', '>=', dateFilter], ['picking_type_code', '=', 'outgoing']]
+      ], { fields: ['id', 'name', 'carrier_tracking_ref', 'origin', 'state', 'carrier_id', 'scheduled_date'], limit: 20, order: 'scheduled_date desc' });
+      out.crxRecent = pickings;
+    } catch (err) {
+      out.crxRecent = { error: err.message };
+    }
+  }
+
   // Búsqueda Odoo SIN filtros (state cualquiera, sin scheduled_date) por origin si pasan ?odooOrigin=ORDER
   if (req.query.odooOrigin) {
     try {
