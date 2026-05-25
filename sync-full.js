@@ -117,18 +117,19 @@ class OdooClient {
     // AND sale_id.team_id ilike 'shopify'
     // AND location_dest_id ilike 'customer'
     // AND scheduled_date >= dateFilter
-    // AND (carrier_tracking_ref != false OR carrier_id.name ilike 'mika')
-    //   ↑ Incluye CRX (MIKA) aunque tenga tracking vacío, porque MIKA
-    //     actualiza el carrier_tracking_ref con delay; así el operario al
-    //     menos puede buscar el pedido por nº o cliente.
+    //
+    // SIN filtro de carrier_tracking_ref: incluimos también pickings sin
+    // tracking todavía (CRX/MIKA tarda en actualizar, y algunos pedidos
+    // CRX llegan en Odoo marcados como "Correos" pero con etiqueta CRX
+    // real). Estos pickings se indexan por el ID externo (campo note)
+    // para que el operario pueda buscarlos por el "ID del pedido" que
+    // aparece impreso en la etiqueta CRX.
     const domain = [
       "|", ["name", "ilike", "out"], ["origin", "ilike", "out"],
       ["state", "in", ["done", "assigned", "confirmed", "waiting"]],
       ["sale_id.team_id", "ilike", "shopify"],
       ["location_dest_id", "ilike", "customer"],
-      ["scheduled_date", ">=", dateFilter],
-      // OR explícito en lógica Odoo: prefijo "|"
-      "|", ["carrier_tracking_ref", "!=", false], ["carrier_id.name", "ilike", "mika"]
+      ["scheduled_date", ">=", dateFilter]
     ];
 
     console.log(`   🔍 Dominio: OUTs Shopify B2C con tracking, últimos ${daysBack} días`);
@@ -382,6 +383,15 @@ async function sync() {
   let matched = 0;
   let unmatched = 0;
 
+  // Extrae el "ID externo del pedido" del campo note (formato típico: <p>8954434852216</p>).
+  // Este ID es el que aparece impreso en las etiquetas físicas CRX. Permite al operario
+  // localizar el pedido cuando el barcode 9300500... aún no está en Odoo.
+  function extractCrxOrderId(note) {
+    if (!note || typeof note !== 'string') return null;
+    const m = note.replace(/<[^>]+>/g, '').trim().match(/\b\d{10,16}\b/);
+    return m ? m[0] : null;
+  }
+
   // Transportistas que necesitan coincidencia por patrón (código barras ≠ tracking Odoo)
   const carriersNeedingPattern = ['CTT', 'SPRING', 'ASENDIA'];
 
@@ -392,18 +402,21 @@ async function sync() {
     const odooCarrierName = picking.carrier_id ? picking.carrier_id[1] : '';
     const isCorreosExpress = odooCarrierName.toUpperCase().startsWith('MI');
 
-    // CASO ESPECIAL: CRX sin tracking todavía (MIKA actualiza con delay).
-    // Lo metemos en un array de pendientes — el PASO 3.5 lo incluirá en byOrderRef
-    // para que sea encontrable por nº de pedido o cliente desde la app.
-    if (!odooTracking && isCorreosExpress) {
+    // CASO ESPECIAL: pickings sin tracking (CRX/MIKA actualiza con delay)
+    // Si es CRX por carrier_id O tiene "ID externo del pedido" en note
+    // (probablemente etiqueta CRX aunque carrier_id diga "Correos"),
+    // lo incluimos en pendingCrx para que sea buscable.
+    if (!odooTracking) {
+      const crxOrderId = extractCrxOrderId(picking.note);
+      const hasNote = !!crxOrderId;
+      if (!isCorreosExpress && !hasNote) {
+        // Sin tracking, sin nota, no es CRX → descartar
+        unmatched++;
+        continue;
+      }
       const orderRef = (picking.origin || '').toUpperCase().trim();
       if (!orderRef) { unmatched++; continue; }
-      // Extraer "ID del pedido" CRX del campo note (formato típico: <p>8954434852216</p>)
-      let crxOrderId = null;
-      if (picking.note && typeof picking.note === 'string') {
-        const m = picking.note.replace(/<[^>]+>/g, '').trim().match(/\d{10,}/);
-        if (m) crxOrderId = m[0];
-      }
+
       if (!trackingIndex.pendingCrx) trackingIndex.pendingCrx = [];
       trackingIndex.pendingCrx.push({
         pickingId: picking.id,
@@ -419,8 +432,8 @@ async function sync() {
         odooCarrierName: odooCarrierName || '',
         state: picking.state,
         tracking: null,
-        carrier: 'CORREOS EXPRESS',
-        source: 'odoo-carrier-pending',
+        carrier: isCorreosExpress ? 'CORREOS EXPRESS' : 'CORREOS EXPRESS', // si tiene ID externo asumimos CRX
+        source: isCorreosExpress ? 'odoo-carrier-pending' : 'odoo-note-pending',
         pendingTracking: true,
         crxOrderId: crxOrderId
       });
@@ -428,14 +441,9 @@ async function sync() {
       continue;
     }
 
-    if (!odooTracking) continue;
-
-    // Extraer "ID del pedido" del campo note (formato típico: <p>NUMERO</p>)
-    let crxOrderIdFromNote = null;
-    if (picking.note && typeof picking.note === 'string') {
-      const m = picking.note.replace(/<[^>]+>/g, '').trim().match(/\d{10,}/);
-      if (m) crxOrderIdFromNote = m[0];
-    }
+    // Extraer "ID externo del pedido" del campo note (formato típico: <p>NUMERO</p>)
+    // Útil para CRX donde el operario solo puede leer este ID de la etiqueta.
+    let crxOrderIdFromNote = extractCrxOrderId(picking.note);
 
     const pickingData = {
       pickingId: picking.id,
