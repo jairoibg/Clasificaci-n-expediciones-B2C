@@ -1104,6 +1104,9 @@ function hasKnownCarrierShape(clean) {
   if (/ES[A-Z]\d{2}[A-Z0-9]{5}[A-Z]{2,3}/.test(clean)) return true;
   // Letras de tracking típicas tipo 2-3 letras + 9+ dígitos
   if (/^[A-Z]{1,3}\d{8,}/.test(clean)) return true;
+  // PATRONES EMBEBIDOS en barcodes GS1-128 / SSCC largos:
+  // ASENDIA (6C20/6C16), GLS (Z89), ASENDIA H1023 (H103+digits), SPRING (0626/0008 dentro)
+  if (clean.length >= 12 && /(6C20|6C16|Z89[A-Z0-9]{5}|H103\d{4}|0626\d{8}|0008\d{8})/.test(clean)) return true;
   return false;
 }
 
