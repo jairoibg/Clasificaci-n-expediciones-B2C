@@ -1016,6 +1016,79 @@ Aprovechando esto:
 
 ---
 
+## 2026-05-26 · Fast-fail para evitar "Application failed to respond"
+
+### #026 · Scans tardan 4-5s y proxy Railway devuelve 502
+
+**Síntoma**
+Operarios reportan modal recurrente "Error · Application failed to
+respond" (mensaje genérico del proxy de Railway). No ocurre con un
+pedido concreto, es aleatorio.
+
+**Diagnóstico**
+Test directo confirmó que `/api/scan` con un tracking inexistente
+(NOEXISTETEST123) tardaba **4.7 segundos** en responder. Causa:
+
+- Si el tracking no está en el índice, `findPickingByTracking` hace
+  hasta 5 búsquedas en Odoo (exact + ilike + 3 patterns) sin timeout.
+- Cada búsqueda Odoo es ~1-2s vía XML-RPC.
+- Total acumulado: 3-7s por scan no-encontrado.
+- Cuando varios operarios escanean a la vez trackings que caen a
+  Odoo, las peticiones se acumulan y el proxy Railway timeout.
+- El sync programado (cada 30 min) tarda 6 minutos y carga 27K+50K
+  registros en memoria, lo que añade GC pauses durante ese rato.
+
+**Solución**
+
+1. **Fast path en `getCarrierFromTracking`**:
+   - Si el tracking no tiene ningún prefijo/formato conocido +
+     no está en índice + no está en cache Sendcloud → devolver
+     `not_found` inmediatamente sin tocar Odoo.
+   - Helper `hasKnownCarrierShape(clean)` reconoce PK/MI/Z89/6C20/
+     H103/6A/LS/LX/0008/0626/9300500/CTT/EA + barcodes numéricos
+     largos + formato ES…CCE (GLS QR).
+
+2. **Negative-lookup cache** (`negativeLookupCache` Map):
+   - Cuando una búsqueda Odoo termina sin encontrar nada, el
+     tracking se guarda con timestamp.
+   - Próximas búsquedas del mismo tracking devuelven `not_found`
+     en ~0ms durante 5 min (TTL).
+   - Auto-limpieza al superar 10k entradas.
+
+3. **Timeouts en Odoo XML-RPC** (`executeWithTimeout`):
+   - `Promise.race` con timeout 3s (exact), 2s (ilike), 2s (patterns).
+   - Si timeout → log warning + devolver vacío. La búsqueda continúa
+     con el siguiente intento o termina.
+   - Reduce hasta 5 búsquedas × 2s = 10s máximo (antes ilimitado).
+
+4. **Top 2 patterns en vez de 3** en `findPickingByTracking` para
+   recortar tiempo en el peor caso.
+
+**Resultado esperado**
+- Scans inválidos: ~0ms (antes 3-5s).
+- Scans válidos en índice: 0ms (sin cambios).
+- Scans válidos que caen a Odoo: 1-3s máximo (antes 3-7s).
+- Concurrencia: el event loop ya no se satura porque las búsquedas
+  no acumulan tiempo. El proxy Railway deja de dar 502.
+
+**Archivos**:
+- `server.js` (findPickingByTracking, executeWithTimeout, fast path,
+  negative cache)
+- `public/sw.js` (cache bump a fast-fail)
+- `FIXES-LOG.md` (esta entrada)
+
+**Lección**:
+- Toda búsqueda externa (Odoo XML-RPC, Sendcloud API, etc.) debe
+  tener timeout corto. Sin timeout → bloqueo del event loop bajo
+  carga concurrente.
+- Negative-lookup cache es valiosísimo en flujos donde se escanean
+  muchos códigos basura (ej. operario escanea el código de la
+  factura en lugar del tracking).
+- Antes de ir a Odoo, gastar 0ms verificando shape básico del input
+  evita gastar 3-5s en un input que claramente no es válido.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío

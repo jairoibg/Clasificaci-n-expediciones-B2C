@@ -724,28 +724,36 @@ class OdooClient {
     });
   }
 
+  // Wrapper con timeout para que las búsquedas Odoo lentas no bloqueen el proceso
+  async executeWithTimeout(model, method, args, kwargs = {}, timeoutMs = 3000) {
+    return Promise.race([
+      this.execute(model, method, args, kwargs),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('odoo-timeout')), timeoutMs))
+    ]);
+  }
+
   async findPickingByTracking(tracking) {
     const t0 = Date.now();
     try {
-      // 1. Exact match (most common case, fast)
-      let pickings = await this.execute('stock.picking', 'search_read', [[['carrier_tracking_ref', '=', tracking]]], {
+      // 1. Exact match (most common case, fast) — 3s timeout
+      let pickings = await this.executeWithTimeout('stock.picking', 'search_read', [[['carrier_tracking_ref', '=', tracking]]], {
         fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1
-      });
+      }, 3000).catch(e => { console.warn('   ⏱️ Odoo exact timeout (' + e.message + ')'); return []; });
       if (pickings.length > 0) { console.log('   🔍 Odoo exact match: ' + (Date.now()-t0) + 'ms'); return pickings[0]; }
 
-      // 2. ilike with full barcode
-      pickings = await this.execute('stock.picking', 'search_read', [[['carrier_tracking_ref', 'ilike', tracking]]], {
+      // 2. ilike with full barcode — 2s timeout
+      pickings = await this.executeWithTimeout('stock.picking', 'search_read', [[['carrier_tracking_ref', 'ilike', tracking]]], {
         fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1
-      });
+      }, 2000).catch(e => { console.warn('   ⏱️ Odoo ilike timeout'); return []; });
       if (pickings.length > 0) { console.log('   🔍 Odoo ilike match: ' + (Date.now()-t0) + 'ms'); return pickings[0]; }
 
-      // 3. Pattern matching - LIMITADO a top 3 patrones para evitar 10+ calls en cascada
-      const patterns = this.extractTrackingPatterns(tracking).slice(0, 3);
+      // 3. Pattern matching - LIMITADO a top 2 patrones (antes 3) y timeout 2s cada uno
+      const patterns = this.extractTrackingPatterns(tracking).slice(0, 2);
       for (const pattern of patterns) {
         if (pattern.length >= 7) {
-          pickings = await this.execute('stock.picking', 'search_read', [
+          pickings = await this.executeWithTimeout('stock.picking', 'search_read', [
             [['carrier_tracking_ref', 'ilike', pattern], ['state', '=', 'done'], ['picking_type_code', '=', 'outgoing']]
-          ], { fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 10 });
+          ], { fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 10 }, 2000).catch(e => { console.warn('   ⏱️ Odoo pattern timeout'); return []; });
           if (pickings.length > 0) {
             const best = pickings.reduce((a, b) => {
               const cleanUpper = tracking.toUpperCase();
@@ -1054,9 +1062,74 @@ function overrideCarrier(carrier, tracking) {
   return carrier;
 }
 
+// Caché de NEGATIVE LOOKUPS: trackings que ya sabemos que no existen en Odoo.
+// Evita repetir búsquedas costosas (3-5s) cuando el mismo tracking se escanea
+// varias veces o cuando varios operarios prueban trackings inválidos.
+// TTL 5 min para que después del próximo sync se reintente.
+const negativeLookupCache = new Map(); // tracking → timestamp
+const NEGATIVE_LOOKUP_TTL_MS = 5 * 60 * 1000;
+
+function isNegativeCached(tracking) {
+  const ts = negativeLookupCache.get(tracking);
+  if (!ts) return false;
+  if (Date.now() - ts > NEGATIVE_LOOKUP_TTL_MS) {
+    negativeLookupCache.delete(tracking);
+    return false;
+  }
+  return true;
+}
+
+function cacheNegativeLookup(tracking) {
+  // Limpiar entradas viejas si el cache crece mucho (>10k entries)
+  if (negativeLookupCache.size > 10000) {
+    const cutoff = Date.now() - NEGATIVE_LOOKUP_TTL_MS;
+    for (const [k, v] of negativeLookupCache) {
+      if (v < cutoff) negativeLookupCache.delete(k);
+    }
+  }
+  negativeLookupCache.set(tracking, Date.now());
+}
+
+// ¿El tracking tiene algún prefijo/formato CONOCIDO de carrier?
+// Si no, no tiene sentido buscar en Odoo (devolvemos rápido NO_ENCONTRADO).
+function hasKnownCarrierShape(clean) {
+  if (!clean) return false;
+  // Prefijos directos
+  if (/^(PK|MI|Z89|6C20|6C16|H103|6A|LS|LX|LV|LT|3[A-Z]|CP|Z96|XSMT|0008|0626|CTT|EA|C0|9300500)/.test(clean)) return true;
+  // 8 dígitos exactos → INPOST candidato
+  if (/^\d{8}$/.test(clean)) return true;
+  // Barcodes numéricos largos (típico GS1) → SPRING/CTT/INPOST embebido
+  if (clean.length >= 10 && /^\d+$/.test(clean)) return true;
+  // ES...CCE (GLS QR)
+  if (/ES[A-Z]\d{2}[A-Z0-9]{5}[A-Z]{2,3}/.test(clean)) return true;
+  // Letras de tracking típicas tipo 2-3 letras + 9+ dígitos
+  if (/^[A-Z]{1,3}\d{8,}/.test(clean)) return true;
+  return false;
+}
+
 async function getCarrierFromTracking(tracking) {
   const startTime = Date.now();
   const clean = tracking.trim().toUpperCase();
+
+  // FAST PATH 1: caché de negative lookups
+  if (isNegativeCached(clean)) {
+    console.log('   ⚡ Negative cache hit: ' + clean.slice(0, 20) + '... (' + (Date.now() - startTime) + 'ms)');
+    return { carrier: null, picking: null, source: 'negative-cache' };
+  }
+
+  // FAST PATH 2: si no tiene shape conocido + no está en índice + no en cache, no ir a Odoo
+  // Comprobamos primero si está en índice (rápido); si no, comprobamos shape
+  const inIdx = trackingIndex && (
+    (trackingIndex.byTracking && trackingIndex.byTracking[clean]) ||
+    (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[clean.replace(/[^A-Z0-9]/g, '')])
+  );
+  const inCache = findInSendcloudCache(clean);
+  if (!inIdx && !inCache && !hasKnownCarrierShape(clean.replace(/[^A-Z0-9]/g, ''))) {
+    cacheNegativeLookup(clean);
+    console.log('   ⚡ No carrier shape + no en índice: ' + clean.slice(0, 20) + ' (' + (Date.now() - startTime) + 'ms)');
+    return { carrier: null, picking: null, source: 'no_shape' };
+  }
+
 
   // Extraer patrones especiales (GLS QR)
   const extracted = extractSpecialPatterns(clean);
@@ -1234,7 +1307,11 @@ async function getCarrierFromTracking(tracking) {
     // 2. Buscar en Odoo
     console.log('   🔍 No en índice, buscando en Odoo...');
     picking = await odooClient.findPickingByTracking(clean);
-    if (!picking) return { carrier: null, picking: null, source: 'not_found' };
+    if (!picking) {
+      // Cachear negativo para evitar repetir esta búsqueda lenta en los próximos 5 min
+      cacheNegativeLookup(clean);
+      return { carrier: null, picking: null, source: 'not_found' };
+    }
     odooTracking = picking.carrier_tracking_ref;
     console.log('   📍 Tracking Odoo: ' + odooTracking);
   }
