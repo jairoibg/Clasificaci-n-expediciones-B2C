@@ -1,0 +1,303 @@
+# Reglas y modificaciones por transportista
+
+> **Documento vivo**. Por cada transportista: reglas de detección y matching
+> vigentes + historial cronológico de cambios. Complementa a `FIXES-LOG.md`
+> (cronológico general).
+
+---
+
+## ⚠️ Instrucción permanente para el agente
+
+**Cada vez que se modifique una regla de detección, matching, override,
+fast-path, sliding window, integración Sendcloud/Odoo o flujo de un
+transportista, hay que:**
+
+1. Actualizar la sección "Reglas vigentes" del transportista afectado
+   (o las que cambien — pueden ser varias).
+2. Añadir una entrada nueva en "Historial" del transportista con:
+   - Fecha
+   - Síntoma / motivo del cambio
+   - Qué se modificó (regla nueva, regla eliminada, prioridad cambiada…)
+   - Commit hash (corto)
+   - Referencia al fix correspondiente en FIXES-LOG.md
+3. **Informar explícitamente al usuario** en la respuesta: "He actualizado
+   CARRIER-RULES.md con el cambio en \<transportista\>".
+
+Esto NO sustituye a FIXES-LOG.md, lo complementa. FIXES-LOG es cronológico
+de bugs y fixes; CARRIER-RULES es vista por carrier para entender el estado
+actual y la evolución de cada uno.
+
+---
+
+## Índice
+
+- [ASENDIA](#asendia)
+- [CORREOS](#correos)
+- [CORREOS EXPRESS (MIKA)](#correos-express-mika)
+- [CTT](#ctt)
+- [GLS](#gls)
+- [INPOST](#inpost)
+- [SPRING](#spring)
+
+---
+
+## ASENDIA
+
+### Identificadores y formatos
+
+- **Prefijos directos**: `6C20`, `6C16`, `H103` (variante nueva), `LS\d{9}[A-Z]{2}` (subset específico)
+- **Carrier Sendcloud**: `asendia`
+- **Carrier Odoo (nombre)**: `Asendia` (genérico) / suele venir como `Correos - SC - Gold`
+- **Formato barcode físico**: 13 chars (`6C20XXXXXXXXX`) o GS1-128 largo con `6C20`
+  embebido (típicamente `%xxxxx6C20XXXXXXXXX xxxxx` con prefijos AI GS1).
+
+### Reglas vigentes (detección)
+
+1. **Prefijo directo**: `^6C20`, `^6C16`, `^H103` (todos → ASENDIA en `/api/odoo-outs` y `findInTrackingIndex`)
+2. **Prefijo `^LS\d{9}[A-Z]{2}$`**: variante específica que es ASENDIA (no SPRING)
+3. **Patrón embebido en GS1**: `extractAsendiaTracking` extrae substring `6C20\d{9}` o `6C16\d{9}` de barcodes largos (`extractSpecialPatterns` lo invoca)
+4. **Match exacto en índice** por `byCarrier['ASENDIA']`
+5. **Override**: `^H103` matchea a ASENDIA aunque venga como SPRING (los `H103*` largos son ASENDIA)
+6. **Shape check (fast-fail)**: `(6C20|6C16|H103\d{4})` embebido en string ≥12 chars → pasa el guard y NO se rechaza como `no_shape`
+
+### Matching Sendcloud↔Odoo
+
+- **Solo match exacto**. ASENDIA tiene mismatch sistemático entre tracking
+  Sendcloud y barcode físico (identificadores distintos). Substring matching
+  causaba falsos positivos.
+- Si está en Odoo con `carrier_tracking_ref = 6C20…` y Sendcloud tiene el
+  mismo string, match. Si no, queda en `byOdooTracking` por el prefijo.
+
+### Historial de cambios
+
+| Fecha | Cambio | Commit | Fix |
+|---|---|---|---|
+| 2026-04-15 | Matching ASENDIA via tracking-index (Odoo→Sendcloud cruzado en el sync) | `8a72788` | — |
+| 2026-04-22 | Prefix matching para barcodes con último dígito mismatch (escáneres a veces fallan en el último carácter) | `ca4cf2b` | — |
+| 2026-04-28 | Eliminado substring matching ASENDIA en el sync (falsos positivos: el tracking Sendcloud y el barcode físico son IDs distintos) | (fix cascade) | — |
+| 2026-05-22 | Override `^H103` → ASENDIA (los pedidos `H103*` se clasificaban como SPRING por error) | `e43f7bb` | #004b |
+| 2026-05-22 | `extractAsendiaTracking` añadido al cascade de `extractSpecialPatterns` para barcodes GS1 largos | — | — |
+| 2026-05-26 | **#027**: shape check del fast-fail (#026) rechazaba barcodes ASENDIA GS1 (`%…6C20…`). Añadida regla `(6C20\|6C16\|H103\d{4})` en `hasKnownCarrierShape` para barcodes ≥12 chars con patrón embebido | `dd613dc` | #027 |
+
+---
+
+## CORREOS
+
+### Identificadores y formatos
+
+- **Prefijos directos**: `PK` (estándar), `C0` (variante antigua)
+- **Carrier Sendcloud**: `correos`
+- **Carrier Odoo (nombre)**: `Correos`
+- **Formato típico**: `PK7L7Hxxxxxxxxxxxxxxxxx` (23 chars) o `PK7L7Fxxxxxxxxxxxxxxxxx`
+
+### Reglas vigentes (detección)
+
+1. **Prefijo directo**: `^PK` y `^C0` → CORREOS
+2. **Detección por carrier_id Odoo**: nombre contiene "Correos" u "Ordinario" → CORREOS
+3. **Match exacto en índice** por `byCarrier['CORREOS']`
+4. **NO usar** "Correos genérico" del campo `carrier_id` para clasificación
+   prioritaria; los prefijos van primero (porque Odoo etiqueta muchos envíos
+   con "Correos - SC - Gold" que en realidad son de Sendcloud para varios
+   carriers, no necesariamente CORREOS).
+
+### Historial de cambios
+
+| Fecha | Cambio | Commit | Fix |
+|---|---|---|---|
+| 2026-05-20 | Reordenar prioridad en `/api/odoo-outs`: prefijos primero, luego índice, luego nombre Odoo (antes el nombre Odoo se evaluaba primero y casi todo daba "CORREOS" por el genérico Sendcloud) | `e4fa163` | #001 |
+| 2026-05-22 | Match exacto en índice usando `byCarrier['CORREOS']` | — | — |
+
+---
+
+## CORREOS EXPRESS (MIKA)
+
+### Identificadores y formatos
+
+- **Prefijos directos**: `MI` (etiquetas antiguas), `9300500` (23 dígitos, barcode CRX moderno)
+- **Carrier Sendcloud**: `correos_express` o `correos_express_es` (genérico, casi nunca presente porque CRX **no usa Sendcloud** para etiquetas)
+- **Carrier Odoo (nombre)**: `MIKA` (integración directa Odoo↔CRX, NO vía Sendcloud)
+- **Formato barcode físico**: `93005001313XXXXXXXXXXXXXXX` (23 dígitos)
+- **Campo `note` del picking**: contiene el "ID del pedido" (10-16 dígitos, típico Shopify order id, e.j. `8954434852216`) — IMPRESO en la etiqueta junto al barcode
+
+### Reglas vigentes (detección)
+
+1. **Prefijo directo**: `^MI` y `^9300500` → CORREOS EXPRESS (override fuerte en `overrideCarrier`)
+2. **Detección por carrier_id Odoo**: `carrier_id` empieza por `MI` (MIKA) → CORREOS EXPRESS
+3. **Sliding INPOST tiene guard**: si el barcode tiene prefijo `9300500`, NO se aplica el sliding INPOST de 8 dígitos (evita falso positivo INPOST sobre barcode CRX)
+4. **Sync indexa pickings sin tracking**: pickings con `carrier_id MIKA` y `carrier_tracking_ref` vacío entran en `trackingIndex.pendingCrx` para ser buscables por nº de pedido
+5. **Índice nuevo `byCrxOrderId`**: el campo `note` se parsea (regex `\d{10,16}`) y se indexa. Permite buscar el pedido por el "ID del pedido" impreso en la etiqueta cuando MIKA aún no ha registrado el tracking físico en Odoo
+6. **Endpoint `/api/scan` con CRX no encontrado**: si el barcode matchea `^9300500\d` y no se encuentra en Odoo, devuelve `error: 'CRX_NO_SINCRONIZADO'` (no `NO_ENCONTRADO`), con mensaje específico que invita a tipear el ID del pedido
+
+### Matching Sendcloud↔Odoo
+
+- **NO hay matching con Sendcloud** porque CRX no genera etiquetas vía Sendcloud. La integración es directa Odoo↔CRX vía módulo MIKA.
+- MIKA actualiza `carrier_tracking_ref` en Odoo con delay (horas tras imprimir la etiqueta), de ahí los `pendingCrx`.
+
+### Historial de cambios
+
+| Fecha | Cambio | Commit | Fix |
+|---|---|---|---|
+| 2026-05-22 | Añadido prefijo `^9300500` (23 dígitos) además de `^MI`. Antes solo `MI` y los CRX modernos no se detectaban | `e43f7bb` | #004b |
+| 2026-05-25 | Sync incluye pickings MIKA `waiting` sin tracking → `trackingIndex.pendingCrx` (para buscar por nº pedido / cliente) | `b09b048` | #025 |
+| 2026-05-25 | Endpoint `/api/scan` devuelve `CRX_NO_SINCRONIZADO` cuando matchea `^9300500\d` y no hay picking, con mensaje útil | `b09b048` | #025 |
+| 2026-05-25 | **Vínculo via `note` (ID del pedido)**: nueva regla `extractCrxOrderId(note)` extrae `\d{10,16}` del campo HTML, y `byCrxOrderId` lo indexa O(1). `/api/search-client` detecta inputs numéricos 10-15 dígitos y los busca aquí | `e7a63dc` | #025 |
+| 2026-05-25 | Indexación extendida: también pickings con `carrier_id="Correos"` (no MIKA) si su `note` contiene el ID externo CRX (caso DF122521SF donde la etiqueta era CRX pero Odoo decía "Correos") | `3e65bf1` | #025 |
+
+---
+
+## CTT
+
+### Identificadores y formatos
+
+- **Prefijos directos**: `CTT`, `EA`
+- **Carrier Sendcloud**: `ctt` / `ctt_express`
+- **Formato típico**: Odoo guarda solo los últimos dígitos (`4347080`), Sendcloud tiene el barcode completo (`00030100030197014347080`)
+
+### Reglas vigentes (detección)
+
+1. **Prefijo directo**: `^CTT` y `^EA` → CTT
+2. **Match en sync**: tracking Sendcloud `endsWith` tracking Odoo, o `includes` (≥7 chars)
+3. **Substring matching ELIMINADO** del scan en tiempo real (causaba falsos positivos: barcode CTT corto matcheaba muchos otros)
+
+### Historial de cambios
+
+| Fecha | Cambio | Commit | Fix |
+|---|---|---|---|
+| 2026-04-10 | Match por substring (sendcloud completo contiene odoo corto) | `4cb3f7f` (rev) | — |
+| 2026-04-12 | Eliminado partial substring matching CTT que causaba falsos positivos en cobertura | `4cb3f7f` | — |
+| 2026-04-15 | Match solo en el sync (`endsWith` o `includes` con `length ≥ 7`), no en scan tiempo real | — | — |
+
+---
+
+## GLS
+
+### Identificadores y formatos
+
+- **Prefijos directos**: `Z89`
+- **Carrier Sendcloud**: `gls` / `gls_es`
+- **Formato típico**:
+  - Tracking limpio: `Z89XXXXX` (8 chars, ej. `Z89TJVNX`)
+  - QR escaneable contiene: `ESxxxxxxxxxxxxCCExxxx` con tracking embebido
+  - SSCC barcode contiene: `00340014240000Z89TJVNX` (Z89 embebido tras prefijo numérico)
+
+### Reglas vigentes (detección)
+
+1. **Prefijo directo**: `^Z89` → GLS
+2. **Patrón QR**: `extractSpecialPatterns` matchea `ES([A-Z][0-9]{2}[A-Z0-9]{5})[A-Z]{2,3}` → carrier GLS + patrón extraído
+3. **Sliding `Z89` en SSCC/barcodes largos**: busca `Z89` en cualquier posición; si encuentra y los siguientes 5 chars son alfanuméricos, extrae el `Z89XXXXX` como candidato
+4. **Shape check (fast-fail)**: `Z89[A-Z0-9]{5}` embebido en string ≥12 chars → pasa el guard
+5. **Match exacto** en índice por `byCarrier['GLS']`
+6. **Frontend `localLookup`** tiene sliding GLS específico (cliente 0ms)
+
+### Historial de cambios
+
+| Fecha | Cambio | Commit | Fix |
+|---|---|---|---|
+| 2026-05-22 | Sliding window `Z89` en SSCC: GLS embebido tras prefijo numérico se detectaba mal. Añadido sliding que busca `Z89` en cualquier posición | `c199644` | #017 |
+| 2026-05-22 | Frontend `localLookup` con sliding GLS para match 0ms en cliente | `c199644` | #017 |
+| 2026-05-26 | Shape check incluye `Z89[A-Z0-9]{5}` embebido para no rechazar SSCC en fast-fail | `dd613dc` | #027 |
+
+---
+
+## INPOST
+
+### Identificadores y formatos
+
+- **Prefijos directos**: 8 dígitos exactos (`\d{8}`), o subset con prefijos posicionales `04|81|83 + 6 dígitos`
+- **Carrier Sendcloud**: `inpost` / `inpost_es` / `inpost_spain`
+- **Formato típico**:
+  - Tracking corto: 8 dígitos (ej. `83299791`)
+  - Barcode largo: contiene los 8 dígitos embebidos en posición variable (ej. `130486133001010401330148898` → tracking `04861330` en pos 2-10)
+
+### Reglas vigentes (detección)
+
+1. **Match directo**: `^\d{8}$` → INPOST (override fuerte)
+2. **Sliding window 8 dígitos**: `extractInpostTracking` prueba todas las ventanas de 8 dígitos consecutivos del barcode y verifica si alguna existe en el índice INPOST (O(1) hash lookup)
+3. **GUARD SPRING (crítico)**: si el barcode matchea `looksLikeSpringBarcode` (`/0626\d{8,}/` o `/0008\d{8,}/`), NO se aplica sliding INPOST. Evita falsos positivos donde un barcode SPRING contiene 8 dígitos consecutivos que casualmente coinciden con un tracking INPOST
+4. **Override en `overrideCarrier`**: si barcode largo contiene una subcadena que matchea un INPOST conocido, fuerza INPOST (también con guard SPRING)
+5. **Fallback posicional**: si no hay match en índice, verifica `^(04|81|83)\d{6}$` como heurística
+6. **Eliminado el fallback legacy** de `substring(2,10)` (causaba falsos positivos en CRX 23 dígitos)
+7. **Frontend `localLookup`** tiene sliding INPOST 8 dígitos (cliente 0ms) **CON GUARD SPRING también aplicado**
+
+### Historial de cambios
+
+| Fecha | Cambio | Commit | Fix |
+|---|---|---|---|
+| 2026-05-20 | Sliding window de 8 dígitos para INPOST embebido en barcodes largos | — | — |
+| 2026-05-22 | Eliminado fallback legacy `substring(2,10)` que provocaba falsos positivos en CRX 23 dígitos (`93005001313132701335831` → `00500131` causaba búsquedas Odoo 10s) | `e43f7bb` | #020 |
+| 2026-05-25 | **GUARD SPRING**: si barcode tiene patrón SPRING (`0626…` o `0008…` ≥18 chars), NO hacer sliding INPOST. Casos `DF1289908EU` y `DF1290868EU` se clasificaban como INPOST por colisión accidental de 8 dígitos | `5b73ee0` | #024 |
+| 2026-05-25 | Frontend `localLookup`: mismo guard SPRING + sliding SPRING añadido ANTES del sliding INPOST | `5b73ee0` | #024 |
+
+---
+
+## SPRING
+
+### Identificadores y formatos
+
+- **Prefijos directos**: `6A`, `LS` (general), `LX`, `LV`, `LT`, `3[A-Z]`, `CP`, `Z96`, `XSMT`, `0008`, `0626` (en sufijo numérico de barcode)
+- **Carrier Sendcloud**: `spring` / `spring_gds`
+- **Formato típico**:
+  - Tracking corto: `LX012345678NL`, `LS236513775CH`, `6A05138202272`, `3UW1VTI174109`, `H1023311157599001018`, `CP456787465IE`, etc.
+  - Barcode GS1-128 largo: contiene `0626` o `0008` seguido de tracking embebido de 12-16 chars
+  - Ejemplo: `%000542106265024593998328040` → extraer `06265024593998` (14 chars desde `0626`)
+
+### Reglas vigentes (detección)
+
+1. **Prefijos directos**: `^LS|^LX|^LV|^LT|^3[A-Z]|^CP|^Z96|^XSMT|^0008|^0626` y `^6A` → SPRING
+2. **EXCEPCIÓN `^LS\d{9}[A-Z]{2}$`**: este patrón específico es **ASENDIA**, no SPRING (regla evaluada ANTES del patrón general LS)
+3. **EXCEPCIÓN `^H103`**: aunque a veces llega como SPRING en Odoo, el `overrideCarrier` lo fuerza a ASENDIA
+4. **`looksLikeSpringBarcode(clean)`**: helper compartido (server + frontend). Detecta `\d+` length ≥18 que contiene `0626\d{8,}` o `0008\d{8,}`. Se usa como guard ANTES del sliding INPOST y en el sliding SPRING del frontend
+5. **`extractSpecialPatterns`** extrae substrings 12-16 chars desde la posición de `0626`/`0008` en barcodes largos numéricos
+6. **Sliding SPRING en frontend `localLookup`**: añadido en #024. Prueba substrings 12-16 chars desde `0626`/`0008` ANTES de intentar sliding INPOST
+7. **Sync match patterns**: SPRING usa `endsWith` o `includes` para match Sendcloud↔Odoo (los IDs Sendcloud y Odoo a veces son distintos)
+8. **NO partial substring matching** en el sync para SPRING corto (eliminado en `fb67a20`, causaba falsos positivos donde sufijos cortos pillaban muchos pedidos)
+9. **Shape check (fast-fail)**: `0626\d{8}` u `0008\d{8}` embebido en string ≥12 chars → pasa el guard
+
+### Historial de cambios
+
+| Fecha | Cambio | Commit | Fix |
+|---|---|---|---|
+| 2026-04-20 | Eliminado partial substring matching SPRING en sync (causaba falsos positivos en pedidos cortos) | `fb67a20` | — |
+| 2026-05-22 | Añadido `^H103` como override SPRING→ASENDIA (los H103 largos son ASENDIA, no SPRING) | `e43f7bb` | #004b |
+| 2026-05-25 | **`looksLikeSpringBarcode`** helper (`/0626\d{8,}/` o `/0008\d{8,}/`, length ≥18). Usado como GUARD en sliding INPOST de `extractInpostTracking` y `overrideCarrier` | `5b73ee0` | #024 |
+| 2026-05-25 | Frontend `localLookup`: nuevo sliding SPRING (substrings 12-16 chars desde `0626`/`0008`) que corre ANTES del sliding INPOST, para match exacto en cliente 0ms | `5b73ee0` | #024 |
+| 2026-05-26 | Shape check del fast-fail acepta `(0626\|0008)\d{8}` embebido en strings ≥12 chars (no descarta barcodes SPRING como `no_shape`) | `dd613dc` | #027 |
+
+---
+
+## Reglas transversales (no específicas de un carrier)
+
+### `findInTrackingIndex` (server)
+Cascade de búsqueda al detectar carrier de un tracking:
+1. Match exacto en `byTracking` y `byOdooTracking`
+2. INPOST extraído (con guard SPRING) — PASO 2.6
+3. CTT/SPRING formato largo (con guard cross-contamination)
+4. Búsqueda exacta por carrier
+5. Búsqueda inversa SPRING (`endsWith`)
+6. ASENDIA prefijo (substring)
+
+### `overrideCarrier`
+Aplicado a TODO carrier detectado para forzar correcciones:
+1. `^9300500` → CORREOS EXPRESS
+2. `^H103 && carrier==='SPRING'` → ASENDIA
+3. `^\d{8}$` → INPOST
+4. Barcode largo numérico con INPOST en índice → INPOST (con guard SPRING)
+
+### `hasKnownCarrierShape` (fast-fail #026 + #027)
+Decide si un input vale la pena buscar en Odoo:
+- Prefijos directos: `^(PK|MI|Z89|6C20|6C16|H103|6A|LS|LX|LV|LT|3[A-Z]|CP|Z96|XSMT|0008|0626|CTT|EA|C0|9300500)`
+- 8 dígitos exactos: `^\d{8}$`
+- Barcode numérico largo: `length≥10 && /^\d+$/`
+- GLS QR: `ES[A-Z]\d{2}[A-Z0-9]{5}[A-Z]{2,3}`
+- Letras+dígitos típicos: `^[A-Z]{1,3}\d{8,}`
+- **Patrón embebido**: `length≥12 && /(6C20|6C16|Z89[A-Z0-9]{5}|H103\d{4}|0626\d{8}|0008\d{8})/`
+
+### `negativeLookupCache`
+TTL 5 min, max 10k entries. Trackings que ya buscamos en Odoo sin encontrar
+nada se cachean para no repetir la búsqueda costosa.
+
+### Timeouts Odoo (`executeWithTimeout`)
+- Exact match: 3s
+- ilike: 2s
+- Pattern matching: 2s × 2 patterns
+- Total máximo por scan que cae a Odoo: ~9s
