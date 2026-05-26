@@ -31,6 +31,7 @@ actual y la evolución de cada uno.
 
 ## Índice
 
+- [AMAZON](#amazon)
 - [ASENDIA](#asendia)
 - [CORREOS](#correos)
 - [CORREOS EXPRESS (MIKA)](#correos-express-mika)
@@ -38,6 +39,38 @@ actual y la evolución de cada uno.
 - [GLS](#gls)
 - [INPOST](#inpost)
 - [SPRING](#spring)
+
+---
+
+## AMAZON
+
+### Identificadores y formatos
+
+- **Prefijos directos**: `^ES\d{10}$` (ej. `ES2527229735` = "ES" + 10 dígitos, total 12 chars)
+- **Carrier Sendcloud**: `amazon` (confirmado en producción), aliases mapeados: `amazon_shipping`, `amazon_logistics`, `amazon_es`
+- **Carrier Odoo (nombre)**: aparece como `Correos - SC - Gold` (genérico Sendcloud), el carrier real se identifica por `carrier.code` del parcel Sendcloud y por el prefijo `ES\d{10}` del tracking
+- **Formato barcode físico**: barcode y Data Matrix QR con el tracking directo (`ES2527229735`). La etiqueta también muestra como texto: Order ID del pedido (`DF1302508EU`), centro origen (`MAD4`), ruta (`DCT9 / CYCLE_1`), centro destino (`MAD8 / A 133`).
+- **Sin colisión con GLS QR**: el patrón GLS QR es `ES[A-Z]\d{2}[A-Z0-9]{5}[A-Z]{2,3}` (letra+dígitos+alfanuméricos+letras). AMAZON es `ES\d{10}` (solo dígitos). Son mutuamente excluyentes.
+
+### Reglas vigentes (detección)
+
+1. **Prefijo directo**: `^ES\d{10}$` → AMAZON (en `/api/odoo-outs`, `findInTrackingIndex`, sync `if (!foundMatch)`)
+2. **Mapping Sendcloud**: `carrier.code === 'amazon'` → AMAZON
+3. **Detección por nombre Odoo**: `carrier_id.name.includes('AMAZON')` → AMAZON
+4. **Shape check (fast-fail)**: `^ES\d{10}$` pasa el guard (regla dedicada antes del fallback de barcode numérico largo)
+5. **Match exacto** en índice por `byCarrier['AMAZON']`
+6. **Frontend `localLookup` sliding**: si el escáner devuelve datos extra alrededor del QR (caso poco probable pero defensivo), extrae el patrón `ES\d{10}` con `match()` y busca en el índice cliente
+
+### Matching Sendcloud↔Odoo
+
+- **Match exacto** del `tracking_number` Sendcloud con `carrier_tracking_ref` Odoo. Confirmado en producción: el pedido `DF1302508EU` tiene `carrier_tracking_ref = 'ES2527229735'` en Odoo y el mismo `tracking_number` en Sendcloud (`carrier.code = 'amazon'`).
+- Sendcloud SÍ es la fuente de etiquetas Amazon (a diferencia de CRX/MIKA que usa integración directa). El sync normal funciona.
+
+### Historial de cambios
+
+| Fecha | Cambio | Commit | Fix |
+|---|---|---|---|
+| 2026-05-26 | **Nuevo carrier AMAZON añadido al sistema**. Mapping Sendcloud (`amazon` y aliases), array `CARRIERS`, `detectCarrierFromOdooName`, `hasKnownCarrierShape`, prefijo en `/api/odoo-outs` y `sync-full.js`, `byCarrier.AMAZON`, color frontend (negro+naranja Amazon `#232f3e`+`#ff9900`), sliding `ES\d{10}` en `localLookup`. Verificado con `DF1302508EU` (tracking `ES2527229735`) | _pendiente commit_ | #028 |
 
 ---
 

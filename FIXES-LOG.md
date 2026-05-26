@@ -1132,6 +1132,70 @@ sigue bloqueada por fast-fail.
 
 ---
 
+### #028 · Nuevo carrier AMAZON (Amazon Logistics ES vía Sendcloud)
+
+**Síntoma / Necesidad**
+Operaciones añade Amazon como nuevo transportista en Sendcloud.
+Necesario: que la app reconozca etiquetas Amazon, las clasifique
+como carrier `AMAZON` propio (no `OTHER`), y que el sync indexe
+los pedidos correctamente para que los operarios puedan leerlos
+desde la app.
+
+**Datos verificados en producción** (vía `/api/diag-tracking`)
+Pedido ejemplo: `DF1302508EU` (Arnau Trujols, Barcelona).
+- `carrier_tracking_ref` Odoo: `ES2527229735`
+- `carrier_id` Odoo: `Correos - SC - Gold` (genérico Sendcloud)
+- Sendcloud `carrier.code`: `"amazon"`
+- Sendcloud `shipment.name`: `"Amazon ES Shipping One-Day Tracked (Off Amazon) 0-15kg"`
+- Etiqueta física: barcode + QR principal con `ES2527229735` (12 chars: `ES` + 10 dígitos), Order ID en texto `DF1302508EU`, centro `MAD4`, ruta `DCT9/CYCLE_1`, destino `MAD8/A 133`.
+
+**Cambios desplegados**
+
+`server.js`:
+- `SENDCLOUD_CARRIER_MAP`: añadidas claves `amazon`, `amazon_shipping`, `amazon_logistics`, `amazon_es` → `'AMAZON'`
+- `CARRIERS = ['AMAZON', 'ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST', 'SPRING']`
+- `detectCarrierFromOdooName`: añadido `n.includes('AMAZON') → 'AMAZON'`
+- `hasKnownCarrierShape`: nueva regla `^ES\d{10}$ → true` (antes que el barcode numérico largo)
+- `/api/odoo-outs` listado de prefijos: `else if (/^ES\d{10}$/.test(t)) carrier = 'AMAZON'`
+- `/api/diag-tracking` etiquetas de prefix: añadida `AMAZON (ES + 10 dígitos)`
+
+`sync-full.js`:
+- `CARRIER_MAP`: añadidos aliases Amazon
+- `sendcloudByCarrier.AMAZON = []`
+- `trackingIndex.byCarrier.AMAZON = {}`
+- Detector de prefijos fallback: `else if (/^ES\d{10}$/.test(t)) detectedCarrier = 'AMAZON'`
+
+`public/index.html`:
+- `CARRIERS` array añade `'AMAZON'` (alfabético al principio)
+- `CARRIER_COLOR.AMAZON`: gradient `linear-gradient(135deg, #232f3e, #ff9900)` (negro+naranja brand Amazon)
+- `localLookup`: nuevo paso 6 con sliding `clean.match(/ES\d{10}/)` que busca el patrón en cualquier posición del barcode escaneado (defensivo por si el QR devuelve datos extra) y solo confirma si `carrier === 'AMAZON'`
+
+`public/sw.js`: cache bumpeado a `expediciones-v3-2026-05-26-amazon`
+
+`CARRIER-RULES.md`: nueva sección dedicada AMAZON con identificadores, reglas, matching y tabla histórica.
+
+**Sin colisión con otros carriers**
+- GLS QR: `ES[A-Z]\d{2}[A-Z0-9]{5}[A-Z]{2,3}` — exige letra después de ES, AMAZON es solo dígitos.
+- Otros prefijos: `PK`, `MI`, `Z89`, `6C20`, `6A`, `LS`, `LX`, etc. — ninguno empieza por `ES`.
+
+**Verificación pendiente**
+Tras deploy + sync, comprobar que `ES2527229735` aparece como `AMAZON` en `/api/detect-carrier/ES2527229735` y que `DF1302508EU` se puede buscar/escanear desde el palet AMAZON.
+
+**Archivos**: `server.js`, `sync-full.js`, `public/index.html`, `public/sw.js`, `CARRIER-RULES.md`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+
+**Lección**:
+- Añadir un carrier nuevo toca **6 ficheros** mínimo. La checklist de
+  carrier-rules.md sirve como guía para no olvidar ningún sitio.
+- Antes de codificar, verificar el `carrier.code` REAL que Sendcloud
+  envía (mapeo asumido `amazon_shipping` resultó ser `amazon` a secas).
+  Usar `/api/diag-tracking/:track?scTrack=1` para confirmar.
+- Verificar también NO colisión de prefijos con carriers existentes
+  (caso GLS QR vs AMAZON: ambos empiezan por `ES`, pero el detalle del
+  patrón los hace mutuamente excluyentes).
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío

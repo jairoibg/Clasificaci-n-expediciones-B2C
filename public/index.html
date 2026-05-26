@@ -1308,7 +1308,7 @@
   <script>
     const DEFAULT_API_URL = window.location.origin;
     let API_URL = localStorage.getItem('apiUrl') || DEFAULT_API_URL;
-    const CARRIERS = ['ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST', 'SPRING'];
+    const CARRIERS = ['AMAZON', 'ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST', 'SPRING'];
     const CARRIER_COLOR = {
       'GLS':             'linear-gradient(135deg, #00b884, #009069)',
       'ASENDIA':         'linear-gradient(135deg, #a78bfa, #7c3aed)',
@@ -1317,6 +1317,7 @@
       'CORREOS EXPRESS': 'linear-gradient(135deg, #fb923c, #ea580c)',
       'INPOST':          'linear-gradient(135deg, #facc15, #eab308)',
       'SPRING':          'linear-gradient(135deg, #e879f9, #c026d3)',
+      'AMAZON':          'linear-gradient(135deg, #232f3e, #ff9900)',
     };
 
     const state = {
@@ -1672,6 +1673,15 @@
         const cand = clean.substring(c620, c620 + 13);
         const match = clientIndex.get(cand);
         if (match) return { ...match, source: 'client-asendia' };
+      }
+
+      // 6. AMAZON sliding (ES + 10 dígitos)
+      // El QR principal de la etiqueta Amazon contiene ES<10 dígitos> (ej. ES2527229735).
+      // En caso de que el escáner devuelva datos extra alrededor, extraemos el patrón.
+      const esMatch = clean.match(/ES\d{10}/);
+      if (esMatch) {
+        const match = clientIndex.get(esMatch[0]);
+        if (match && match.carrier === 'AMAZON') return { ...match, source: 'client-amazon' };
       }
 
       return null;

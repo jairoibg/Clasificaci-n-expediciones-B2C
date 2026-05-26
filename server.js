@@ -64,10 +64,15 @@ const SENDCLOUD_CARRIER_MAP = {
   'inpost_spain': 'INPOST',
   'asendia': 'ASENDIA',
   'asendia_spain': 'ASENDIA',
-  'asendia_es': 'ASENDIA'
+  'asendia_es': 'ASENDIA',
+  // AMAZON: confirmado en producción que Sendcloud envía 'amazon' (no amazon_shipping)
+  'amazon': 'AMAZON',
+  'amazon_shipping': 'AMAZON',
+  'amazon_logistics': 'AMAZON',
+  'amazon_es': 'AMAZON'
 };
 
-const CARRIERS = ['ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST', 'SPRING'];
+const CARRIERS = ['AMAZON', 'ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST', 'SPRING'];
 
 // =============================================
 // CACHÉ SENDCLOUD
@@ -1096,6 +1101,8 @@ function hasKnownCarrierShape(clean) {
   if (!clean) return false;
   // Prefijos directos
   if (/^(PK|MI|Z89|6C20|6C16|H103|6A|LS|LX|LV|LT|3[A-Z]|CP|Z96|XSMT|0008|0626|CTT|EA|C0|9300500)/.test(clean)) return true;
+  // AMAZON: ES seguido de exactamente 10 dígitos (ej. ES2527229735)
+  if (/^ES\d{10}$/.test(clean)) return true;
   // 8 dígitos exactos → INPOST candidato
   if (/^\d{8}$/.test(clean)) return true;
   // Barcodes numéricos largos (típico GS1) → SPRING/CTT/INPOST embebido
@@ -1371,6 +1378,7 @@ function detectCarrierFromOdooName(carrierName) {
   if (n.includes('INPOST') || n.includes('IN POST'))        return 'INPOST';
   if (n.includes('SPRING'))                                  return 'SPRING';
   if (n.includes('ASENDIA'))                                 return 'ASENDIA';
+  if (n.includes('AMAZON'))                                  return 'AMAZON';
   return null;
 }
 
@@ -1833,6 +1841,7 @@ app.get('/api/diag-tracking/:tracking', async (req, res) => {
   else if (/^Z89/.test(clean)) out.prefix = 'GLS (Z89)';
   else if (/^6C20/.test(clean)) out.prefix = 'ASENDIA (6C20)';
   else if (/^H103/.test(clean)) out.prefix = 'ASENDIA (H103)';
+  else if (/^ES\d{10}$/.test(clean)) out.prefix = 'AMAZON (ES + 10 dígitos)';
   else if (/^(0626|0008)/.test(clean)) out.prefix = 'SPRING (0626/0008)';
   else if (/^\d{8}$/.test(clean)) out.prefix = 'INPOST (8 dígitos)';
   else if (/^CTT|^EA/.test(clean)) out.prefix = 'CTT';
@@ -2517,6 +2526,7 @@ app.get('/api/odoo-outs', async (req, res) => {
         else if (/^CTT|^EA/.test(t)) carrier = 'CTT';
         else if (/^C0/.test(t)) carrier = 'CORREOS';
         else if (/^\d{8}$/.test(t)) carrier = 'INPOST';
+        else if (/^ES\d{10}$/.test(t)) carrier = 'AMAZON';
       }
 
       // 2. Lookup exacto en índice (O(1), sin pattern matching costoso)

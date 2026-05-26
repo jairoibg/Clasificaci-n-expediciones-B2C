@@ -48,7 +48,12 @@ const CARRIER_MAP = {
   'inpost_es': 'INPOST',
   'inpost_spain': 'INPOST',
   'asendia': 'ASENDIA',
-  'asendia_spain': 'ASENDIA'
+  'asendia_spain': 'ASENDIA',
+  // AMAZON: confirmado carrier.code='amazon' en Sendcloud (etiquetas Amazon Logistics ES)
+  'amazon': 'AMAZON',
+  'amazon_shipping': 'AMAZON',
+  'amazon_logistics': 'AMAZON',
+  'amazon_es': 'AMAZON'
 };
 
 function normalizeCarrier(carrierCode) {
@@ -310,6 +315,7 @@ async function sync() {
     GLS: [],
     INPOST: [],
     ASENDIA: [],
+    AMAZON: [],
     OTHER: []
   };
 
@@ -376,7 +382,8 @@ async function sync() {
       'CORREOS EXPRESS': {},
       GLS: {},
       INPOST: {},
-      ASENDIA: {}
+      ASENDIA: {},
+      AMAZON: {}
     }
   };
 
@@ -547,6 +554,7 @@ async function sync() {
       else if (/^CTT|^EA/.test(t)) detectedCarrier = 'CTT';
       else if (/^C0/.test(t)) detectedCarrier = 'CORREOS';
       else if (/^\d{8}$/.test(t)) detectedCarrier = 'INPOST';
+      else if (/^ES\d{10}$/.test(t)) detectedCarrier = 'AMAZON';
 
       const odooOnlyData = {
         ...pickingData,
