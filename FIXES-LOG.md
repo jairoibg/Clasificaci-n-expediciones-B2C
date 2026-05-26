@@ -1089,6 +1089,49 @@ Test directo confirmó que `/api/scan` con un tracking inexistente
 
 ---
 
+### #027 · Regresión #026: shape check bloqueaba barcodes ASENDIA/GLS embebidos
+
+**Síntoma**
+Operario reporta `DF1299628EU` (ASENDIA, tracking `6C20883422942`)
+no se reconoce. El pedido SÍ está en el índice — el problema es
+que al escanear el barcode GS1-128 completo (tipo
+`%00077184116C20883422942328040`), la app responde `no_shape`.
+
+**Causa raíz**
+Mi `hasKnownCarrierShape` del fix #026 era demasiado estricta para
+barcodes con patrón EMBEBIDO:
+- No empieza con prefijo conocido (empieza con `00077`)
+- No es 8 dígitos exactos
+- No es 100% numérico (tiene `6C`)
+- No matchea ES…CCE ni `^[A-Z]{1,3}\d{8,}`
+
+→ Fast-path lo descartaba antes de que `extractAsendiaTracking`
+pudiera extraer el `6C20883422942` y matchear en índice.
+
+Mismo problema con GLS (Z89 embebido en SSCC) y ASENDIA H103.
+
+**Solución**
+Añadir 5ª regla al shape check para detectar patrones embebidos
+en barcodes ≥12 chars:
+```js
+if (clean.length >= 12 && /(6C20|6C16|Z89[A-Z0-9]{5}|H103\d{4}|0626\d{8}|0008\d{8})/.test(clean)) return true;
+```
+
+**Verificado**: scans con barcode GS1 ASENDIA y SSCC GLS vuelven
+a detectar el carrier correctamente. Basura genérica (`NUEVABASURA…`)
+sigue bloqueada por fast-fail.
+
+**Archivos**: `server.js`
+**Commit**: `dd613dc`
+
+**Lección**:
+- Cuando se añaden guards/fast-paths, hay que cubrir TODAS las formas
+  válidas. El #026 cubría prefijos pero no embebidos.
+- Tests con barcodes reales (no solo strings cortos) son críticos
+  antes de desplegar fast-fails.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
