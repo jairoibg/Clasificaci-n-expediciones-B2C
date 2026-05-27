@@ -3,6 +3,7 @@ const cors = require('cors');
 const xmlrpc = require('xmlrpc');
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
 const { spawn } = require('child_process');
 let compression;
 try { compression = require('compression'); } catch (e) { console.warn('⚠️ compression not installed'); }
@@ -368,7 +369,15 @@ async function runSync() {
     child.stderr.on('data', (data) => console.error('   ❌ ' + data.toString()));
     child.on('close', (code) => {
       syncInProgress = false;
-      if (code === 0) { console.log('✅ Sync completado'); loadTrackingIndex(); loadSendcloudCache(); resolve(true); }
+      if (code === 0) {
+        console.log('✅ Sync completado');
+        loadTrackingIndex();
+        loadSendcloudCache();
+        // Pre-serializar el índice de escaneo cliente AHORA (no en la 1ª request del día)
+        // para no bloquear el event loop cuando los operarios abren la app por la mañana.
+        try { buildScanningIndexJson(); } catch (e) { console.error('⚠️ Error pre-serializando índice:', e.message); }
+        resolve(true);
+      }
       else { console.log('❌ Sync falló con código ' + code); resolve(false); }
     });
     child.on('error', (err) => { syncInProgress = false; console.error('❌ Error sync:', err.message); resolve(false); });
@@ -1412,8 +1421,41 @@ app.get('/api/index-stats', (req, res) => {
 
 // Índice compacto para escaneo del lado del cliente (0ms matching)
 // Devuelve array compacto [tracking, pickingId, orderRef, clientName, carrier] por entrada
-let scanningIndexCache = null;
 let scanningIndexCacheKey = null;
+let scanningIndexJsonCache = null;   // STRING JSON ya serializado (evita re-serializar 2.4MB en cada request)
+let scanningIndexGzipCache = null;   // BUFFER gzip pre-comprimido (evita gzipear en cada request)
+
+// Construye (UNA vez) el JSON del índice de escaneo cliente, lo cachea como STRING
+// y pre-comprime el gzip. Serializar+comprimir 2.4MB en cada request bloquea el
+// event loop de Node; hacerlo una sola vez tras el sync evita ese bloqueo cuando
+// muchos operarios abren la app a la vez (causa del "Application failed to respond").
+function buildScanningIndexJson() {
+  const etag = '"' + (trackingIndex.lastSync || '0') + '-' + (trackingIndex.matched || 0) + '"';
+  const entries = [];
+  const seen = new Set();
+  function addEntry(tracking, data) {
+    if (!tracking) return;
+    const key = tracking.toUpperCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    entries.push([key, data.pickingId || 0, data.orderRef || '', data.clientName || '', data.carrier || '']);
+  }
+  for (const [t, data] of Object.entries(trackingIndex.byTracking || {})) addEntry(t, data);
+  for (const [t, data] of Object.entries(trackingIndex.byOdooTracking || {})) addEntry(t, data);
+  const result = { lastSync: trackingIndex.lastSync, count: entries.length, entries };
+  scanningIndexJsonCache = JSON.stringify(result);
+  try {
+    scanningIndexGzipCache = zlib.gzipSync(scanningIndexJsonCache, { level: 6 });
+  } catch (e) {
+    scanningIndexGzipCache = null;
+    console.error('⚠️ Error pre-gzip índice:', e.message);
+  }
+  scanningIndexCacheKey = etag;
+  const rawKB = Math.round(scanningIndexJsonCache.length / 1024);
+  const gzKB = scanningIndexGzipCache ? Math.round(scanningIndexGzipCache.length / 1024) : '?';
+  console.log('🧮 Índice de escaneo pre-serializado: ' + entries.length + ' entradas (' + rawKB + ' KB raw / ' + gzKB + ' KB gzip)');
+  return etag;
+}
 
 app.get('/api/scanning-index', (req, res) => {
   const ifNoneMatch = req.headers['if-none-match'];
@@ -1424,54 +1466,28 @@ app.get('/api/scanning-index', (req, res) => {
     return;
   }
 
-  // Reusar caché si el sync no ha cambiado
-  if (scanningIndexCache && scanningIndexCacheKey === etag) {
-    res.setHeader('ETag', etag);
-    res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
-    return res.json(scanningIndexCache);
+  // Servir contenido pre-serializado (no re-serializar/re-comprimir: evita bloquear el event loop).
+  // Si el cache no existe o el sync cambió, regenerarlo una sola vez.
+  if (!scanningIndexJsonCache || scanningIndexCacheKey !== etag) {
+    buildScanningIndexJson();
   }
 
-  const entries = [];
-  const seen = new Set();
+  res.setHeader('ETag', scanningIndexCacheKey);
+  // Caché del navegador 30 min: el índice solo cambia con el sync (cada 30 min).
+  // Tras expirar, el navegador revalida con ETag (304 si no cambió → respuesta instantánea sin body).
+  res.setHeader('Cache-Control', 'public, max-age=1800, must-revalidate');
+  res.type('application/json');
 
-  // Recolectar entradas únicas (por tracking)
-  function addEntry(tracking, data) {
-    if (!tracking) return;
-    const key = tracking.toUpperCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    entries.push([
-      key,
-      data.pickingId || 0,
-      data.orderRef || '',
-      data.clientName || '',
-      data.carrier || ''
-    ]);
+  // Si el cliente acepta gzip y tenemos el buffer pre-comprimido, servirlo directamente
+  // (bypass del middleware compression → cero CPU de compresión por request).
+  const acceptsGzip = (req.headers['accept-encoding'] || '').includes('gzip');
+  if (acceptsGzip && scanningIndexGzipCache) {
+    // El middleware compression no recomprime si Content-Encoding ya está seteado.
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Vary', 'Accept-Encoding');
+    return res.end(scanningIndexGzipCache);
   }
-
-  // byTracking (tracking de Sendcloud)
-  for (const [t, data] of Object.entries(trackingIndex.byTracking || {})) {
-    addEntry(t, data);
-  }
-  // byOdooTracking (tracking de Odoo)
-  for (const [t, data] of Object.entries(trackingIndex.byOdooTracking || {})) {
-    addEntry(t, data);
-  }
-
-  const result = {
-    lastSync: trackingIndex.lastSync,
-    count: entries.length,
-    entries: entries
-  };
-
-  scanningIndexCache = result;
-  scanningIndexCacheKey = etag;
-
-  res.setHeader('ETag', etag);
-  // Caché del navegador 5 minutos: durante ese tiempo el navegador usa la versión local sin red
-  // Después de 5 min hace revalidación con ETag (304 si no cambió)
-  res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
-  res.json(result);
+  res.send(scanningIndexJsonCache);
 });
 
 app.post('/api/reload-index', async (req, res) => {
@@ -2639,7 +2655,12 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log('╚═══════════════════════════════════════════════════════════════╝');
   
   const indexLoaded = loadTrackingIndex();
-  
+  // Pre-serializar el índice de escaneo cliente al arrancar (evita que la 1ª
+  // request del día bloquee el event loop serializando 2.4MB).
+  if (indexLoaded) {
+    try { buildScanningIndexJson(); } catch (e) { console.error('⚠️ Error pre-serializando índice al arrancar:', e.message); }
+  }
+
   try { const uid = await odooClient.authenticate(); console.log('✅ Odoo conectado (UID: ' + uid + ')'); }
   catch (err) { console.log('❌ Error Odoo:', err.message); }
   

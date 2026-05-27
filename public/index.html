@@ -2365,13 +2365,15 @@
         if (clientIndexLoaded) showToast(`⚡ Índice cliente: ${clientIndex.size} trackings`, 'success');
       });
 
-      // Refresh del índice cada 2 minutos para tener los pickings más recientes
-      setInterval(loadClientIndex, 2 * 60 * 1000);
+      // Refresh del índice cada 15 minutos. El índice del servidor solo cambia
+      // con el sync (cada 30 min), así que refrescar más a menudo solo añade
+      // carga innecesaria. Además el ETag devuelve 304 si no cambió (sin re-descargar).
+      setInterval(loadClientIndex, 15 * 60 * 1000);
 
-      // Keep-alive: ping cada 30s para evitar cold starts del servidor Railway
+      // Keep-alive: ping cada 60s para evitar cold starts del servidor Railway
       setInterval(() => {
         fetch(`${API_URL}/api/health`, { cache: 'no-store' }).catch(() => {});
-      }, 30000);
+      }, 60000);
     }
     init();
   </script>

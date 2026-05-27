@@ -1196,6 +1196,64 @@ Tras deploy + sync, comprobar que `ES2527229735` aparece como `AMAZON` en `/api/
 
 ---
 
+### #029 · "Application failed to respond" intermitente: serialización del índice bloqueaba el event loop
+
+**Síntoma**
+Operarios reportan error recurrente "Application failed to respond"
+(página de error de Railway) al leer pedidos, sobre todo por la
+mañana. No es con un pedido concreto. Casos: KA296911, KA296372,
+KA296361 (los 3 SÍ están en el índice, 0-2ms).
+
+**Diagnóstico** (vía token Railway + curl a producción)
+- Health check `/api/health`: 0.5s (servidor vivo).
+- Deployment: SUCCESS, sin reinicios → NO es crash ni OOM.
+- Logs: muchos `Odoo exact timeout` pero la app no muere.
+- **`/api/scanning-index`: 2.4 MB, 1.57s.** ← clave.
+- El endpoint cacheaba el OBJETO pero `res.json()` **re-serializaba
+  los 2.4 MB en CADA request**. `JSON.stringify` de un objeto grande
+  es SÍNCRONO y **bloquea el event loop** de Node.
+- Por la mañana 8-10 operarios abren la app a la vez → 8-10
+  serializaciones bloqueantes seguidas + gzip de cada una → el event
+  loop se queda sin atender los `/api/scan` → Railway devuelve
+  "Application failed to respond" mientras el upstream no contesta.
+- Agravante: el cliente refrescaba el índice **cada 2 min** (×30
+  operarios = mucha carga), cuando el índice solo cambia cada 30 min.
+
+**Solución**
+1. **Pre-serializar el índice UNA vez** (no por request):
+   - `buildScanningIndexJson()` genera el STRING JSON y el BUFFER gzip
+     y los cachea (`scanningIndexJsonCache`, `scanningIndexGzipCache`).
+   - Se llama tras cada sync (`runSync` close) y al arrancar el server.
+   - El endpoint sirve el string/buffer directamente con `res.end()`,
+     **cero CPU de serialización o compresión por request**.
+   - Si el cliente acepta gzip, se sirve el buffer pre-comprimido
+     (bypass del middleware compression).
+2. **Cache-Control 5min → 30min** (`max-age=1800`): el navegador no
+   re-descarga durante 30 min; tras expirar, revalida con ETag (304).
+3. **Refresco cliente 2min → 15min** + keep-alive 30s → 60s.
+
+**Impacto**: el coste por request del índice pasa de "serializar +
+gzipear 2.4 MB" (bloqueante, ~150-400ms CPU) a "enviar un buffer ya
+hecho" (no bloqueante, I/O). El event loop queda libre para atender
+los escaneos aunque 10 operarios abran la app a la vez.
+
+**Archivos**: `server.js` (buildScanningIndexJson + endpoint + hooks
+sync/arranque), `public/index.html` (intervalos), `public/sw.js` (bump)
+**Commit**: _pendiente_
+
+**Lección**:
+- `res.json()` / `JSON.stringify` de objetos grandes (>1MB) en
+  endpoints de alto tráfico BLOQUEA el event loop. Pre-serializar y
+  cachear el string/buffer es obligatorio.
+- "Application failed to respond" de Railway = upstream (Node) no
+  contesta a tiempo. Casi siempre es event loop bloqueado, no crash.
+  Revisar primero operaciones síncronas pesadas (JSON, gzip, loops
+  grandes), no solo memoria/CPU.
+- Refrescos periódicos del cliente deben alinearse con la frecuencia
+  real de cambio del dato (sync 30 min ≠ refrescar cada 2 min).
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
