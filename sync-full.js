@@ -501,8 +501,15 @@ async function sync() {
 
       if (trackingIndex.byCarrier[finalCarrier]) {
         trackingIndex.byCarrier[finalCarrier][scData.tracking] = fullData;
+        // INPOST: indexar tambien sin prefijo E1 (el barcode fisico solo tiene
+        // 8 digitos pero Odoo guarda E1xxxxxxxx). Sin esto el sliding INPOST
+        // no encontraba match en el indice y caia a Odoo cada vez.
+        if (finalCarrier === 'INPOST' && /^E1\d{8}$/.test(scData.tracking)) {
+          const eightDigits = scData.tracking.substring(2);
+          trackingIndex.byCarrier['INPOST'][eightDigits] = fullData;
+        }
       }
-      
+
       matched++;
       continue;
     }
@@ -569,6 +576,12 @@ async function sync() {
       // Y a byCarrier si el carrier es conocido
       if (detectedCarrier && trackingIndex.byCarrier[detectedCarrier]) {
         trackingIndex.byCarrier[detectedCarrier][t] = odooOnlyData;
+        // INPOST: indexar tambien la version sin prefijo E1 (#030)
+        if (detectedCarrier === 'INPOST' && /^E1\d{8}$/.test(t)) {
+          const eightDigits = t.substring(2);
+          trackingIndex.byCarrier['INPOST'][eightDigits] = odooOnlyData;
+          trackingIndex.byOdooTracking[eightDigits] = odooOnlyData;
+        }
       }
 
       unmatched++;

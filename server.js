@@ -225,24 +225,34 @@ function findInTrackingIndex(tracking) {
     var inpostExtract = extractInpostTracking(clean);
     if (inpostExtract.extracted) {
       var ipTracking = inpostExtract.extracted;
-      // Buscar en byCarrier INPOST
-      if (trackingIndex.byCarrier && trackingIndex.byCarrier["INPOST"] && trackingIndex.byCarrier["INPOST"][ipTracking]) {
-        console.log("   🎯 Match INPOST extraído (" + (inpostExtract.isDirectMatch ? "directo" : "pos " + inpostExtract.position) + "): " + ipTracking);
-        return trackingIndex.byCarrier["INPOST"][ipTracking];
+      // IMPORTANTE: Odoo guarda algunos INPOST con prefijo "E1" (ej. E183954005).
+      // El sync indexa el tracking completo (con E1) pero el barcode físico solo
+      // tiene los 8 dígitos (83954005). Buscamos ambas formas.
+      var ipTrackingE1 = "E1" + ipTracking;
+      // Buscar en byCarrier INPOST (probar 8-dig directo y con prefijo E1)
+      if (trackingIndex.byCarrier && trackingIndex.byCarrier["INPOST"]) {
+        if (trackingIndex.byCarrier["INPOST"][ipTracking]) {
+          console.log("   🎯 Match INPOST (" + (inpostExtract.isDirectMatch ? "directo" : "pos " + inpostExtract.position) + "): " + ipTracking);
+          return trackingIndex.byCarrier["INPOST"][ipTracking];
+        }
+        if (trackingIndex.byCarrier["INPOST"][ipTrackingE1]) {
+          console.log("   🎯 Match INPOST (E1-prefix): " + ipTrackingE1);
+          return trackingIndex.byCarrier["INPOST"][ipTrackingE1];
+        }
       }
-      // Buscar en byOdooTracking
-      if (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[ipTracking]) {
-        var ipData = trackingIndex.byOdooTracking[ipTracking];
-        if (ipData.carrier === 'INPOST') {
-          console.log("   🎯 Match INPOST extraído (byOdoo): " + ipTracking);
+      // Buscar en byOdooTracking (idem)
+      if (trackingIndex.byOdooTracking) {
+        var ipData = trackingIndex.byOdooTracking[ipTracking] || trackingIndex.byOdooTracking[ipTrackingE1];
+        if (ipData && ipData.carrier === 'INPOST') {
+          console.log("   🎯 Match INPOST extraído (byOdoo): " + (ipData.odooTracking || ipTracking));
           return ipData;
         }
       }
       // Buscar en byTracking
-      if (trackingIndex.byTracking && trackingIndex.byTracking[ipTracking]) {
-        var ipData2 = trackingIndex.byTracking[ipTracking];
-        if (ipData2.carrier === 'INPOST') {
-          console.log("   🎯 Match INPOST extraído (byTracking): " + ipTracking);
+      if (trackingIndex.byTracking) {
+        var ipData2 = trackingIndex.byTracking[ipTracking] || trackingIndex.byTracking[ipTrackingE1];
+        if (ipData2 && ipData2.carrier === 'INPOST') {
+          console.log("   🎯 Match INPOST extraído (byTracking): " + (ipData2.tracking || ipTracking));
           return ipData2;
         }
       }
