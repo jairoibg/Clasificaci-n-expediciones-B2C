@@ -218,14 +218,16 @@ function findInTrackingIndex(tracking) {
     return null;
   }
 
-  // PASO 2.6: INPOST - Extraer tracking de 8 dígitos embebido en barcode largo
-  if (clean.length > 10 && /^\d+$/.test(clean)) {
+  // PASO 2.6: INPOST - tracking de 8 dígitos directo o embebido en barcode largo
+  // Procesa tanto isDirectMatch=true (^\d{8}$) como =false (sliding extraído).
+  // Antes solo procesaba !isDirectMatch → para 8 dígitos puros caía a Odoo (#030).
+  if ((clean.length > 10 && /^\d+$/.test(clean)) || /^\d{8}$/.test(clean)) {
     var inpostExtract = extractInpostTracking(clean);
-    if (inpostExtract.extracted && !inpostExtract.isDirectMatch) {
+    if (inpostExtract.extracted) {
       var ipTracking = inpostExtract.extracted;
       // Buscar en byCarrier INPOST
       if (trackingIndex.byCarrier && trackingIndex.byCarrier["INPOST"] && trackingIndex.byCarrier["INPOST"][ipTracking]) {
-        console.log("   🎯 Match INPOST extraído (pos 2-9): " + ipTracking);
+        console.log("   🎯 Match INPOST extraído (" + (inpostExtract.isDirectMatch ? "directo" : "pos " + inpostExtract.position) + "): " + ipTracking);
         return trackingIndex.byCarrier["INPOST"][ipTracking];
       }
       // Buscar en byOdooTracking
