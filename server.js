@@ -594,11 +594,40 @@ function migrateSessionsFormat() {
   console.log('📋 Sesiones migradas a formato array (múltiples palets)');
 }
 
+// TTL para considerar una sesión vacía como "abandonada" y auto-eliminarla.
+// Evita que se acumulen palets con 0 envíos cuando el operario pulsa "+ Nuevo"
+// por error o cancela un flujo a medias. 5 min es margen suficiente para que el
+// operario que recién la creó pueda escanear si lo iba a hacer.
+const EMPTY_SESSION_TTL_MS = 5 * 60 * 1000;
+
+function pruneEmptyStaleSessions(carrier) {
+  const c = carrier.toUpperCase();
+  const arr = database.activeSessions[c];
+  if (!Array.isArray(arr) || arr.length === 0) return;
+  const now = Date.now();
+  let pruned = 0;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const s = arr[i];
+    if (!s || (s.packages && s.packages.length > 0)) continue;
+    const last = s.lastUpdate ? new Date(s.lastUpdate).getTime() : (s.createdAt ? new Date(s.createdAt).getTime() : 0);
+    if (last && (now - last) > EMPTY_SESSION_TTL_MS) {
+      arr.splice(i, 1);
+      pruned++;
+    }
+  }
+  if (pruned > 0) {
+    console.log('🧹 Sesiones vacías abandonadas eliminadas: ' + pruned + ' en ' + c);
+    saveData();
+  }
+}
+
 function getSessionsArray(carrier) {
   const c = carrier.toUpperCase();
   if (!Array.isArray(database.activeSessions[c])) {
     database.activeSessions[c] = [];
   }
+  // Auto-prune de sesiones vacías abandonadas (no afecta sesiones recientes ni con paquetes)
+  pruneEmptyStaleSessions(c);
   return database.activeSessions[c];
 }
 
@@ -858,12 +887,30 @@ function extractAsendiaTracking(scannedClean) {
 }
 
 // GUARD: detectar barcodes SPRING para evitar que el sliding INPOST los capture.
-// SPRING usa GS1-128 con tracking embebido que empieza por 0626 o 0008 seguido
+// SPRING usa GS1-128 con tracking embebido que empieza por 0626, 0008 o 0621 seguido
 // de al menos 8 dígitos más. Si el barcode contiene este patrón, NO es INPOST.
+// (0621 añadido tras caso DF1333089EU con tracking 06215292478046).
 function looksLikeSpringBarcode(clean) {
   if (!/^\d+$/.test(clean)) return false;
-  if (clean.length < 18) return false; // barcodes SPRING son largos
-  return /0626\d{8,}/.test(clean) || /0008\d{8,}/.test(clean);
+  if (clean.length < 14) return false; // tracking SPRING corto puede ser 14 dígitos (0621...)
+  return /0626\d{8,}/.test(clean) || /0008\d{8,}/.test(clean) || /0621\d{8,}/.test(clean);
+}
+
+// GUARD UNIVERSAL: ¿el barcode numérico tiene patrón de OTRO carrier (no INPOST)?
+// Casos detectados que el sliding INPOST capturaba por error:
+//   - CRX 23 dígitos `93005001...` (ej. DF126073SF, DF125921SF)
+//   - SPRING `0621...` (ej. DF1333089EU con tracking 06215292478046)
+//   - CTT `0003...` con 22 dígitos (ej. DF1339988EU con tracking 0003010003019701983513)
+// Devuelve el carrier detectado (string) o null si no matchea ningún patrón.
+function hasNonInpostNumericPattern(clean) {
+  if (!clean || !/^\d+$/.test(clean)) return null;
+  // CRX: 23 dígitos con prefijo 9300500
+  if (clean.length >= 18 && /^9300500\d/.test(clean)) return 'CORREOS EXPRESS';
+  // SPRING: barcodes largos con tracking embebido 0626 / 0008 / 0621 + 8+ dígitos
+  if (clean.length >= 14 && /(0626|0008|0621)\d{8,}/.test(clean)) return 'SPRING';
+  // CTT: barcode largo con prefijo 0003 + 15+ dígitos más (formato típico 0003010003019701... = 22 dígitos)
+  if (clean.length >= 18 && /^0003\d{15,}/.test(clean)) return 'CTT';
+  return null;
 }
 
 // INPOST: Barcodes largos (todo numérico) contienen tracking de 8 dígitos embebido
@@ -879,11 +926,16 @@ function extractInpostTracking(scannedClean) {
     return { extracted: scannedClean, isDirectMatch: true };
   }
   if (scannedClean.length >= 10 && /^\d+$/.test(scannedClean)) {
-    // GUARD CRÍTICO: si el barcode tiene patrón SPRING (0626... o 0008...),
-    // NO hacer sliding INPOST — evita falsos positivos como
-    //   DF1289908EU/DF1290868EU clasificados como INPOST cuando son SPRING.
-    if (looksLikeSpringBarcode(scannedClean)) {
-      return { extracted: null, isDirectMatch: false, skipped: 'spring-pattern' };
+    // GUARD UNIVERSAL: si el barcode tiene patrón de OTRO carrier (CRX/SPRING/CTT/...),
+    // NO hacer sliding INPOST — evita falsos positivos donde una ventana de 8 dígitos
+    // del barcode coincide por casualidad con un tracking INPOST conocido.
+    // Casos cubiertos:
+    //   - DF126073SF, DF125921SF (CRX 9300500...) clasificados como INPOST
+    //   - DF1289908EU, DF1290868EU, DF1333089EU (SPRING 0621/0626/0008) → INPOST
+    //   - DF1339988EU (CTT 0003...) → INPOST
+    const otherCarrier = hasNonInpostNumericPattern(scannedClean);
+    if (otherCarrier) {
+      return { extracted: null, isDirectMatch: false, skipped: 'other-carrier:' + otherCarrier };
     }
     // SLIDING WINDOW: probar todas las posiciones de 8 dígitos consecutivos
     // y verificar si alguna coincide con un INPOST conocido en el índice
@@ -1063,8 +1115,10 @@ function overrideCarrier(carrier, tracking) {
   if (/^\d{8}$/.test(t)) return 'INPOST';
   // Barcode largo numérico que CONTIENE un INPOST conocido en el índice
   // Esto previene que se clasifique como CORREOS por colisión accidental.
-  // GUARD: si tiene patrón SPRING (0626... o 0008...), NO forzar INPOST.
-  if (t.length >= 10 && /^\d+$/.test(t) && !looksLikeSpringBarcode(t)) {
+  // GUARD UNIVERSAL: si el barcode tiene patrón de OTRO carrier (CRX/SPRING/CTT/etc),
+  // NO forzar INPOST. Cubre los casos DF126073SF (CRX), DF1333089EU (SPRING 0621),
+  // DF1339988EU (CTT 0003), etc.
+  if (t.length >= 10 && /^\d+$/.test(t) && !hasNonInpostNumericPattern(t)) {
     const inpostIndex = trackingIndex && trackingIndex.byCarrier && trackingIndex.byCarrier['INPOST'];
     if (inpostIndex) {
       for (let i = 0; i <= t.length - 8; i++) {
@@ -1223,7 +1277,38 @@ async function getCarrierFromTracking(tracking) {
       const ipTracking = inpostResult.extracted;
       console.log('   🔍 INPOST extraído de barcode: ' + ipTracking + ' (pos ' + (inpostResult.position || '?') + ', source: ' + (inpostResult.source || '?') + ')');
 
-      // Buscar en índice
+      // ATAJO CRÍTICO (fix #4): si el sliding YA encontró el match en el índice
+      // (source 'index-*'), usar esos datos DIRECTAMENTE sin llamar a Odoo.
+      // Antes este código llamaba a findInTrackingIndex(ipTracking) que devuelve
+      // null para trackings que solo están en byCarrier (no en byTracking ni
+      // byOdooTracking) y caía al fallback de Odoo. Resultado: cada scan INPOST
+      // hacía 1-3s de lookup Odoo innecesario → con 5+ operarios concurrentes
+      // los timeouts se acumulaban y algún scan fallaba.
+      if (inpostResult.source && inpostResult.source.startsWith('index')) {
+        let ipData = null;
+        if (trackingIndex.byCarrier && trackingIndex.byCarrier['INPOST']) {
+          ipData = trackingIndex.byCarrier['INPOST'][ipTracking];
+        }
+        if (!ipData && trackingIndex.byOdooTracking) ipData = trackingIndex.byOdooTracking[ipTracking];
+        if (!ipData && trackingIndex.byTracking) ipData = trackingIndex.byTracking[ipTracking];
+        if (ipData) {
+          const elapsed = Date.now() - startTime;
+          console.log('   ⚡ Índice INPOST (atajo directo): ' + ipTracking + ' (' + elapsed + 'ms)');
+          return {
+            carrier: 'INPOST',
+            picking: {
+              id: ipData.pickingId,
+              name: ipData.pickingName,
+              carrier_tracking_ref: ipData.odooTracking || ipData.tracking || ipTracking,
+              origin: ipData.orderRef,
+              partner_id: [null, ipData.clientName]
+            },
+            source: 'index (INPOST extraído: ' + ipTracking + ')', elapsed
+          };
+        }
+      }
+
+      // Si el atajo del índice no aplicó, intentar findInTrackingIndex
       const ipIndex = findInTrackingIndex(ipTracking);
       if (ipIndex && ipIndex.carrier === 'INPOST') {
         const elapsed = Date.now() - startTime;
@@ -1235,13 +1320,14 @@ async function getCarrierFromTracking(tracking) {
         };
       }
 
-      // Si la extracción viene del índice (source = index-*) buscar en Odoo igualmente
-      // (puede que el sync no haya capturado el match pero el tracking existe)
-      const fromIndex = inpostResult.source && inpostResult.source.startsWith('index');
+      // ÚLTIMO RECURSO: solo si el extract NO fue del índice (fallback posicional)
+      // y el formato coincide con INPOST (04/81/83 + 6 dígitos), preguntar a Odoo.
+      // Antes este branch corría TAMBIÉN cuando fromIndex=true, generando lookups
+      // Odoo innecesarios. Ahora solo cuando es un candidato heurístico.
       const looksInpost = /^(04|81|83)\d{6}$/.test(ipTracking);
-
-      if (fromIndex || looksInpost) {
-        console.log('   🔍 Buscando INPOST en Odoo: ' + ipTracking);
+      const fromIndexExtract = inpostResult.source && inpostResult.source.startsWith('index');
+      if (looksInpost && !fromIndexExtract) {
+        console.log('   🔍 Buscando INPOST en Odoo (candidato heurístico): ' + ipTracking);
         const ipPicking = await odooClient.findPickingByTracking(ipTracking);
         if (ipPicking) {
           const elapsed = Date.now() - startTime;
@@ -1552,6 +1638,27 @@ app.post('/api/sessions/:carrier/open', (req, res) => {
 app.delete('/api/sessions/:carrier/:sessionId', (req, res) => {
   clearSession(req.params.carrier, req.params.sessionId);
   res.json({ success: true, message: 'Sesión eliminada' });
+});
+
+// Limpieza inmediata de sesiones vacías del carrier (sin esperar el TTL de 5 min).
+// El frontend la invoca al cargar las sesiones para asegurar que el operario no
+// vea palets con 0 envíos olvidados de pulsaciones accidentales del botón "+ Nuevo".
+app.post('/api/sessions/:carrier/prune-empty', (req, res) => {
+  const c = req.params.carrier.toUpperCase();
+  const arr = database.activeSessions[c];
+  if (!Array.isArray(arr)) return res.json({ pruned: 0 });
+  let pruned = 0;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (arr[i] && (!arr[i].packages || arr[i].packages.length === 0)) {
+      arr.splice(i, 1);
+      pruned++;
+    }
+  }
+  if (pruned > 0) {
+    console.log('🧹 Sesiones vacías eliminadas (manual): ' + pruned + ' en ' + c);
+    saveData();
+  }
+  res.json({ pruned });
 });
 
 app.get('/api/sessions', (req, res) => {

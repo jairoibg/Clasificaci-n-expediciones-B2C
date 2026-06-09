@@ -1517,13 +1517,31 @@
       }
       state.selectedCarrier = carrier;
 
+      // Filtrar palets vacíos: NO los mostramos en el modal porque generan confusión
+      // (palets con 0 envíos abiertos por error con el botón "+ Nuevo"). El servidor
+      // los limpia automáticamente tras 5 min, pero los ocultamos ya del UI.
+      const nonEmpty = (detail.sessions || []).filter(s => (s.count || 0) > 0);
+
+      // Si todos están vacíos (raro), entrar directo al primero sin mostrar selector
+      if (nonEmpty.length === 0) {
+        state.selectedSessionId = detail.sessions[0].id;
+        openScannerForCarrier(carrier);
+        return;
+      }
+      // Si solo queda 1 no vacío, entrar directo a él sin modal
+      if (nonEmpty.length === 1) {
+        state.selectedSessionId = nonEmpty[0].id;
+        openScannerForCarrier(carrier);
+        return;
+      }
+
       document.getElementById('psCarrierTag').textContent = carrier;
       document.getElementById('psSub').textContent =
-        `${detail.palletCount} palets abiertos · ${detail.count} envíos en total`;
+        `${nonEmpty.length} palets con envíos · ${detail.count} envíos en total`;
 
       const list = document.getElementById('psList');
       // Ordenar por letra asc para mostrar A primero
-      const sorted = [...detail.sessions].sort((a, b) => (a.letter || '').localeCompare(b.letter || ''));
+      const sorted = [...nonEmpty].sort((a, b) => (a.letter || '').localeCompare(b.letter || ''));
       list.innerHTML = sorted.map(s => {
         const lastUpd = s.lastUpdate ? new Date(s.lastUpdate).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '—';
         const reopened = s.fromPalletId ? ' · reabierto' : '';
@@ -1610,12 +1628,23 @@
     }
 
     // Match instantáneo (0ms) en cliente con sliding window para INPOST/GLS
-    // GUARD: ¿el barcode tiene patrón SPRING (0626... o 0008...)?
-    // Si sí, NUNCA hacemos sliding INPOST sobre él para evitar falsos positivos.
+    // GUARD: ¿el barcode tiene patrón SPRING (0626/0008/0621...)?
     function looksLikeSpringBarcode(clean) {
       if (!/^\d+$/.test(clean)) return false;
-      if (clean.length < 18) return false;
-      return /0626\d{8,}/.test(clean) || /0008\d{8,}/.test(clean);
+      if (clean.length < 14) return false;
+      return /0626\d{8,}/.test(clean) || /0008\d{8,}/.test(clean) || /0621\d{8,}/.test(clean);
+    }
+
+    // GUARD UNIVERSAL: ¿el barcode numérico tiene patrón de OTRO carrier (no INPOST)?
+    // Si sí, NUNCA hacemos sliding INPOST sobre él. Sin esto:
+    //   DF126073SF (CRX 9300500...), DF1333089EU (SPRING 0621...),
+    //   DF1339988EU (CTT 0003...) se clasificaban como INPOST por colisión.
+    function hasNonInpostNumericPattern(clean) {
+      if (!clean || !/^\d+$/.test(clean)) return null;
+      if (clean.length >= 18 && /^9300500\d/.test(clean)) return 'CORREOS EXPRESS';
+      if (clean.length >= 14 && /(0626|0008|0621)\d{8,}/.test(clean)) return 'SPRING';
+      if (clean.length >= 18 && /^0003\d{15,}/.test(clean)) return 'CTT';
+      return null;
     }
 
     function localLookup(tracking) {
@@ -1625,12 +1654,13 @@
       if (r) return { ...r, source: 'client-exact' };
 
       const isSpringBarcode = looksLikeSpringBarcode(clean);
+      const otherCarrierPattern = hasNonInpostNumericPattern(clean);
 
-      // 2. SPRING sliding window (probamos varios cortes desde 0626/0008)
+      // 2. SPRING sliding window (probamos varios cortes desde 0626/0008/0621)
       // Lo hacemos ANTES de INPOST para que un barcode SPRING no se clasifique
       // como INPOST por colisión accidental de 8 dígitos consecutivos.
       if (isSpringBarcode) {
-        const prefixes = ['0626', '0008'];
+        const prefixes = ['0626', '0008', '0621'];
         for (const prefix of prefixes) {
           const idx = clean.indexOf(prefix);
           if (idx < 0) continue;
@@ -1646,8 +1676,8 @@
         }
       }
 
-      // 3. INPOST sliding window (8 dígitos) — sólo si NO parece SPRING
-      if (!isSpringBarcode && clean.length >= 8 && /^\d+$/.test(clean)) {
+      // 3. INPOST sliding window (8 dígitos) — sólo si NO parece otro carrier numérico
+      if (!otherCarrierPattern && clean.length >= 8 && /^\d+$/.test(clean)) {
         for (let i = 0; i <= clean.length - 8; i++) {
           const cand = clean.substring(i, i + 8);
           const match = clientIndex.get(cand);
@@ -2344,9 +2374,18 @@
         const r = await apiCall('/sessions');
         state.sessions = {};
         state.sessionsDetail = {};
+        const carriersWithEmpty = [];
         for (const [c, d] of Object.entries(r.sessions || {})) {
           state.sessions[c] = d.count;
           state.sessionsDetail[c] = d;
+          // Detectar carriers con palets vacíos para limpiar en background
+          if ((d.sessions || []).some(s => (s.count || 0) === 0)) {
+            carriersWithEmpty.push(c);
+          }
+        }
+        // Limpiar palets vacíos en el servidor (no bloquea)
+        for (const c of carriersWithEmpty) {
+          apiCall(`/sessions/${encodeURIComponent(c)}/prune-empty`, { method: 'POST' }).catch(() => {});
         }
       } catch (err) {
         console.warn('loadSessions error', err);

@@ -156,7 +156,7 @@ actual y la evolución de cada uno.
 
 1. **Prefijo directo**: `^MI` y `^9300500` → CORREOS EXPRESS (override fuerte en `overrideCarrier`)
 2. **Detección por carrier_id Odoo**: `carrier_id` empieza por `MI` (MIKA) → CORREOS EXPRESS
-3. **Sliding INPOST tiene guard**: si el barcode tiene prefijo `9300500`, NO se aplica el sliding INPOST de 8 dígitos (evita falso positivo INPOST sobre barcode CRX)
+3. **Sliding INPOST tiene guard**: si el barcode tiene prefijo `9300500` (cubierto por `hasNonInpostNumericPattern`), NO se aplica el sliding INPOST de 8 dígitos. Sin este guard, ventanas de 8 dígitos del barcode CRX (23 dígitos) coincidían por casualidad con trackings INPOST conocidos (casos DF126073SF, DF125921SF en #030).
 4. **Sync indexa pickings sin tracking**: pickings con `carrier_id MIKA` y `carrier_tracking_ref` vacío entran en `trackingIndex.pendingCrx` para ser buscables por nº de pedido
 5. **Índice nuevo `byCrxOrderId`**: el campo `note` se parsea (regex `\d{10,16}`) y se indexa. Permite buscar el pedido por el "ID del pedido" impreso en la etiqueta cuando MIKA aún no ha registrado el tracking físico en Odoo
 6. **Endpoint `/api/scan` con CRX no encontrado**: si el barcode matchea `^9300500\d` y no se encuentra en Odoo, devuelve `error: 'CRX_NO_SINCRONIZADO'` (no `NO_ENCONTRADO`), con mensaje específico que invita a tipear el ID del pedido
@@ -175,6 +175,7 @@ actual y la evolución de cada uno.
 | 2026-05-25 | Endpoint `/api/scan` devuelve `CRX_NO_SINCRONIZADO` cuando matchea `^9300500\d` y no hay picking, con mensaje útil | `b09b048` | #025 |
 | 2026-05-25 | **Vínculo via `note` (ID del pedido)**: nueva regla `extractCrxOrderId(note)` extrae `\d{10,16}` del campo HTML, y `byCrxOrderId` lo indexa O(1). `/api/search-client` detecta inputs numéricos 10-15 dígitos y los busca aquí | `e7a63dc` | #025 |
 | 2026-05-25 | Indexación extendida: también pickings con `carrier_id="Correos"` (no MIKA) si su `note` contiene el ID externo CRX (caso DF122521SF donde la etiqueta era CRX pero Odoo decía "Correos") | `3e65bf1` | #025 |
+| 2026-06-09 | Guard CRX integrado en `hasNonInpostNumericPattern` (junto a SPRING y CTT). Casos DF126073SF / DF125921SF (CRX 23 dígitos `9300500...`) que se clasificaban como INPOST por colisión en sliding de 8 dígitos. | _pendiente_ | #030 |
 
 ---
 
@@ -199,6 +200,7 @@ actual y la evolución de cada uno.
 | 2026-04-10 | Match por substring (sendcloud completo contiene odoo corto) | `4cb3f7f` (rev) | — |
 | 2026-04-12 | Eliminado partial substring matching CTT que causaba falsos positivos en cobertura | `4cb3f7f` | — |
 | 2026-04-15 | Match solo en el sync (`endsWith` o `includes` con `length ≥ 7`), no en scan tiempo real | — | — |
+| 2026-06-09 | CTT añadido al guard universal `hasNonInpostNumericPattern`: trackings con `^0003\d{15,}` (formato `0003010003019701...`) ya no son capturados por el sliding INPOST. Caso DF1339988EU (tracking `0003010003019701983513`). | _pendiente_ | #030 |
 
 ---
 
@@ -246,7 +248,8 @@ actual y la evolución de cada uno.
 
 1. **Match directo**: `^\d{8}$` → INPOST (override fuerte)
 2. **Sliding window 8 dígitos**: `extractInpostTracking` prueba todas las ventanas de 8 dígitos consecutivos del barcode y verifica si alguna existe en el índice INPOST (O(1) hash lookup)
-3. **GUARD SPRING (crítico)**: si el barcode matchea `looksLikeSpringBarcode` (`/0626\d{8,}/` o `/0008\d{8,}/`), NO se aplica sliding INPOST. Evita falsos positivos donde un barcode SPRING contiene 8 dígitos consecutivos que casualmente coinciden con un tracking INPOST
+3. **GUARD UNIVERSAL `hasNonInpostNumericPattern`**: si el barcode tiene patrón de OTRO carrier numérico (CRX `^9300500`, SPRING `(0626|0008|0621)\d{8,}`, CTT `^0003\d{15,}`), NO aplicar sliding INPOST. Sustituye al guard anterior solo SPRING. Cubre los casos DF126073SF/DF125921SF (CRX), DF1333089EU (SPRING 0621), DF1339988EU (CTT 0003).
+4. **GUARD SPRING histórico**: `looksLikeSpringBarcode` (`/0626\d{8,}/` o `/0008\d{8,}/` o `/0621\d{8,}/`) — ahora se usa en el sliding SPRING del frontend
 4. **Override en `overrideCarrier`**: si barcode largo contiene una subcadena que matchea un INPOST conocido, fuerza INPOST (también con guard SPRING)
 5. **Fallback posicional**: si no hay match en índice, verifica `^(04|81|83)\d{6}$` como heurística
 6. **Eliminado el fallback legacy** de `substring(2,10)` (causaba falsos positivos en CRX 23 dígitos)
@@ -260,6 +263,8 @@ actual y la evolución de cada uno.
 | 2026-05-22 | Eliminado fallback legacy `substring(2,10)` que provocaba falsos positivos en CRX 23 dígitos (`93005001313132701335831` → `00500131` causaba búsquedas Odoo 10s) | `e43f7bb` | #020 |
 | 2026-05-25 | **GUARD SPRING**: si barcode tiene patrón SPRING (`0626…` o `0008…` ≥18 chars), NO hacer sliding INPOST. Casos `DF1289908EU` y `DF1290868EU` se clasificaban como INPOST por colisión accidental de 8 dígitos | `5b73ee0` | #024 |
 | 2026-05-25 | Frontend `localLookup`: mismo guard SPRING + sliding SPRING añadido ANTES del sliding INPOST | `5b73ee0` | #024 |
+| 2026-06-09 | **Atajo crítico**: si `extractInpostTracking` ya encontró match en el índice (`source: index-*`), usar los datos del índice DIRECTAMENTE sin llamar a `findInTrackingIndex` (que devolvía null para 8-dígitos en byCarrier pero no en byTracking) ni a Odoo. Antes cada scan INPOST hacía un lookup Odoo redundante de 1-3s que provocaba que ~5+ INPOST concurrentes saturasen Odoo y alguno fallase (bug "cada 5 INPOST seguidos el 5to no se reconoce"). | _pendiente_ | #030 |
+| 2026-06-09 | **Guard universal `hasNonInpostNumericPattern`**: bloquea el sliding INPOST cuando el barcode tiene patrón de OTRO carrier (CRX `^9300500`, SPRING `0626/0008/0621`, CTT `^0003\d{15,}`). Antes solo había `looksLikeSpringBarcode` (solo SPRING 0626/0008). Casos resueltos: DF126073SF, DF125921SF (CRX), DF1333089EU (SPRING 0621), DF1339988EU (CTT 0003). Aplicado en `extractInpostTracking`, `overrideCarrier` y `localLookup` del frontend. | _pendiente_ | #030 |
 
 ---
 
@@ -276,12 +281,12 @@ actual y la evolución de cada uno.
 
 ### Reglas vigentes (detección)
 
-1. **Prefijos directos**: `^LS|^LX|^LV|^LT|^3[A-Z]|^CP|^Z96|^XSMT|^0008|^0626` y `^6A` → SPRING
+1. **Prefijos directos**: `^LS|^LX|^LV|^LT|^3[A-Z]|^CP|^Z96|^XSMT|^0008|^0626|^0621` y `^6A` → SPRING (`0621` añadido en #030)
 2. **EXCEPCIÓN `^LS\d{9}[A-Z]{2}$`**: este patrón específico es **ASENDIA**, no SPRING (regla evaluada ANTES del patrón general LS)
 3. **EXCEPCIÓN `^H103`**: aunque a veces llega como SPRING en Odoo, el `overrideCarrier` lo fuerza a ASENDIA
-4. **`looksLikeSpringBarcode(clean)`**: helper compartido (server + frontend). Detecta `\d+` length ≥18 que contiene `0626\d{8,}` o `0008\d{8,}`. Se usa como guard ANTES del sliding INPOST y en el sliding SPRING del frontend
-5. **`extractSpecialPatterns`** extrae substrings 12-16 chars desde la posición de `0626`/`0008` en barcodes largos numéricos
-6. **Sliding SPRING en frontend `localLookup`**: añadido en #024. Prueba substrings 12-16 chars desde `0626`/`0008` ANTES de intentar sliding INPOST
+4. **`looksLikeSpringBarcode(clean)`**: helper compartido (server + frontend). Detecta `\d+` length ≥14 que contiene `0626\d{8,}`, `0008\d{8,}` o `0621\d{8,}`. Se usa como guard ANTES del sliding INPOST y en el sliding SPRING del frontend.
+5. **`extractSpecialPatterns`** extrae substrings 12-16 chars desde la posición de `0626`/`0008`/`0621` en barcodes largos numéricos
+6. **Sliding SPRING en frontend `localLookup`**: añadido en #024. Prueba substrings 12-16 chars desde `0626`/`0008`/`0621` ANTES de intentar sliding INPOST
 7. **Sync match patterns**: SPRING usa `endsWith` o `includes` para match Sendcloud↔Odoo (los IDs Sendcloud y Odoo a veces son distintos)
 8. **NO partial substring matching** en el sync para SPRING corto (eliminado en `fb67a20`, causaba falsos positivos donde sufijos cortos pillaban muchos pedidos)
 9. **Shape check (fast-fail)**: `0626\d{8}` u `0008\d{8}` embebido en string ≥12 chars → pasa el guard
@@ -295,6 +300,7 @@ actual y la evolución de cada uno.
 | 2026-05-25 | **`looksLikeSpringBarcode`** helper (`/0626\d{8,}/` o `/0008\d{8,}/`, length ≥18). Usado como GUARD en sliding INPOST de `extractInpostTracking` y `overrideCarrier` | `5b73ee0` | #024 |
 | 2026-05-25 | Frontend `localLookup`: nuevo sliding SPRING (substrings 12-16 chars desde `0626`/`0008`) que corre ANTES del sliding INPOST, para match exacto en cliente 0ms | `5b73ee0` | #024 |
 | 2026-05-26 | Shape check del fast-fail acepta `(0626\|0008)\d{8}` embebido en strings ≥12 chars (no descarta barcodes SPRING como `no_shape`) | `dd613dc` | #027 |
+| 2026-06-09 | **Nuevo prefijo SPRING `0621`**: caso DF1333089EU (tracking `06215292478046`). Añadido a `looksLikeSpringBarcode`, sliding SPRING del frontend, `hasNonInpostNumericPattern`, `extractSpecialPatterns`. Length mínima del guard bajada de 18 a 14 (tracking SPRING corto puede ser 14 dígitos). | _pendiente_ | #030 |
 
 ---
 
@@ -314,7 +320,15 @@ Aplicado a TODO carrier detectado para forzar correcciones:
 1. `^9300500` → CORREOS EXPRESS
 2. `^H103 && carrier==='SPRING'` → ASENDIA
 3. `^\d{8}$` → INPOST
-4. Barcode largo numérico con INPOST en índice → INPOST (con guard SPRING)
+4. Barcode largo numérico con INPOST en índice → INPOST (con guard universal `hasNonInpostNumericPattern`)
+
+### `hasNonInpostNumericPattern` (#030, guard universal)
+Detecta si un barcode numérico pertenece a OTRO carrier (no INPOST) ANTES del sliding INPOST. Sustituye a `looksLikeSpringBarcode` como guard principal:
+- `length ≥ 18` Y `^9300500\d` → CORREOS EXPRESS (23 dígitos típicos)
+- `length ≥ 14` Y contiene `(0626|0008|0621)\d{8,}` → SPRING
+- `length ≥ 18` Y `^0003\d{15,}` → CTT (22 dígitos típicos)
+
+Aplicado en `extractInpostTracking`, `overrideCarrier` (server) y `localLookup` (frontend). Sin este guard, el sliding INPOST de 8 dígitos genera falsos positivos cuando alguna ventana del barcode coincide por casualidad con un tracking INPOST conocido.
 
 ### `hasKnownCarrierShape` (fast-fail #026 + #027)
 Decide si un input vale la pena buscar en Odoo:

@@ -1254,6 +1254,116 @@ sync/arranque), `public/index.html` (intervalos), `public/sw.js` (bump)
 
 ---
 
+### #030 · Reporte múltiple operarios (4 problemas relacionados con INPOST)
+
+**Síntoma** (reportados juntos)
+1. Al clickar INPOST se abre palet vacío; tienen varios palets con 0 envíos
+2. Pedidos CRX se clasifican como INPOST (ej. `DF126073SF`, `DF125921SF`)
+3. Pedidos SPRING se clasifican como INPOST (ej. `DF1333089EU`)
+4. Cada ~5 pedidos INPOST seguidos, el último no se reconoce y hay que añadirlo manualmente
+5. Pedidos CTT se clasifican como INPOST (ej. `DF1339988EU`)
+
+**Diagnóstico** (vía token Railway + `/api/diag-tracking` + logs deploymentLogs)
+
+Trackings físicos reales obtenidos de Odoo:
+| Pedido | Carrier real | Tracking físico |
+|---|---|---|
+| DF126073SF | CRX | `93005001321898101106806` (23 dígitos) |
+| DF125921SF | CRX | `93005001321783401036901` (23 dígitos) |
+| DF1333089EU | SPRING | `06215292478046` (14 dígitos, prefijo **`0621`**) |
+| DF1339988EU | CTT | `0003010003019701983513` (22 dígitos, prefijo **`0003`**) |
+
+**Causa raíz #2/#3/#5**: el guard `looksLikeSpringBarcode` solo cubría
+prefijos SPRING `0626` y `0008`. CRX (`9300500…`), SPRING (`0621…`) y
+CTT (`0003…`) caían al sliding INPOST de 8 dígitos. Como prueba todas
+las ventanas de 8 dígitos consecutivos del barcode, una de ellas
+coincidía por casualidad con un tracking INPOST conocido → falso
+positivo INPOST.
+
+**Causa raíz #4** (descubierta leyendo logs):
+```
+SCAN: 13839570290101007433331782 → INPOST (sess 6-y0309h)
+   🔍 Buscando INPOST en Odoo: 83957029
+```
+En `getCarrierFromTracking`, cuando `extractInpostTracking` devolvía
+match con `source: 'index-inpost'`, se llamaba a
+`findInTrackingIndex(ipTracking)` que para un tracking de 8 dígitos
+presente solo en `byCarrier.INPOST` (pero no en `byTracking` ni
+`byOdooTracking`) **devolvía null** (no procesa direct matches en su
+PASO 2.6) → el código caía al fallback `findPickingByTracking` en
+Odoo (3-9s). Cada scan INPOST hacía esa llamada redundante. Con 5+
+operarios escaneando INPOST en paralelo, Odoo se saturaba y algún
+scan caía en timeout → el operario lo veía como "no se reconoce".
+
+**Causa raíz #1**: el botón **+ Nuevo** del scanner (y `Abrir nuevo
+palet` del selector) crean sesión vacía inmediatamente. Si el
+operario pulsa por error o cancela, queda palet con 0 envíos.
+
+**Solución**
+
+`server.js`:
+- **Nueva función `hasNonInpostNumericPattern(clean)`** (guard
+  universal): detecta CRX (`^9300500`), SPRING (`(0626|0008|0621)`)
+  y CTT (`^0003\d{15,}`). Sustituye al guard `looksLikeSpringBarcode`
+  en `extractInpostTracking` y `overrideCarrier`. Cubre los 3 casos
+  reportados y deja abierto añadir más prefijos.
+- **Atajo crítico en `getCarrierFromTracking` INPOST**: si
+  `extractInpostTracking` devolvió `source: 'index-*'`, usar los
+  datos del índice **directamente** (lookup O(1) en byCarrier.INPOST
+  / byOdooTracking / byTracking) sin llamar a `findInTrackingIndex`
+  ni a Odoo. El último fallback a Odoo solo corre para candidatos
+  heurísticos (prefijos `04/81/83`) cuando NO viene del índice.
+- **Auto-prune de sesiones vacías** (`pruneEmptyStaleSessions`):
+  llamado dentro de `getSessionsArray`. Elimina sesiones con
+  `packages.length === 0` y `lastUpdate > 5 min`. Las sesiones
+  recién creadas (<5 min) no se tocan para no romper el flujo del
+  operario que recién abrió un palet.
+- **Endpoint `POST /api/sessions/:carrier/prune-empty`**: limpieza
+  inmediata invocada por el frontend.
+- **`looksLikeSpringBarcode` extendido**: ahora cubre también `0621`,
+  length mínima bajada de 18 → 14 (los SPRING cortos son 14 dígitos).
+
+`public/index.html`:
+- **`hasNonInpostNumericPattern` paridad client-side**: misma lógica
+  en `localLookup` para que el matching 0ms del navegador no caiga
+  en falso positivo INPOST con barcodes CRX/SPRING-0621/CTT-0003.
+- **`looksLikeSpringBarcode`**: añadido `0621` y prefijos al sliding
+  SPRING (`['0626', '0008', '0621']`).
+- **Modal selector de palet filtra vacíos**: si todos los palets
+  están vacíos entra directo al primero; si solo 1 con envíos,
+  bypass del modal. Evita confundir al operario con palets de 0.
+- **`loadSessions`** invoca `prune-empty` en background para los
+  carriers con palets vacíos detectados.
+
+**Archivos**: `server.js`, `public/index.html`, `public/sw.js`,
+`CARRIER-RULES.md` (4 actualizaciones por carrier), `FIXES-LOG.md`
+**Commit**: _pendiente_
+
+**Verificación esperada**
+- `DF126073SF`, `DF125921SF` → CORREOS EXPRESS (no INPOST)
+- `DF1333089EU` → SPRING (no INPOST)
+- `DF1339988EU` → CTT (no INPOST)
+- 10 scans INPOST consecutivos → todos en <1s, sin llamada a Odoo
+- Modal INPOST → no aparece "palet vacío" en lista
+
+**Lección**:
+- Guards ad-hoc por carrier (`looksLikeSpringBarcode`) se quedan
+  cortos. Un guard universal extensible (`hasNonInpostNumericPattern`)
+  es más mantenible.
+- El sliding INPOST genérico es PELIGROSO: prueba muchas ventanas
+  contra un índice grande y siempre hay colisiones por probabilidad.
+  Idealmente se usaría solo cuando el barcode tiene shape INPOST
+  clara (8 dígitos exactos, o prefijos `04/81/83`). El guard universal
+  achicó el ámbito.
+- "Llamar a Odoo por si acaso" es seductor pero produce timeouts en
+  concurrencia. Si el índice ya tiene la respuesta, no hacer la
+  llamada extra.
+- Botones que crean estado deben tener consecuencias acotadas:
+  auto-prune + filtrar UI evita "basura" generada por pulsaciones
+  accidentales sin molestar con confirmaciones.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
