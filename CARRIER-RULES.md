@@ -362,11 +362,18 @@ aunque Odoo esté caído. Caso real: KA297687 (picking de 14 días,
 tracking `LX071833722NL`).
 
 ### Ventana del sync
-- **Odoo pickings: 14 días** (antes 7 — caso KA297687: pickings de hasta
-  2 semanas se siguen escaneando por reprocesos/retrasos).
+- **Odoo pickings: 14 días** con `limit: 60000` y `order: scheduled_date desc`.
+  OJO: el cap de 60k se alcanza → la ventana EFECTIVA del índice es ~12-13
+  días. Los pickings de la cola (13-14 días) no entran al índice pero el
+  **fallback Sendcloud-cache** los cubre al escanear (verificado con
+  KA297687 / `LX071833722NL` → SPRING vía `cache-fallback-timeout`).
 - **Sendcloud parcels: 7 días** con `updated_after` (los parcels viejos con
   actualizaciones de estado recientes siguen entrando; el límite real es el
   cap de 50k parcels / 500 páginas).
+- **Pattern-matching del sync**: solo para pickings ≤8 días (los más viejos
+  no tienen parcels en la ventana Sendcloud y recorrer el bucle cuadrático
+  era inútil y carísimo — sync >10 min). Los viejos van directo a
+  indexación por prefijo.
 
 ### Timeouts Odoo (`executeWithTimeout`)
 - Exact match: 3s

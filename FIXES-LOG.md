@@ -1430,15 +1430,39 @@ fallaba al instante con el modal de buscar por cliente.
 - Handler `SISTEMA_LENTO`: toast "⏱ Sistema lento — vuelve a escanear"
   (no modal de búsqueda).
 
+**Hallazgos adicionales durante el deploy**
+- El sync de 14 días supera el `limit` Odoo: 30k primero (cortaba los
+  viejos con `order desc`), subido a 60k y el cap se alcanza igual.
+  Ventana efectiva del índice: ~12-13 días. La cola de 13-14 días la
+  cubre el fallback Sendcloud-cache (verificado abajo).
+- El bucle de pattern-matching del sync es cuadrático; los pickings
+  más viejos que la ventana Sendcloud (7d) no pueden matchear y lo
+  recorrían entero → sync >10 min. Ahora se saltan (van directo a
+  indexación por prefijo) → sync vuelve a ~3-4 min.
+- `/api/reload-index` ahora responde al instante y corre el sync en
+  background (antes el proxy cortaba la conexión a los 4 min).
+
+**Verificación en producción (2026-06-10)**
+- `06215292484946` → SPRING | index | 0 ms ✓
+- Barcode GS1 `0005421062152924849463280` → SPRING (extraído
+  `06215292484946`) | 15 ms ✓ (caso DF1341430EU resuelto)
+- `LX071833722NL` (KA297687, picking 14 días, Odoo lento) →
+  **SPRING | cache-fallback-timeout | 5.5 s** ✓ — el escaneo funciona
+  con picking sintético del cache; antes: NO_ENCONTRADO + 5 min de
+  negative cache envenenado.
+
 **Archivos**: `server.js`, `sync-full.js`, `public/index.html`,
 `public/sw.js`, `CARRIER-RULES.md`, `FIXES-LOG.md`
-**Commit**: _pendiente_
+**Commits**: `c40cbec`, `59c9622`, `e58e206`
 
 **Lección**:
 - Un timeout NO es un "no existe". Cachear timeouts como negativos
   convierte lentitud puntual de Odoo en bloqueos de 5 min para
   trackings válidos. Distinguir SIEMPRE respuesta-definitiva de
   fallo-de-infraestructura.
+- Al ampliar una ventana de datos, revisar TODOS los límites del
+  pipeline (limit de query, bucles cuadráticos, timeouts de proxy,
+  tamaño del payload) — no solo el filtro de fecha.
 - Al añadir un prefijo nuevo de carrier, revisar TODOS los puntos:
   guard + extractor (server) + sliding (frontend) + sync + shape
   check. En #030 se añadió `0621` al guard pero no al extractor.
