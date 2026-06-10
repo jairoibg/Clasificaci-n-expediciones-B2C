@@ -519,12 +519,20 @@ async function sync() {
       continue;
     }
 
-    // Para CTT, SPRING y ASENDIA, buscar por patrón
+    // Para CTT, SPRING y ASENDIA, buscar por patrón.
+    // OPTIMIZACIÓN CRÍTICA: este bucle es cuadrático (picking × parcels del
+    // carrier). Los pickings más viejos que la ventana Sendcloud (7 días) no
+    // PUEDEN matchear (sus parcels ya no están descargados) — saltarlos evita
+    // que el sync de 14 días tarde >10 min. Van directo a indexación por
+    // prefijo (rama !foundMatch), que es lo que necesitan (caso KA297687).
     let foundMatch = false;
-    
-    for (const carrier of carriersNeedingPattern) {
+    const pickingTime = picking.scheduled_date ? new Date(picking.scheduled_date + 'Z').getTime() : 0;
+    const SENDCLOUD_WINDOW_MS = 8 * 24 * 60 * 60 * 1000; // 8 días (margen sobre los 7 de Sendcloud)
+    const tooOldForPattern = pickingTime > 0 && (Date.now() - pickingTime) > SENDCLOUD_WINDOW_MS;
+
+    for (const carrier of (tooOldForPattern ? [] : carriersNeedingPattern)) {
       if (foundMatch) break;
-      
+
       for (const scParcel of sendcloudByCarrier[carrier]) {
         if (matchTracking(scParcel.tracking, odooTracking, carrier)) {
           const finalCarrier = overrideCarrier(carrier, odooTracking);
