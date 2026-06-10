@@ -787,19 +787,22 @@ class OdooClient {
     ]);
   }
 
-  async findPickingByTracking(tracking) {
+  async findPickingByTracking(tracking, meta = {}) {
+    // meta.timedOut se pone a true si ALGUNA de las búsquedas falló por timeout.
+    // El caller lo usa para NO cachear como negativo un tracking que quizá existe
+    // pero Odoo no respondió a tiempo (evita envenenar el negative cache).
     const t0 = Date.now();
     try {
       // 1. Exact match (most common case, fast) — 3s timeout
       let pickings = await this.executeWithTimeout('stock.picking', 'search_read', [[['carrier_tracking_ref', '=', tracking]]], {
         fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1
-      }, 3000).catch(e => { console.warn('   ⏱️ Odoo exact timeout (' + e.message + ')'); return []; });
+      }, 3000).catch(e => { console.warn('   ⏱️ Odoo exact timeout (' + e.message + ')'); meta.timedOut = true; return []; });
       if (pickings.length > 0) { console.log('   🔍 Odoo exact match: ' + (Date.now()-t0) + 'ms'); return pickings[0]; }
 
       // 2. ilike with full barcode — 2s timeout
       pickings = await this.executeWithTimeout('stock.picking', 'search_read', [[['carrier_tracking_ref', 'ilike', tracking]]], {
         fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1
-      }, 2000).catch(e => { console.warn('   ⏱️ Odoo ilike timeout'); return []; });
+      }, 2000).catch(e => { console.warn('   ⏱️ Odoo ilike timeout'); meta.timedOut = true; return []; });
       if (pickings.length > 0) { console.log('   🔍 Odoo ilike match: ' + (Date.now()-t0) + 'ms'); return pickings[0]; }
 
       // 3. Pattern matching - LIMITADO a top 2 patrones (antes 3) y timeout 2s cada uno
@@ -808,7 +811,7 @@ class OdooClient {
         if (pattern.length >= 7) {
           pickings = await this.executeWithTimeout('stock.picking', 'search_read', [
             [['carrier_tracking_ref', 'ilike', pattern], ['state', '=', 'done'], ['picking_type_code', '=', 'outgoing']]
-          ], { fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 10 }, 2000).catch(e => { console.warn('   ⏱️ Odoo pattern timeout'); return []; });
+          ], { fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 10 }, 2000).catch(e => { console.warn('   ⏱️ Odoo pattern timeout'); meta.timedOut = true; return []; });
           if (pickings.length > 0) {
             const best = pickings.reduce((a, b) => {
               const cleanUpper = tracking.toUpperCase();
@@ -1031,11 +1034,17 @@ function extractSpecialPatterns(scanned) {
 
   // SPRING: Extraer tracking embebido de barcodes GS1-128 largos
   // Ejemplo: %000542106265024593998328040 → tracking: 06265024593998
-  if (!result.detectedCarrier && cleanAlnum.length > 20 && /^\d+$/.test(cleanAlnum)) {
-    const springPrefixes = ['0626', '0008'];
+  // - '0621' añadido (caso DF1341430EU, tracking 06215292484946)
+  // - idx >= 0 (el prefijo puede estar en posición 0)
+  // - length >= 16 (antes >20, dejaba fuera barcodes cortos)
+  // - TODAS las ocurrencias del prefijo (antes solo la primera: un '0626' falso
+  //   anterior al real producía substrings erróneos y el match fallaba)
+  if (!result.detectedCarrier && cleanAlnum.length >= 16 && /^\d+$/.test(cleanAlnum)) {
+    const springPrefixes = ['0626', '0008', '0621'];
+    let foundSpring = false;
     for (const prefix of springPrefixes) {
-      const idx = cleanAlnum.indexOf(prefix);
-      if (idx > 0) {
+      let idx = cleanAlnum.indexOf(prefix);
+      while (idx >= 0) {
         // Extraer substrings de longitudes típicas de tracking SPRING (12-16 chars)
         // Orden: corto→largo para que el match exacto (14 chars) se pruebe antes
         for (var len = 12; len <= 16; len++) {
@@ -1043,11 +1052,14 @@ function extractSpecialPatterns(scanned) {
             result.patterns.push(cleanAlnum.substring(idx, idx + len));
           }
         }
-        result.detectedCarrier = 'SPRING';
-        console.log('   🔍 Patrones SPRING extraídos desde pos ' + idx + ': ' + cleanAlnum.substring(idx, Math.min(idx + 16, cleanAlnum.length)));
-        break;
+        if (!foundSpring) {
+          console.log('   🔍 Patrones SPRING extraídos desde pos ' + idx + ': ' + cleanAlnum.substring(idx, Math.min(idx + 16, cleanAlnum.length)));
+        }
+        foundSpring = true;
+        idx = cleanAlnum.indexOf(prefix, idx + 1);
       }
     }
+    if (foundSpring) result.detectedCarrier = 'SPRING';
   }
 
   // ASENDIA: Extraer tracking embebido
@@ -1423,11 +1435,41 @@ async function getCarrierFromTracking(tracking) {
   } else {
     // 2. Buscar en Odoo
     console.log('   🔍 No en índice, buscando en Odoo...');
-    picking = await odooClient.findPickingByTracking(clean);
+    const lookupMeta = {};
+    picking = await odooClient.findPickingByTracking(clean, lookupMeta);
     if (!picking) {
-      // Cachear negativo para evitar repetir esta búsqueda lenta en los próximos 5 min
-      cacheNegativeLookup(clean);
-      return { carrier: null, picking: null, source: 'not_found' };
+      // FALLBACK Sendcloud-cache: si el cache tiene carrier+pedido para este
+      // tracking (típico picking >14 días fuera del índice, o Odoo caído),
+      // devolver el carrier con picking sintético en vez de fallar.
+      // Caso real: KA297687 (picking de 14 días, tracking LX071833722NL en
+      // cache Sendcloud pero no en índice; Odoo lento → operario bloqueado).
+      const dc = findInSendcloudCache(clean);
+      if (dc && dc.carrier) {
+        const fbCarrier = overrideCarrier(dc.carrier, clean);
+        const elapsed = Date.now() - startTime;
+        console.log('   🛟 Fallback cache Sendcloud: ' + fbCarrier + ' | pedido: ' + (dc.orderId || '?') + (lookupMeta.timedOut ? ' (Odoo timeout)' : ' (no en Odoo)') + ' (' + elapsed + 'ms)');
+        return {
+          carrier: fbCarrier,
+          picking: {
+            id: null,
+            name: dc.orderId || null,
+            carrier_tracking_ref: dc.tracking || clean,
+            origin: dc.orderId || '',
+            partner_id: [null, dc.name || '']
+          },
+          source: 'cache-fallback' + (lookupMeta.timedOut ? '-timeout' : ''),
+          elapsed
+        };
+      }
+      // Solo cachear como negativo si Odoo respondió DEFINITIVAMENTE que no existe.
+      // Un timeout NO es un "no existe": cachearlo bloqueaba reintentos de
+      // trackings válidos durante 5 min ("hay que añadirlo manualmente").
+      if (!lookupMeta.timedOut) {
+        cacheNegativeLookup(clean);
+        return { carrier: null, picking: null, source: 'not_found' };
+      }
+      console.log('   ⏱️ Odoo timeout sin fallback — NO se cachea negativo (reintentable)');
+      return { carrier: null, picking: null, source: 'odoo_timeout' };
     }
     odooTracking = picking.carrier_tracking_ref;
     console.log('   📍 Tracking Odoo: ' + odooTracking);
@@ -1722,10 +1764,10 @@ app.post('/api/scan', async (req, res) => {
   const det = await getCarrierFromTracking(clean);
 
   if (!det.picking) {
-    console.log('   ❌ No existe en Odoo');
     // Caso especial CRX: detectamos el carrier por prefijo (9300500...) pero
     // el pedido aún no está en Odoo (MIKA actualiza con delay). Mensaje útil:
     if (/^9300500\d/.test(clean)) {
+      console.log('   ❌ CRX no sincronizado');
       return res.json({
         success: false,
         error: 'CRX_NO_SINCRONIZADO',
@@ -1734,6 +1776,18 @@ app.post('/api/scan', async (req, res) => {
         tracking: clean
       });
     }
+    // Odoo no respondió a tiempo: el tracking puede ser válido. NO mandar al
+    // operario a buscar por cliente — basta reintentar el escaneo en unos segundos.
+    if (det.source === 'odoo_timeout') {
+      console.log('   ⏱️ Timeout Odoo — pedir reintento');
+      return res.json({
+        success: false,
+        error: 'SISTEMA_LENTO',
+        message: 'El sistema está lento. Vuelve a escanear este paquete en unos segundos.',
+        tracking: clean
+      });
+    }
+    console.log('   ❌ No existe en Odoo');
     return res.json({ success: false, error: 'NO_ENCONTRADO', message: 'El tracking ' + clean + ' no existe en Odoo', tracking: clean });
   }
 

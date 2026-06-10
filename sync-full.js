@@ -293,7 +293,10 @@ async function sync() {
     process.exit(1);
   }
 
-  const pickings = await odooClient.getRecentPickings(7);
+  // 14 días (antes 7): los operarios escanean paquetes con pickings de hasta
+  // 2 semanas (reprocesos, devoluciones, envíos retrasados). Caso KA297687:
+  // picking de 14 días no estaba en el índice → caía a Odoo en cada scan.
+  const pickings = await odooClient.getRecentPickings(14);
   console.log(`   📦 ${pickings.length} OUTs descargados de Odoo`);
   console.log('');
 

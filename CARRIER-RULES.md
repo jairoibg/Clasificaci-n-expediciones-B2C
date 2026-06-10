@@ -303,7 +303,8 @@ actual y la evolución de cada uno.
 | 2026-05-25 | **`looksLikeSpringBarcode`** helper (`/0626\d{8,}/` o `/0008\d{8,}/`, length ≥18). Usado como GUARD en sliding INPOST de `extractInpostTracking` y `overrideCarrier` | `5b73ee0` | #024 |
 | 2026-05-25 | Frontend `localLookup`: nuevo sliding SPRING (substrings 12-16 chars desde `0626`/`0008`) que corre ANTES del sliding INPOST, para match exacto en cliente 0ms | `5b73ee0` | #024 |
 | 2026-05-26 | Shape check del fast-fail acepta `(0626\|0008)\d{8}` embebido en strings ≥12 chars (no descarta barcodes SPRING como `no_shape`) | `dd613dc` | #027 |
-| 2026-06-09 | **Nuevo prefijo SPRING `0621`**: caso DF1333089EU (tracking `06215292478046`). Añadido a `looksLikeSpringBarcode`, sliding SPRING del frontend, `hasNonInpostNumericPattern`, `extractSpecialPatterns`. Length mínima del guard bajada de 18 a 14 (tracking SPRING corto puede ser 14 dígitos). | _pendiente_ | #030 |
+| 2026-06-09 | **Nuevo prefijo SPRING `0621`**: caso DF1333089EU (tracking `06215292478046`). Añadido a `looksLikeSpringBarcode`, sliding SPRING del frontend, `hasNonInpostNumericPattern`. Length mínima del guard bajada de 18 a 14 (tracking SPRING corto puede ser 14 dígitos). | `e0f8c06` | #030 |
+| 2026-06-10 | **`0621` añadido a `extractSpecialPatterns` del server** (en #030 se añadió al guard pero NO al extractor — caso DF1341430EU seguía sin extraerse del barcode GS1). Además: `idx > 0` → `idx >= 0` (prefijo en posición 0 válido), umbral `length > 20` → `>= 16`, y el extractor itera **TODAS las ocurrencias** del prefijo (antes solo `indexOf` primero: un `0626`/`0621` falso anterior al real rompía la extracción). Mismo fix de todas-las-ocurrencias en el sliding SPRING del frontend. | _pendiente_ | #031 |
 
 ---
 
@@ -345,6 +346,27 @@ Decide si un input vale la pena buscar en Odoo:
 ### `negativeLookupCache`
 TTL 5 min, max 10k entries. Trackings que ya buscamos en Odoo sin encontrar
 nada se cachean para no repetir la búsqueda costosa.
+**IMPORTANTE (#031)**: solo se cachea como negativo cuando Odoo respondió
+DEFINITIVAMENTE "no existe". Si la búsqueda falló por **timeout**, NO se
+cachea (el tracking puede ser válido) y `/api/scan` devuelve
+`error: 'SISTEMA_LENTO'` pidiendo al operario re-escanear, en vez de
+mandarle a buscar por cliente. `findPickingByTracking(tracking, meta)`
+expone `meta.timedOut` para distinguir ambos casos.
+
+### Fallback cache Sendcloud (#031)
+Cuando un tracking NO está en el índice y Odoo no lo devuelve (timeout o
+picking >14 días), si el **cache Sendcloud** tiene el parcel con carrier y
+orderId, se devuelve ese carrier con un picking sintético
+(`pickingId: null`, orderRef y cliente del cache). El escaneo funciona
+aunque Odoo esté caído. Caso real: KA297687 (picking de 14 días,
+tracking `LX071833722NL`).
+
+### Ventana del sync
+- **Odoo pickings: 14 días** (antes 7 — caso KA297687: pickings de hasta
+  2 semanas se siguen escaneando por reprocesos/retrasos).
+- **Sendcloud parcels: 7 días** con `updated_after` (los parcels viejos con
+  actualizaciones de estado recientes siguen entrando; el límite real es el
+  cap de 50k parcels / 500 páginas).
 
 ### Timeouts Odoo (`executeWithTimeout`)
 - Exact match: 3s

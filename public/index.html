@@ -1659,19 +1659,23 @@
       // 2. SPRING sliding window (probamos varios cortes desde 0626/0008/0621)
       // Lo hacemos ANTES de INPOST para que un barcode SPRING no se clasifique
       // como INPOST por colisión accidental de 8 dígitos consecutivos.
+      // TODAS las ocurrencias del prefijo: un '0626'/'0621' falso anterior al
+      // real haría fallar el match si solo probáramos la primera posición.
       if (isSpringBarcode) {
         const prefixes = ['0626', '0008', '0621'];
         for (const prefix of prefixes) {
-          const idx = clean.indexOf(prefix);
-          if (idx < 0) continue;
-          // Probar longitudes típicas del tracking SPRING: 12 a 16 chars
-          for (let len = 16; len >= 12; len--) {
-            if (idx + len > clean.length) continue;
-            const cand = clean.substring(idx, idx + len);
-            const match = clientIndex.get(cand);
-            if (match && match.carrier === 'SPRING') {
-              return { ...match, source: 'client-spring-' + len };
+          let idx = clean.indexOf(prefix);
+          while (idx >= 0) {
+            // Probar longitudes típicas del tracking SPRING: 12 a 16 chars
+            for (let len = 16; len >= 12; len--) {
+              if (idx + len > clean.length) continue;
+              const cand = clean.substring(idx, idx + len);
+              const match = clientIndex.get(cand);
+              if (match && match.carrier === 'SPRING') {
+                return { ...match, source: 'client-spring-' + len };
+              }
             }
+            idx = clean.indexOf(prefix, idx + 1);
           }
         }
       }
@@ -1827,6 +1831,12 @@
             showSearchModal(tracking, r.message, 'crx');
             playSound('error');
             if (navigator.vibrate) navigator.vibrate([200,100,200]);
+          } else if (r.error === 'SISTEMA_LENTO') {
+            // Odoo no respondió a tiempo: el tracking puede ser válido.
+            // Toast (no modal) para que el operario simplemente re-escanee.
+            showToast('⏱ Sistema lento — vuelve a escanear este paquete', 'warning');
+            playSound('error');
+            if (navigator.vibrate) navigator.vibrate([100,50,100]);
           } else if (r.error === 'NO_ENCONTRADO' || r.error === 'NO_VERIFICADO') {
             showSearchModal(tracking, r.message); playSound('error');
           } else if (r.error === 'TRANSPORTISTA_INCORRECTO') {

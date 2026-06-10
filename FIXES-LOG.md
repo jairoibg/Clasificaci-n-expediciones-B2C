@@ -1364,6 +1364,92 @@ operario pulsa por error o cancela, queda palet con 0 envíos.
 
 ---
 
+### #031 · Auditoría completa: timeouts envenenaban negative cache + sync 7d corto + extractor SPRING incompleto
+
+**Síntoma** (reporte operarios, 4 problemas)
+1. Error constante "No se pudo verificar el transportista. Busca por
+   nombre de cliente"
+2. SPRING `KA297687` no reconocido (hay que buscar por nombre)
+3. SPRING `DF1341430EU` sigue sin reconocerse al escanear
+4. Lecturas rápidas → "no los reconoce" → añadir manualmente
+
+**Diagnóstico** (auditoría completa del cascade contra producción)
+
+*Caso KA297687*: picking `CLAWD/OUT/102578` con `scheduled_date`
+de hace **14 días**. El sync solo cubría **7 días** → nunca entró al
+índice. El tracking `LX071833722NL` SÍ estaba en cache Sendcloud.
+Flujo del fallo: no en índice → shortcut cache+order falla (orderRef
+tampoco indexado) → Odoo exact match con timeout 3s → si Odoo lento,
+`findPickingByTracking` devuelve null → **NO_ENCONTRADO + negative
+cache 5 min** → reintentos fallan al instante.
+
+*Caso DF1341430EU*: tracking `06215292484946` (prefijo `0621`) SÍ
+en índice como SPRING. Pero en #030 añadí `0621` al guard
+(`hasNonInpostNumericPattern`) y NO al **extractor**
+(`extractSpecialPatterns`, que seguía con `['0626','0008']`). El
+guard bloqueaba correctamente el sliding INPOST, pero después nada
+extraía el tracking SPRING del barcode → caía a Odoo con el barcode
+completo → ilike sin match → NO_ENCONTRADO. Bugs adicionales del
+extractor: `idx > 0` excluía prefijo en posición 0; `length > 20`
+dejaba fuera barcodes de 16-20 chars; solo se probaba la PRIMERA
+ocurrencia del prefijo (`indexOf`).
+
+*Causa raíz transversal (problemas 1 y 4)*:
+`findPickingByTracking` **traga los timeouts** (`.catch → []`) — el
+caller no distinguía "Odoo dijo NO existe" de "Odoo tardó >3s". Al
+escanear rápido, los lookups Odoo se acumulan → timeouts → trackings
+VÁLIDOS entraban al `negativeLookupCache` 5 min → todo reintento
+fallaba al instante con el modal de buscar por cliente.
+
+**Solución**
+
+`sync-full.js`:
+- Ventana Odoo **7 → 14 días** (`getRecentPickings(14)`). Sendcloud
+  se queda en 7d (ya está en el cap de 50k parcels; `updated_after`
+  captura los viejos con actividad reciente).
+
+`server.js`:
+- `findPickingByTracking(tracking, meta)`: nuevo out-param
+  `meta.timedOut` → true si CUALQUIER paso (exact/ilike/pattern)
+  falló por timeout.
+- `getCarrierFromTracking`:
+  - **NO cachear negativo si hubo timeout** (solo si Odoo respondió
+    definitivamente). Nuevo source `'odoo_timeout'`.
+  - **Fallback cache Sendcloud**: si Odoo falla pero el cache tiene
+    carrier+orderId → devolver carrier con picking sintético
+    (pickingId null, orderRef y cliente del cache). El escaneo
+    funciona aunque el picking sea viejo o Odoo esté caído.
+- `extractSpecialPatterns` SPRING: `+0621`, `idx >= 0`,
+  `length >= 16`, TODAS las ocurrencias de cada prefijo.
+- `/api/scan`: nuevo error `SISTEMA_LENTO` cuando
+  `det.source === 'odoo_timeout'` — pide re-escanear en vez de
+  mandar a buscar por cliente.
+
+`public/index.html`:
+- Sliding SPRING de `localLookup`: TODAS las ocurrencias del prefijo.
+- Handler `SISTEMA_LENTO`: toast "⏱ Sistema lento — vuelve a escanear"
+  (no modal de búsqueda).
+
+**Archivos**: `server.js`, `sync-full.js`, `public/index.html`,
+`public/sw.js`, `CARRIER-RULES.md`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+
+**Lección**:
+- Un timeout NO es un "no existe". Cachear timeouts como negativos
+  convierte lentitud puntual de Odoo en bloqueos de 5 min para
+  trackings válidos. Distinguir SIEMPRE respuesta-definitiva de
+  fallo-de-infraestructura.
+- Al añadir un prefijo nuevo de carrier, revisar TODOS los puntos:
+  guard + extractor (server) + sliding (frontend) + sync + shape
+  check. En #030 se añadió `0621` al guard pero no al extractor.
+  La checklist de CARRIER-RULES.md existe para esto.
+- `indexOf` (primera ocurrencia) es insuficiente para patrones
+  embebidos: iterar todas las ocurrencias.
+- La ventana del índice debe cubrir la realidad operativa (paquetes
+  de hasta 2 semanas), no solo el caso típico.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
