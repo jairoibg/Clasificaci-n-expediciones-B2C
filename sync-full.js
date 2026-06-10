@@ -139,10 +139,12 @@ class OdooClient {
 
     console.log(`   🔍 Dominio: OUTs Shopify B2C con tracking, últimos ${daysBack} días`);
 
+    // limit 60000: con ventana de 14 días hay >30k pickings; el limit anterior
+    // (30000) + order desc cortaba los más viejos (caso KA297687 a 14 días).
     const pickings = await this.execute('stock.picking', 'search_read', [domain], {
       fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state', 'carrier_id', 'sale_id', 'weight', 'date_done', 'note'],
       order: 'scheduled_date desc',
-      limit: 30000
+      limit: 60000
     });
 
     return pickings;

@@ -1630,11 +1630,13 @@ app.get('/api/scanning-index', (req, res) => {
   res.send(scanningIndexJsonCache);
 });
 
-app.post('/api/reload-index', async (req, res) => {
+app.post('/api/reload-index', (req, res) => {
   if (syncInProgress) return res.json({ success: false, message: 'Sync ya en progreso' });
   console.log('🔄 Recarga de índice solicitada');
-  const success = await runSync();
-  res.json({ success, message: success ? 'Índice regenerado' : 'Error regenerando índice', stats: { lastSync: trackingIndex.lastSync, matched: trackingIndex.matched } });
+  // Fire-and-forget: el sync de 14 días tarda >4 min y el proxy de Railway
+  // corta conexiones largas (HTTP 000). Respondemos ya y el sync corre detrás.
+  runSync();
+  res.json({ success: true, started: true, message: 'Sync iniciado en background — consulta /api/index-diagnostic para ver el progreso' });
 });
 
 // Stats del histórico (palets/recogidas acumulados)
