@@ -1474,6 +1474,86 @@ fallaba al instante con el modal de buscar por cliente.
 
 ---
 
+## 2026-07-01 · Pérdida de histórico de palets (persistencia)
+
+### #032 · Faltan palets de días laborables de los últimos 3 meses (mayo vacío)
+
+**Síntoma**
+Al abrir el tab Palets y elegir un día laborable de mayo (y de los últimos ~3
+meses en general), aparece "No hay palets esta fecha", cuando ese registro
+SÍ existía. Días dispersos sin palets a lo largo del periodo.
+
+**Diagnóstico (auditoría de principio a fin)**
+Descartado que sea un fallo de consulta o de UI:
+- `GET /api/pallets?date=` filtra `p.date === dateFilter` (string `YYYY-MM-DD`,
+  correcto). El frontend usa un `<input type=date>` que consulta ese endpoint.
+  Si mayo sale vacío es porque `database.pallets` NO contiene esos palets.
+- No existe ninguna retención/borrado automático (el `/api/cleanup-old` se
+  eliminó en #022). Los palets solo se borran por acción manual.
+- El histórico de git de `data.json` solo tiene commits de enero 2026 → la
+  data de producción nunca se commitea (vive solo en el volumen de Railway),
+  así que no es recuperable desde git.
+→ Es **pérdida de datos en la capa de persistencia**.
+
+**Causa raíz (destructor de datos en cascada)**
+1. `saveData()` hacía `fs.writeFileSync(DATA_FILE, ...)` de un `data.json` de
+   30+ MB. **No es atómico**: si el proceso muere a mitad (redeploy de Railway,
+   OOM/SIGKILL) deja el fichero **truncado/corrupto**.
+2. Al reiniciar, `loadData()` hacía `JSON.parse(data)` → lanza excepción → el
+   `catch` solo hacía `console.error` y nada más → `database` quedaba **VACÍO**.
+3. El primer `saveData()` (cualquier escaneo) **sobrescribía el volumen con la
+   BD vacía** → pérdida total. Con los redeploys frecuentes de mayo-junio, esto
+   se repetía y explica los días desaparecidos.
+Agravante: si `RAILWAY_VOLUME_MOUNT_PATH` no está definido, `VOLUME_PATH`
+cae a `__dirname` (disco EFÍMERO del contenedor) → los datos se pierden en
+cada redeploy y se re-siembra la semilla de git (enero).
+
+**Solución (`server.js`)**
+- **Escritura atómica** `atomicWriteFileSync` (temp + rename) → nunca deja
+  `data.json` truncado.
+- **Carga a prueba de corrupción** `loadData`: intenta volumen → `data.json.bak`
+  → semilla de git; si el volumen no parsea, **preserva el corrupto** como
+  `data.json.corrupt-<ts>` y NO arranca sobre él ni lo sobrescribe.
+- **GUARD anti-wipe** en `writeDatabaseToDisk`: si la BD en memoria está vacía
+  pero en disco hay datos, **aborta el guardado** (evita el borrado).
+- **Backups diarios** `data.backup.YYYY-MM-DD.json` (retención 30 días) +
+  `.bak` del último estado bueno cargado.
+- **Diagnóstico al arranque**: avisa si el volumen NO está montado (datos
+  efímeros) y loguea nº de palets y rango de fechas cargado.
+- **Endpoint `GET /api/persistence-status`**: volumen montado sí/no, tamaño de
+  `data.json`, backups, corruptos en cuarentena y palets por día.
+
+**Verificación**: `node --check` OK + test aislado (atomic write válido sin
+`.tmp` residual; guard bloquea vacío-sobre-datos; corrupto detectado y
+preservado sin arrancar encima).
+
+**Pendiente operativo (Railway)**
+1. Confirmar que hay un **Volume montado** en el servicio y que
+   `RAILWAY_VOLUME_MOUNT_PATH` apunta a él (si no, montarlo — es la causa
+   primaria si los datos son efímeros).
+2. Desplegar este fix (commit + push).
+3. Recuperar mayo: revisar snapshots/backups del volumen en Railway; si no hay,
+   reconstrucción parcial vía Odoo (`manual_expedition_date` de los pickings
+   indica qué envíos se expidieron cada día) — pero la agrupación exacta en
+   palets no es recuperable sin backup.
+
+**Archivos**: `server.js` (loadData, saveData/atomic/guard/backups,
+persistence-status), `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**:
+- `fs.writeFileSync` de ficheros grandes NO es atómico: un corte a mitad
+  corrompe el fichero. Escribir SIEMPRE a temporal + rename.
+- Un `JSON.parse` que falla al cargar NUNCA debe degradar a "BD vacía" y luego
+  permitir que un save la persista: eso convierte una corrupción recuperable en
+  pérdida total. Preservar el fichero y no sobrescribir.
+- Estado operativo crítico en un fichero JSON sobre volumen necesita: escritura
+  atómica, backups rotados y un guard anti-borrado. Migrar a SQLite (como el
+  dashboard) es la mejora de fondo.
+- Verificar SIEMPRE que el volumen de Railway está montado; sin él la
+  persistencia es una ilusión que se borra en cada deploy.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío

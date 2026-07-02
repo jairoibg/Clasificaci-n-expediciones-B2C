@@ -423,41 +423,141 @@ function setupScheduledSync() {
 // ============================================
 let database = { activeSessions: {}, pallets: {}, pickups: {}, manifests: {} };
 
-function loadData() {
+function isDatabaseEmpty() {
+  return Object.keys(database.pallets || {}).length === 0
+    && Object.keys(database.pickups || {}).length === 0
+    && Object.keys(database.activeSessions || {}).length === 0;
+}
+
+function fileHasRealData(f) {
+  try { return fs.existsSync(f) && fs.statSync(f).size > 200; } catch (_) { return false; }
+}
+
+// Escritura ATÓMICA: escribe a un temporal y renombra (rename es atómico en el
+// mismo filesystem en Linux/Railway). Evita dejar data.json truncado si el proceso
+// muere a mitad de un writeFileSync de 30+ MB (causa histórica de wipes de datos).
+function atomicWriteFileSync(file, contents) {
+  const tmp = file + '.tmp-' + process.pid;
   try {
-    if (fs.existsSync(DATA_FILE)) {
-      const data = fs.readFileSync(DATA_FILE, 'utf8');
-      database = JSON.parse(data);
-      console.log('📂 Datos cargados desde Volume');
-      
-      // MIGRACIÓN: pallets -> packages
-      for (const carrier of Object.keys(database.activeSessions)) {
-        const session = database.activeSessions[carrier];
-        if (session && session.pallets && !session.packages) {
-          const allPackages = [];
-          for (const pallet of session.pallets) {
-            if (pallet.packages && Array.isArray(pallet.packages)) allPackages.push(...pallet.packages);
-          }
-          database.activeSessions[carrier] = { packages: allPackages, lastUpdate: session.pallets[0]?.lastUpdate || new Date().toISOString() };
-          console.log('   ✅ Migrada sesión ' + carrier + ': ' + allPackages.length + ' paquetes');
-        }
+    fs.writeFileSync(tmp, contents);
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    // Fallback (p.ej. Windows local: rename sobre fichero existente falla)
+    try { fs.writeFileSync(file, contents); }
+    finally { try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch (_) {} }
+  }
+}
+
+function migratePalletsToPackages() {
+  for (const carrier of Object.keys(database.activeSessions)) {
+    const session = database.activeSessions[carrier];
+    if (session && session.pallets && !session.packages) {
+      const allPackages = [];
+      for (const pallet of session.pallets) {
+        if (pallet.packages && Array.isArray(pallet.packages)) allPackages.push(...pallet.packages);
+      }
+      database.activeSessions[carrier] = { packages: allPackages, lastUpdate: session.pallets[0]?.lastUpdate || new Date().toISOString() };
+      console.log('   ✅ Migrada sesión ' + carrier + ': ' + allPackages.length + ' paquetes');
+    }
+  }
+}
+
+function logPalletDateRange() {
+  const dates = Object.values(database.pallets).map(p => p.date).filter(Boolean).sort();
+  if (dates.length) console.log('   📅 Rango de palets en disco: ' + dates[0] + ' → ' + dates[dates.length - 1]);
+}
+
+function loadData() {
+  // Aviso CRÍTICO de persistencia: sin volumen montado los datos son efímeros
+  // y se pierden en cada redeploy de Railway.
+  if (process.env.RAILWAY_VOLUME_MOUNT_PATH) {
+    console.log('💾 Persistencia: volumen Railway MONTADO en ' + VOLUME_PATH);
+  } else {
+    console.warn('⚠️ ⚠️ PERSISTENCIA EFÍMERA: RAILWAY_VOLUME_MOUNT_PATH no definido.');
+    console.warn('   VOLUME_PATH=' + VOLUME_PATH + ' (disco del contenedor). LOS DATOS SE PIERDEN EN CADA REDEPLOY.');
+  }
+
+  // Fuentes por orden de preferencia: volumen, backup del volumen, semilla de git.
+  const sources = [
+    { file: DATA_FILE, label: 'volumen', isVolume: true },
+    { file: DATA_FILE + '.bak', label: 'backup del volumen', isVolume: true },
+    { file: path.join(__dirname, 'data.json'), label: 'semilla de git', isVolume: false }
+  ];
+
+  for (const src of sources) {
+    if (!fs.existsSync(src.file)) continue;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(src.file, 'utf8'));
+      if (!parsed || typeof parsed !== 'object') throw new Error('estructura no válida');
+      database = Object.assign({ activeSessions: {}, pallets: {}, pickups: {}, manifests: {} }, parsed);
+      const nP = Object.keys(database.pallets).length;
+      console.log('📂 Datos cargados desde ' + src.label + ' (' + src.file + '): ' + nP + ' palets, ' + Object.keys(database.pickups).length + ' recogidas');
+      logPalletDateRange();
+      migratePalletsToPackages();
+      if (src.isVolume && nP > 0) {
+        // Backup inmediato del estado bueno recién cargado.
+        try { fs.copyFileSync(src.file, DATA_FILE + '.bak'); } catch (_) {}
       }
       saveData();
       return;
+    } catch (err) {
+      console.error('⚠️ No se pudo cargar ' + src.label + ' (' + src.file + '): ' + err.message);
+      // Preservar el fichero corrupto del volumen para forense; NUNCA arrancar
+      // sobre él ni sobrescribirlo con una BD vacía.
+      if (src.file === DATA_FILE) {
+        try {
+          const quarantine = DATA_FILE + '.corrupt-' + Date.now();
+          fs.renameSync(DATA_FILE, quarantine);
+          console.error('   🔒 data.json corrupto preservado como ' + quarantine);
+        } catch (_) {}
+      }
     }
-    const fallbackFile = path.join(__dirname, 'data.json');
-    if (fs.existsSync(fallbackFile)) {
-      database = JSON.parse(fs.readFileSync(fallbackFile, 'utf8'));
-      console.log('📂 Datos cargados desde GitHub');
-      saveData();
-    }
-  } catch (err) { console.error('Error cargando datos:', err.message); }
+  }
+  console.warn('⚠️ Arrancando con base de datos VACÍA (no se encontró ningún data.json válido).');
 }
 
 // Throttled save: agrupa múltiples saveData en 2 segundos para no saturar I/O
-// con database.json de 30+ MB en cada escaneo
+// con data.json de 30+ MB en cada escaneo. Escritura atómica + guard anti-borrado.
 let saveTimer = null;
 let savePending = false;
+let lastBackupDay = null;
+
+function writeDatabaseToDisk() {
+  // GUARD ANTI-WIPE: nunca sobrescribir un data.json que tiene datos por una BD
+  // vacía en memoria (protege del bug histórico: parse fallido -> BD vacía ->
+  // save borraba todo el volumen).
+  if (isDatabaseEmpty() && fileHasRealData(DATA_FILE)) {
+    console.error('🛑 saveData ABORTADO: BD en memoria vacía pero data.json en disco tiene datos. No se sobrescribe (pérdida evitada).');
+    return;
+  }
+  atomicWriteFileSync(DATA_FILE, JSON.stringify(database));
+  maybeDailyBackup();
+}
+
+function maybeDailyBackup() {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    if (day === lastBackupDay || isDatabaseEmpty()) return;
+    // Backup comprimido (gzip) para no llenar el volumen: ~4 MB/día vs ~30 MB.
+    const gz = zlib.gzipSync(JSON.stringify(database), { level: 6 });
+    atomicWriteFileSync(path.join(VOLUME_PATH, 'data.backup.' + day + '.json.gz'), gz);
+    lastBackupDay = day;
+    console.log('🗂️ Backup diario creado: data.backup.' + day + '.json.gz (' + (gz.length / 1048576).toFixed(1) + ' MB)');
+    pruneOldBackups(30);
+  } catch (err) { console.error('Error backup diario:', err.message); }
+}
+
+function pruneOldBackups(keepDays) {
+  try {
+    const cutoff = Date.now() - keepDays * 86400000;
+    for (const f of fs.readdirSync(VOLUME_PATH)) {
+      if (/^data\.backup\.\d{4}-\d{2}-\d{2}\.json(\.gz)?$/.test(f)) {
+        const full = path.join(VOLUME_PATH, f);
+        if (fs.statSync(full).mtimeMs < cutoff) fs.unlinkSync(full);
+      }
+    }
+  } catch (_) {}
+}
 
 function saveData() {
   savePending = true;
@@ -466,12 +566,8 @@ function saveData() {
     saveTimer = null;
     if (!savePending) return;
     savePending = false;
-    try {
-      // Sin pretty-print: ahorra ~30% del tamaño y tiempo de escritura
-      fs.writeFileSync(DATA_FILE, JSON.stringify(database));
-    } catch (err) {
-      console.error('Error guardando:', err.message);
-    }
+    try { writeDatabaseToDisk(); }
+    catch (err) { console.error('Error guardando:', err.message); }
   }, 2000);
 }
 
@@ -479,7 +575,7 @@ function saveData() {
 function saveDataSync() {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
   savePending = false;
-  try { fs.writeFileSync(DATA_FILE, JSON.stringify(database)); }
+  try { writeDatabaseToDisk(); }
   catch (err) { console.error('Error guardando:', err.message); }
 }
 
@@ -1653,6 +1749,33 @@ app.get('/api/history-stats', (req, res) => {
     totalManifests: Object.keys(database.manifests || {}).length,
     scannedTrackingsCount: globalScannedTrackings.size,
     scannedPickingIdsCount: globalScannedPickingIds.size
+  });
+});
+
+// Diagnóstico de persistencia: estado del volumen, ficheros y rango de palets.
+// Úsalo para confirmar de un vistazo si el volumen está montado y qué días hay.
+app.get('/api/persistence-status', (req, res) => {
+  const stat = (f) => { try { const s = fs.statSync(f); return { exists: true, sizeMB: +(s.size / 1048576).toFixed(2), mtime: s.mtime.toISOString() }; } catch (_) { return { exists: false }; } };
+  let backups = [], corrupt = [];
+  try {
+    for (const f of fs.readdirSync(VOLUME_PATH)) {
+      if (/^data\.backup\.\d{4}-\d{2}-\d{2}\.json(\.gz)?$/.test(f)) backups.push(f);
+      if (/^data\.json\.corrupt-\d+$/.test(f)) corrupt.push(f);
+    }
+  } catch (_) {}
+  // Palets por día (para detectar días laborables sin registro)
+  const byDay = {};
+  for (const p of Object.values(database.pallets)) { const d = p.date || (p.createdAt || '').slice(0, 10); if (d) byDay[d] = (byDay[d] || 0) + 1; }
+  const days = Object.keys(byDay).sort();
+  res.json({
+    volumeMounted: !!process.env.RAILWAY_VOLUME_MOUNT_PATH,
+    volumePath: VOLUME_PATH,
+    dataFile: stat(DATA_FILE),
+    backupFile: stat(DATA_FILE + '.bak'),
+    dailyBackups: backups.sort(),
+    corruptQuarantined: corrupt.sort(),
+    pallets: { total: Object.keys(database.pallets).length, firstDay: days[0] || null, lastDay: days[days.length - 1] || null, distinctDays: days.length },
+    palletsByDay: byDay
   });
 });
 
