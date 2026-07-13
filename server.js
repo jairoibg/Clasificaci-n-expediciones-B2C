@@ -1037,6 +1037,13 @@ function hasNonInpostNumericPattern(clean) {
   // (verificado: 8477128076710 → ventana 84771280 = tracking INPOST real).
   // Ningún carrier usa 13 dígitos numéricos con prefijo 84 → es un producto, no un envío.
   if (clean.length === 13 && /^84/.test(clean)) return 'EAN13_PRODUCTO';
+  // (#035) Familias SPRING numéricas NUEVAS (verificadas en índice de producción):
+  // 181+15 díg (contienen ventana 81xxxxxx → colisionaban con heurística INPOST;
+  // casos operarios CO531753/KA305576/DF1351565EU...), 65480525+16 (24 díg) y
+  // 00373165+12 (20 díg). Bloquean el sliding INPOST sobre estos barcodes.
+  if (/^181\d{15}$/.test(clean)) return 'SPRING';
+  if (/^65480525\d{16}$/.test(clean)) return 'SPRING';
+  if (/^00373165\d{12}$/.test(clean)) return 'SPRING';
   // CRX: 23 dígitos con prefijo 9300500
   if (clean.length >= 18 && /^9300500\d/.test(clean)) return 'CORREOS EXPRESS';
   // SPRING: barcodes largos con tracking embebido 0626 / 0008 / 0621 + 8+ dígitos
@@ -1092,11 +1099,13 @@ function extractInpostTracking(scannedClean) {
       }
     }
 
-    // Si el barcode contiene patrón INPOST típico (prefijos 04/81/83 + 6 dígitos)
-    // intentar extracción posicional como fallback
+    // Si el barcode contiene patrón INPOST típico (prefijos 04/81/83/84/85 + 6 dígitos)
+    // intentar extracción posicional como fallback.
+    // (#035) 84/85 añadidos: la numeración INPOST actual empieza por 84/85
+    // (verificado en índice de producción: 9.840 trackings, todos 84xx/85xx).
     for (let i = 0; i <= scannedClean.length - 8; i++) {
       const candidate = scannedClean.substring(i, i + 8);
-      if (/^(04|81|83)\d{6}$/.test(candidate)) {
+      if (/^(04|81|83|84|85)\d{6}$/.test(candidate)) {
         return { extracted: candidate, isDirectMatch: false, position: i, source: 'prefix' };
       }
     }
@@ -1487,7 +1496,7 @@ async function getCarrierFromTracking(tracking) {
       // y el formato coincide con INPOST (04/81/83 + 6 dígitos), preguntar a Odoo.
       // Antes este branch corría TAMBIÉN cuando fromIndex=true, generando lookups
       // Odoo innecesarios. Ahora solo cuando es un candidato heurístico.
-      const looksInpost = /^(04|81|83)\d{6}$/.test(ipTracking);
+      const looksInpost = /^(04|81|83|84|85)\d{6}$/.test(ipTracking);
       const fromIndexExtract = inpostResult.source && inpostResult.source.startsWith('index');
       if (looksInpost && !fromIndexExtract) {
         console.log('   🔍 Buscando INPOST en Odoo (candidato heurístico): ' + ipTracking);
@@ -2916,6 +2925,7 @@ app.get('/api/odoo-outs', async (req, res) => {
         else if (/^6A/.test(t)) carrier = 'SPRING';
         else if (/^LS\d{9}[A-Z]{2}$/.test(t)) carrier = 'ASENDIA';
         else if (/^LS|^LX|^LV|^LT|^3[A-Z]|^CP|^Z96|^XSMT|^0008|^0626/.test(t)) carrier = 'SPRING';
+        else if (/^181\d{15}$/.test(t) || /^65480525\d{16}$/.test(t) || /^00373165\d{12}$/.test(t)) carrier = 'SPRING'; // (#035) familias numéricas nuevas
         else if (/^CTT|^EA/.test(t)) carrier = 'CTT';
         else if (/^C0/.test(t)) carrier = 'CORREOS';
         else if (/^\d{8}$/.test(t)) carrier = 'INPOST';

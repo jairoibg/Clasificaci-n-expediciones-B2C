@@ -1696,6 +1696,70 @@ fugado mañana si no se escanea.
 
 ---
 
+## 2026-07-13 · Lista de operarios: familias SPRING nuevas + prefijos INPOST 84/85 (#035)
+
+### #035 · SPRING numéricos nuevos reconocidos como INPOST + INPOST 84/85 fuera de la heurística
+
+**Síntoma (lista de mejoras de operarios)**
+- "Pedido de Spring que lo reconoce como Inpost": CO531753, CO532151,
+  KA305576, DF1351565EU, DF1356793EU, KA306338.
+- "Todos los pedidos de Inpost tienen que buscarlo por el nombre."
+
+**Diagnóstico (verificación caso a caso contra producción)**
+- Los pedidos SPRING afectados usan **familias de numeración NUEVAS** sin
+  regla alguna en el sistema:
+  - `181` + 15 dígitos (18 díg., ej. `181011473326568106`) — 138 en índice.
+    ⚠️ Contienen ventana `81xxxxxx` en posición 1 → la heurística INPOST
+    (`^(04|81|83)`) los mandaba a Odoo ilike → falso INPOST (mecanismo
+    exacto de los casos reportados; pre-#033 era determinista).
+  - `65480525` + 16 dígitos (24 díg., ej. `654805250004735000889455`) — 75.
+  - `00373165` + 12 dígitos (20 díg.) — también sin regla.
+  Tras #033 los 4 casos verificables ya detectaban SPRING pero por la VÍA
+  LENTA (API Sendcloud live, ~2s) y seguían expuestos a colisión de sliding
+  contra INPOST reales del índice (hoy 0 colisiones, pero probabilístico).
+- INPOST: la numeración ACTUAL empieza por **84/85** (9.840/9.840 trackings
+  del índice) pero la heurística solo conocía `04|81|83` → etiquetas recién
+  impresas (aún no en índice) no tenían fallback → "buscar por nombre".
+  Verificado hoy: 10/10 directos + 5/5 embebidos OK vía índice; el fix cubre
+  el hueco entre syncs.
+
+**Solución**
+- `hasNonInpostNumericPattern` (server + frontend): + `^181\d{15}$`,
+  `^65480525\d{16}$`, `^00373165\d{12}$` → SPRING (bloquean sliding INPOST).
+- Prefijos SPRING en `/api/odoo-outs` y fallback de `sync-full.js`: mismas
+  3 reglas (los pickings sin match Sendcloud ya no caen a DESCONOCIDO).
+- Heurística INPOST: `^(04|81|83|84|85)\d{6}$` en `extractInpostTracking`
+  (fallback posicional) y en `looksInpost` (validada por #033: solo match
+  exacto/E1 en Odoo — sin riesgo de ilike).
+- `public/sw.js` bump `expediciones-v3-2026-07-13-spring-familias`.
+
+**Verificación**: test verbatim del guard 15/15 (6 trackings reales de las
+familias nuevas + 5 regresiones #030/#033 + 4 negativos de borde).
+
+**Estado del resto de la lista de operarios** (verificado 13-jul):
+- ✅ Ya resueltos por #030: palets vacíos INPOST, CRX→INPOST, SPRING
+  0621→INPOST, 5º INPOST no reconocido, CTT→INPOST.
+- ✅ Ya resueltos por #031+#033: KA297687, DF1341430EU, "no se pudo
+  verificar" masivo (negative cache envenenado), lecturas rápidas
+  (índice completo tras quitar caps: matched 54%→75%).
+- CO531753/CO532151: >14 días, ya fuera de ventana — mismo mecanismo 181
+  que los verificados, cubiertos por esta regla.
+
+**Archivos**: `server.js`, `sync-full.js`, `public/index.html`,
+`public/sw.js`, `FIXES-LOG.md`, `CARRIER-RULES.md`
+**Commit**: _pendiente_
+**Lección**:
+- Los carriers CAMBIAN su numeración sin avisar (SPRING estrenó 3 familias
+  numéricas; INPOST pasó de 04/81/83 a 84/85). Cualquier lista de prefijos
+  envejece: monitorizar los buckets "otros"/DESCONOCIDO del índice cada
+  pocas semanas es la alerta temprana.
+- Un falso positivo entre carriers casi siempre nace de una familia NUEVA
+  sin regla que cae en la heurística más permisiva (sliding 8 díg). La
+  defensa es doble: regla positiva para la familia nueva + validación
+  estricta del match (que #033 ya dejó puesta).
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío

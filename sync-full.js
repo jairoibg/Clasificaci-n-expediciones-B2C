@@ -606,6 +606,7 @@ async function sync() {
       else if (/^6A/.test(t)) detectedCarrier = 'SPRING';
       else if (/^LS\d{9}[A-Z]{2}$/.test(t)) detectedCarrier = 'ASENDIA';
       else if (/^LS|^LX|^LV|^LT|^3[A-Z]|^CP|^Z96|^XSMT|^0008|^0626/.test(t)) detectedCarrier = 'SPRING';
+      else if (/^181\d{15}$/.test(t) || /^65480525\d{16}$/.test(t) || /^00373165\d{12}$/.test(t)) detectedCarrier = 'SPRING'; // (#035) familias numéricas nuevas
       else if (/^CTT|^EA/.test(t)) detectedCarrier = 'CTT';
       else if (/^C0/.test(t)) detectedCarrier = 'CORREOS';
       else if (/^\d{8}$/.test(t)) detectedCarrier = 'INPOST';
