@@ -895,6 +895,18 @@ class OdooClient {
       }, 3000).catch(e => { console.warn('   ⏱️ Odoo exact timeout (' + e.message + ')'); meta.timedOut = true; return []; });
       if (pickings.length > 0) { console.log('   🔍 Odoo exact match: ' + (Date.now()-t0) + 'ms'); return pickings[0]; }
 
+      // 1.5 (#033): 8 dígitos puros = espacio de tracking minúsculo (INPOST). El ilike
+      // con 8 dígitos matchea cualquier tracking largo que los CONTENGA (falsos
+      // positivos verificados con números aleatorios). Solo aceptar exacto o E1+8.
+      if (/^\d{8}$/.test(tracking)) {
+        const e1 = await this.executeWithTimeout('stock.picking', 'search_read', [[['carrier_tracking_ref', '=', 'E1' + tracking]]], {
+          fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1
+        }, 2000).catch(e => { console.warn('   ⏱️ Odoo E1-exact timeout (' + e.message + ')'); meta.timedOut = true; return []; });
+        if (e1.length > 0) { console.log('   🔍 Odoo E1-exact match: ' + (Date.now()-t0) + 'ms'); return e1[0]; }
+        console.log('   🚫 8 dígitos sin match exacto en Odoo — no se intenta ilike (anti-falso-positivo)');
+        return null;
+      }
+
       // 2. ilike with full barcode — 2s timeout
       pickings = await this.executeWithTimeout('stock.picking', 'search_read', [[['carrier_tracking_ref', 'ilike', tracking]]], {
         fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1
@@ -1015,6 +1027,11 @@ function looksLikeSpringBarcode(clean) {
 // Devuelve el carrier detectado (string) o null si no matchea ningún patrón.
 function hasNonInpostNumericPattern(clean) {
   if (!clean || !/^\d+$/.test(clean)) return null;
+  // EAN-13 España (#033): los códigos de producto/factura españoles empiezan por 84
+  // y sus ventanas de 8 dígitos colisionan con trackings INPOST reales del índice
+  // (verificado: 8477128076710 → ventana 84771280 = tracking INPOST real).
+  // Ningún carrier usa 13 dígitos numéricos con prefijo 84 → es un producto, no un envío.
+  if (clean.length === 13 && /^84/.test(clean)) return 'EAN13_PRODUCTO';
   // CRX: 23 dígitos con prefijo 9300500
   if (clean.length >= 18 && /^9300500\d/.test(clean)) return 'CORREOS EXPRESS';
   // SPRING: barcodes largos con tracking embebido 0626 / 0008 / 0621 + 8+ dígitos
@@ -1323,6 +1340,27 @@ async function getCarrierFromTracking(tracking) {
     return { carrier: null, picking: null, source: 'no_shape' };
   }
 
+  // FAST PATH 3 (#033): MATCH EXACTO ANTES DE CUALQUIER EXTRACCIÓN DE PATRONES.
+  // Bug real verificado: trackings SPRING de la familia 00828000828088860... contienen
+  // '0008' en posición interior → el extractor GS1 se disparaba ANTES que el match
+  // exacto, extraía un prefijo común a toda la familia ('000828088860') y el ilike de
+  // Odoo asignaba TODOS los escaneos al MISMO picking equivocado. Un match exacto en
+  // el índice es siempre más fiable que un patrón extraído: va primero.
+  {
+    const cleanAlnum = clean.replace(/[^A-Z0-9]/g, '');
+    const exact = (trackingIndex.byTracking && trackingIndex.byTracking[cleanAlnum]) ||
+                  (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[cleanAlnum]);
+    if (exact && exact.carrier && exact.carrier !== 'DESCONOCIDO' && exact.pickingId) {
+      const elapsed = Date.now() - startTime;
+      const finalCarrier = overrideCarrier(exact.carrier, exact.odooTracking || cleanAlnum);
+      console.log('   ⚡ Match exacto índice (pre-extracción): ' + finalCarrier + ' (' + elapsed + 'ms)');
+      return {
+        carrier: finalCarrier,
+        picking: { id: exact.pickingId, name: exact.pickingName, carrier_tracking_ref: exact.odooTracking, origin: exact.orderRef, partner_id: [null, exact.clientName] },
+        source: 'index-exact', elapsed
+      };
+    }
+  }
 
   // Extraer patrones especiales (GLS QR)
   const extracted = extractSpecialPatterns(clean);
@@ -1449,10 +1487,18 @@ async function getCarrierFromTracking(tracking) {
       if (looksInpost && !fromIndexExtract) {
         console.log('   🔍 Buscando INPOST en Odoo (candidato heurístico): ' + ipTracking);
         const ipPicking = await odooClient.findPickingByTracking(ipTracking);
+        // VALIDACIÓN (#033): el ilike de Odoo puede devolver un picking cuyo tracking
+        // simplemente CONTIENE los 8 dígitos en cualquier posición (verificado: EAN13
+        // de producto '8440456214747' → ventana '04562147' → picking ajeno). Solo
+        // aceptar si el tracking del picking ES el candidato o su forma E1+8.
         if (ipPicking) {
-          const elapsed = Date.now() - startTime;
-          console.log('   ✅ INPOST encontrado en Odoo: ' + (ipPicking.origin || 'sin pedido'));
-          return { carrier: 'INPOST', picking: ipPicking, source: 'odoo (INPOST extraído: ' + ipTracking + ')', elapsed };
+          const ipRef = String(ipPicking.carrier_tracking_ref || '').toUpperCase().trim();
+          if (ipRef === ipTracking || ipRef === 'E1' + ipTracking) {
+            const elapsed = Date.now() - startTime;
+            console.log('   ✅ INPOST encontrado en Odoo: ' + (ipPicking.origin || 'sin pedido'));
+            return { carrier: 'INPOST', picking: ipPicking, source: 'odoo (INPOST extraído: ' + ipTracking + ')', elapsed };
+          }
+          console.log('   🚫 Match INPOST débil descartado: picking ' + ipPicking.id + ' ref=' + ipRef + ' ≠ ' + ipTracking);
         }
       }
     }
@@ -1478,10 +1524,19 @@ async function getCarrierFromTracking(tracking) {
     for (const pat of springPatterns) {
       console.log('   🔍 Buscando SPRING en Odoo: ' + pat);
       const spPicking = await odooClient.findPickingByTracking(pat);
+      // VALIDACIÓN (#033): un patrón extraído de una posición interior del barcode
+      // puede ser el prefijo común de toda una familia de trackings (verificado:
+      // '0008' interior en la familia 00828000828088860...) → el ilike devolvía
+      // siempre el mismo picking ajeno. Solo aceptar si el tracking del picking
+      // está alineado con el patrón (uno es prefijo del otro).
       if (spPicking) {
-        const elapsed = Date.now() - startTime;
-        console.log('   ✅ SPRING encontrado en Odoo: ' + (spPicking.origin || 'sin pedido'));
-        return { carrier: 'SPRING', picking: spPicking, source: 'odoo (SPRING extraído: ' + pat + ')', elapsed };
+        const spRef = String(spPicking.carrier_tracking_ref || '').toUpperCase().trim();
+        if (spRef === pat || spRef.startsWith(pat) || pat.startsWith(spRef)) {
+          const elapsed = Date.now() - startTime;
+          console.log('   ✅ SPRING encontrado en Odoo: ' + (spPicking.origin || 'sin pedido'));
+          return { carrier: 'SPRING', picking: spPicking, source: 'odoo (SPRING extraído: ' + pat + ')', elapsed };
+        }
+        console.log('   🚫 Match SPRING débil descartado: picking ' + spPicking.id + ' ref=' + spRef + ' no alineado con ' + pat);
       }
     }
   }

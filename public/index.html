@@ -1641,6 +1641,8 @@
     //   DF1339988EU (CTT 0003...) se clasificaban como INPOST por colisión.
     function hasNonInpostNumericPattern(clean) {
       if (!clean || !/^\d+$/.test(clean)) return null;
+      // EAN-13 España (#033): código de producto, no envío — evita colisión sliding INPOST
+      if (clean.length === 13 && /^84/.test(clean)) return 'EAN13_PRODUCTO';
       if (clean.length >= 18 && /^9300500\d/.test(clean)) return 'CORREOS EXPRESS';
       if (clean.length >= 14 && /(0626|0008|0621)\d{8,}/.test(clean)) return 'SPRING';
       if (clean.length >= 18 && /^0003\d{15,}/.test(clean)) return 'CTT';

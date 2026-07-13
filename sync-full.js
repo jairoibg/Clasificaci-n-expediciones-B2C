@@ -139,13 +139,25 @@ class OdooClient {
 
     console.log(`   🔍 Dominio: OUTs Shopify B2C con tracking, últimos ${daysBack} días`);
 
-    // limit 60000: con ventana de 14 días hay >30k pickings; el limit anterior
-    // (30000) + order desc cortaba los más viejos (caso KA297687 a 14 días).
-    const pickings = await this.execute('stock.picking', 'search_read', [domain], {
-      fields: ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state', 'carrier_id', 'sale_id', 'weight', 'date_done', 'note'],
-      order: 'scheduled_date desc',
-      limit: 60000
-    });
+    // PAGINACIÓN (#033): el limit fijo de 60000 se SATURABA (la ventana de 14 días
+    // supera los 60k pickings) y con order desc cortaba silenciosamente los más
+    // viejos → ~2 días de pickings fuera del índice. Ahora paginamos por offset
+    // hasta agotar el dominio (cap de seguridad 150k).
+    const FIELDS = ['id', 'name', 'carrier_tracking_ref', 'partner_id', 'origin', 'scheduled_date', 'state', 'carrier_id', 'sale_id', 'weight', 'date_done', 'note'];
+    const CHUNK = 30000;
+    const MAX_TOTAL = 150000;
+    let pickings = [];
+    let offset = 0;
+    while (true) {
+      const batch = await this.execute('stock.picking', 'search_read', [domain], {
+        fields: FIELDS, order: 'scheduled_date desc', limit: CHUNK, offset
+      });
+      pickings = pickings.concat(batch);
+      console.log(`      📄 Odoo offset ${offset}: +${batch.length} (total ${pickings.length})`);
+      if (batch.length < CHUNK || pickings.length >= MAX_TOTAL) break;
+      offset += CHUNK;
+    }
+    if (pickings.length >= MAX_TOTAL) console.warn(`      ⚠️ Cap de seguridad ${MAX_TOTAL} alcanzado`);
 
     return pickings;
   }
@@ -157,7 +169,7 @@ class OdooClient {
 // IMPORTANTE: Sendcloud IGNORA el parámetro limit y siempre devuelve 100 envíos por página.
 // Con ~3000 envíos/día * 7 días = ~21000 envíos -> necesitamos al menos 250 páginas.
 // Subimos a 500 páginas máximo para tener margen (=50000 envíos posibles).
-async function fetchSendcloudParcels(daysBack = 7) {
+async function fetchSendcloudParcels(daysBack = 7, dateField = 'updated_after') {
   const authHeader = 'Basic ' + Buffer.from(`${CONFIG.sendcloud.publicKey}:${CONFIG.sendcloud.secretKey}`).toString('base64');
 
   const dateFrom = new Date();
@@ -165,10 +177,10 @@ async function fetchSendcloudParcels(daysBack = 7) {
   dateFrom.setHours(0, 0, 0, 0);
   const updatedAfter = dateFrom.toISOString();
 
-  console.log(`   📅 Buscando envíos desde: ${updatedAfter}`);
+  console.log(`   📅 Buscando envíos (${dateField}) desde: ${updatedAfter}`);
 
   let allParcels = [];
-  let nextUrl = `${CONFIG.sendcloud.apiUrl}/parcels?updated_after=${encodeURIComponent(updatedAfter)}&limit=500`;
+  let nextUrl = `${CONFIG.sendcloud.apiUrl}/parcels?${dateField}=${encodeURIComponent(updatedAfter)}&limit=500`;
   let page = 1;
   const MAX_PAGES = 500;
   let consecutiveErrors = 0;
@@ -306,8 +318,25 @@ async function sync() {
   // PASO 2: Descargar envíos de Sendcloud
   // ============================================
   console.log('📬 PASO 2: Descargando envíos de Sendcloud...');
-  const parcels = await fetchSendcloudParcels(7);
-  console.log(`   📬 ${parcels.length} envíos descargados de Sendcloud`);
+  // DOBLE BARRIDO (#033): el stream updated_after mueve 60-100k parcels/7d y el cap
+  // de 500 páginas (50k) TRUNCABA la cola → ~30% de los envíos de la ventana no
+  // entraban al índice (verificado: parcels "Delivered" reales ausentes del cache).
+  // El barrido announced_after (~24k/7d) garantiza que TODOS los anunciados de la
+  // ventana estén presentes aunque el stream de updates se trunque.
+  // announced_after a 14 días: alineado con la ventana Odoo. Cubre etiquetas
+  // anunciadas días antes de la validación del picking (date_done), que el
+  // barrido de updates truncado dejaba fuera (~30% del cohorte verificado).
+  const parcelsUpdated = await fetchSendcloudParcels(7, 'updated_after');
+  const parcelsAnnounced = await fetchSendcloudParcels(14, 'announced_after');
+  const seenParcelIds = new Set();
+  const parcels = [];
+  for (const p of [...parcelsUpdated, ...parcelsAnnounced]) {
+    const key = p.id || p.tracking_number;
+    if (!key || seenParcelIds.has(key)) continue;
+    seenParcelIds.add(key);
+    parcels.push(p);
+  }
+  console.log(`   📬 ${parcels.length} envíos únicos (updated: ${parcelsUpdated.length} + announced: ${parcelsAnnounced.length})`);
   console.log('');
 
   // Procesar parcels de Sendcloud

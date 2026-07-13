@@ -1554,6 +1554,101 @@ persistence-status), `FIXES-LOG.md`
 
 ---
 
+## 2026-07-12 · Auditoría masiva de cobertura y matching (#033)
+
+### #033 · Cobertura 66-80%: diagnóstico integral + 6 fixes de matching y sync
+
+**Síntoma**
+Informe de cobertura en 66-80% en días laborables cerrados (objetivo ≥95%).
+Sospecha de vinculación incorrecta de datos (pedidos reconocidos como otros).
+
+**Metodología (auditoría empírica)**
+- Forense de producción: 10 días laborables (29 jun-10 jul) de `/api/odoo-outs`
+  (~65k pickings) cruzados contra el histórico COMPLETO de escaneos
+  (101.381 paquetes en 211 palets, 9 jun-10 jul).
+- Batería de reconocimiento: 4.849 escaneos simulados contra servidor local con
+  índice fresco (trackings reales en todas las formas físicas: GS1, SSCC, QR,
+  E1, embebidos + 400 negativos aleatorios/EAN13).
+- Verificación de estados contra API Sendcloud (~9.040 missings + muestras).
+
+**Diagnóstico — de qué se compone el hueco de cobertura**
+1. **99,9% de los "no escaneados" JAMÁS pasaron por la app** (sin rastro por
+   tracking, pickingId, pedido ni transformación). NO es un fallo de matching:
+   el 99,8% de lo escaneado resuelve pickingId al escanear (47.334/47.434).
+   ~95%+ de esos missing son envíos REALES (Delivered/en ruta verificado por
+   API). 87% del missing es CLABD (Black). AMAZON = 100% bypass (51/51
+   Delivered sin escanear). Inflación de denominador por reetiquetado: CERO.
+2. **Caps del sync SATURADOS** (sí degradaban el índice):
+   - Odoo: limit 60000 alcanzado (ventana 14d > 60k) → recortaba los ~2 días
+     más viejos silenciosamente.
+   - Sendcloud: 500 págs × 100 = 50k vs 60-100k parcels/7d en el stream
+     `updated_after` → ~30% de la ventana no entraba al índice (verificado:
+     parcels Delivered reales ausentes del cache).
+3. **Falsos positivos de matching REALES encontrados** (baja frecuencia pero
+   graves — "pedidos reconocidos como otros"):
+   a. Familia SPRING `00828000828088860...` contiene `0008` interior → el
+      extractor GS1 corría ANTES del match exacto → extraía el prefijo común
+      de la familia → ilike de Odoo asignaba TODOS al mismo picking ajeno
+      (10/400 en batería, verificado picking 7688034).
+   b. EAN-13 españoles (prefijo 84) → ventanas 04/81/83+6 díg → sliding/
+      heurística INPOST → ilike Odoo → enganche a pedido ajeno (2-4% de
+      escaneos basura).
+   c. 8 dígitos aleatorios → ilike Odoo matchea cualquier tracking que los
+      contenga → picking ajeno (bloqueado por NO_VERIFICADO, pero contamina
+      flujos manuales).
+
+**Fixes desplegados**
+- `server.js`:
+  1. **FAST PATH 3 — match exacto pre-extracción**: byTracking/byOdooTracking
+     exacto ANTES de extractSpecialPatterns (mata el bug de la familia SPRING;
+     `source: 'index-exact'`).
+  2. **Validación INPOST heurístico→Odoo**: solo aceptar si el tracking del
+     picking ES el candidato o `E1`+candidato.
+  3. **Validación SPRING patrón→Odoo**: solo aceptar si tracking del picking
+     y patrón están alineados por prefijo.
+  4. **Guard EAN-13** en `hasNonInpostNumericPattern`: 13 dígitos con prefijo
+     84 = producto, nunca envío (también en `localLookup` del frontend).
+  5. **findPickingByTracking 8 dígitos = solo exacto** (o E1+8): nunca ilike.
+- `sync-full.js`:
+  6. **Paginación Odoo por offset** (chunks 30k, cap seguridad 150k) — elimina
+     el recorte silencioso del limit 60000.
+  7. **Doble barrido Sendcloud**: `updated_after` + `announced_after` con dedup
+     por parcel id — garantiza todos los anunciados de la ventana aunque el
+     stream de updates se trunque.
+- `public/index.html` guard EAN-13 + `public/sw.js` bump
+  `expediciones-v3-2026-07-12-safematch`.
+
+**Verificación**
+- Batería completa post-fix: **4.849 tests → 0 WRONG_PICKING, 0 WRONG_CARRIER,
+  0 FALSE_ACCEPT, 400/400 negativos rechazados**, 100% reconocimiento en todas
+  las formas físicas por carrier (única excepción: sufijo corto CTT sintético,
+  caso marginal documentado, CTT casi sin volumen).
+- Sync end-to-end con paginación + doble barrido validado en local.
+
+**Qué NO arregla el código (acción operativa)**
+El grueso del hueco (20-30%/día) son envíos que salen del almacén SIN pasar
+por la pistola, concentrados en CLABD: AMAZON (bypass total), ASENDIA/SPRING/
+CORREOS parciales. Para llegar a ≥95% hay que capturar esos flujos en la
+operativa (o segmentarlos explícitamente en el informe como "fuera de flujo
+de clasificación" para que el % mida lo que de verdad se clasifica).
+
+**Archivos**: `server.js`, `sync-full.js`, `public/index.html`, `public/sw.js`,
+`FIXES-LOG.md`, `CARRIER-RULES.md`
+**Commit**: _pendiente_
+**Lección**:
+- Un match EXACTO del barcode completo siempre debe evaluarse ANTES que
+  cualquier extracción de patrones: los extractores son heurísticos y pueden
+  disparar con subcadenas accidentales (`0008` interior).
+- Todo match vía `ilike` con un patrón extraído/corto debe VALIDARSE contra el
+  tracking real del picking devuelto (alineación exacta o por prefijo). El
+  ilike "contiene" es una red demasiado ancha.
+- Los caps de descarga (páginas/limit) deben monitorizarse: si se alcanzan,
+  hay truncamiento silencioso de datos. Loguear SIEMPRE cuando total==cap.
+- Antes de culpar al matching, medir: el 99,9% del missing era operativa
+  (flujos sin escanear), no software. El informe debe separar ambos mundos.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
