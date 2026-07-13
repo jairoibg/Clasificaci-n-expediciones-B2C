@@ -1,3 +1,8 @@
 node_modules/
 .env
 *.log
+
+# Datos locales de test / backups del volumen (NUNCA subir: tracking-index puede superar 100MB)
+data.json.bak
+data.backup.*.json.gz
+data.json.corrupt-*
