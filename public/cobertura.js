@@ -230,6 +230,20 @@
     $('heroMissing').innerHTML = fmtNum(d.missing) +
       ' <small>(' + (d.total ? (d.missing*100/d.total).toFixed(1) : 0) + '%)</small>';
 
+    // (#034) Desglose del missing: aún en almacén (accionable) vs salió sin escanear (pérdida real)
+    const mb = d.missingBreakdown || null;
+    if (mb) {
+      $('heroPending').textContent = fmtNum(mb.pendiente);
+      $('heroFugado').innerHTML = fmtNum(mb.fugado) +
+        (mb.sin_seguimiento ? ' <small>+' + fmtNum(mb.sin_seguimiento) + ' sin segto.</small>' : '');
+      $('heroEffective').innerHTML = (d.effectiveCoverage != null ? d.effectiveCoverage.toFixed(1) : '—') +
+        '%<small title="Escaneados / (OUTs − pendientes en almacén). Mide lo que realmente salió sin escanear.">*</small>';
+    } else {
+      $('heroPending').textContent = '—';
+      $('heroFugado').textContent = '—';
+      $('heroEffective').textContent = '—';
+    }
+
     // Delta vs semana anterior
     if (state.prevWeek) {
       const delta = d.coverage - state.prevWeek.coverage;
@@ -513,6 +527,9 @@
       if (carrier && r.carrier !== carrier) return false;
       if (status === 'scanned' && !r.scanned) return false;
       if (status === 'missing' && r.scanned) return false;
+      // (#034) Filtros por tipo de missing (pendiente / fugado / sin_seguimiento / sin_datos)
+      if (['pendiente','fugado','sin_seguimiento','sin_datos'].includes(status) &&
+          (r.scanned || r.missingKind !== status)) return false;
       // Filtro por compañía/division: extraer prefijo del albarán (CLABD, CLAGD, CLAWD)
       if (division) {
         const name = r.name || '';
@@ -569,7 +586,12 @@
             <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(r.client||'')}">${escapeHtml(r.client || '—')}</td>
             <td class="mono" style="color:var(--ink-3)">${fmtDT(r.dateDone)}</td>
             <td>${matchPill}</td>
-            <td><span class="va-pill ${r.scanned ? 'green' : 'red'}">${r.scanned ? '✓ Escaneado' : '✗ Sin escanear'}</span></td>
+            <td>${r.scanned
+              ? '<span class="va-pill green">✓ Escaneado</span>'
+              : r.missingKind === 'pendiente' ? '<span class="va-pill amber" title="' + escapeHtml(r.scStatus || '') + '">⏳ En almacén</span>'
+              : r.missingKind === 'fugado' ? '<span class="va-pill red" title="' + escapeHtml(r.scStatus || '') + '">🚚 Salió sin escanear</span>'
+              : r.missingKind === 'sin_seguimiento' ? '<span class="va-pill grey" title="ASENDIA no reporta estados a Sendcloud">◌ Sin seguimiento</span>'
+              : '<span class="va-pill red">✗ Sin escanear</span>'}</td>
           </tr>`;
         }).join('');
 
@@ -692,6 +714,13 @@
       ['Escaneados', d.scanned],
       ['Sin escanear', d.missing],
       ['% Cobertura global', d.coverage.toFixed(2) + '%'],
+      ...(d.missingBreakdown ? [
+        ['— Aún en almacén (pendientes)', d.missingBreakdown.pendiente],
+        ['— Salieron sin escanear', d.missingBreakdown.fugado],
+        ['— Sin seguimiento (ASENDIA)', d.missingBreakdown.sin_seguimiento],
+        ['— Sin datos Sendcloud', d.missingBreakdown.sin_datos],
+        ['% Cobertura efectiva (excl. pendientes)', (d.effectiveCoverage != null ? d.effectiveCoverage.toFixed(2) : '') + '%'],
+      ] : []),
       [],
       ['POR TRANSPORTISTA'],
       ['Carrier','OUTs','Escaneados','Sin escanear','% Cobertura'],
@@ -701,17 +730,20 @@
         .map(([c, x]) => [c, x.total, x.scanned, x.missing, x.pct.toFixed(2) + '%']),
     ];
 
+    const KIND_LABEL = { pendiente: 'Aún en almacén', fugado: 'Salió sin escanear', sin_seguimiento: 'Sin seguimiento (ASENDIA)', sin_datos: 'Sin datos Sendcloud' };
     const sinEscanear = [
-      ['Carrier','Albarán','Pedido','Tracking','Cliente','Validado en Odoo'],
+      ['Carrier','Albarán','Pedido','Tracking','Cliente','Validado en Odoo','Situación','Estado Sendcloud'],
       ...state.allRecs.filter(r => !r.scanned).map(r =>
-        [r.carrier, r.name||'', r.origin||'', r.tracking||'', r.client||'', r.dateDone||'']),
+        [r.carrier, r.name||'', r.origin||'', r.tracking||'', r.client||'', r.dateDone||'',
+         KIND_LABEL[r.missingKind] || '', r.scStatus || '']),
     ];
 
     const todos = [
-      ['Carrier','Albarán','Pedido','Tracking','Cliente','Validado','Match','Estado'],
+      ['Carrier','Albarán','Pedido','Tracking','Cliente','Validado','Match','Estado','Situación'],
       ...state.allRecs.map(r => [
         r.carrier, r.name||'', r.origin||'', r.tracking||'', r.client||'',
-        r.dateDone||'', r.matchSource||'', r.scanned ? 'Escaneado' : 'Sin escanear'
+        r.dateDone||'', r.matchSource||'', r.scanned ? 'Escaneado' : 'Sin escanear',
+        r.scanned ? '' : (KIND_LABEL[r.missingKind] || '')
       ]),
     ];
 

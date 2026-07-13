@@ -71,6 +71,18 @@
             <span class="v down" id="heroMissing">—</span>
           </div>
           <div>
+            <span class="l">⏳ Aún en almacén</span>
+            <span class="v" id="heroPending" style="color:#f59e0b">—</span>
+          </div>
+          <div>
+            <span class="l">🚚 Salieron sin escanear</span>
+            <span class="v down" id="heroFugado">—</span>
+          </div>
+          <div>
+            <span class="l">Cobertura efectiva*</span>
+            <span class="v" id="heroEffective" style="color:#10b981">—</span>
+          </div>
+          <div>
             <span class="l">Δ vs sem. anterior</span>
             <span class="v" id="heroDelta">—</span>
           </div>
@@ -191,7 +203,11 @@
             <select id="filterStatus" class="va-input">
               <option value="">Todos los estados</option>
               <option value="scanned">✓ Escaneado</option>
-              <option value="missing">✗ Sin escanear</option>
+              <option value="missing">✗ Sin escanear (todos)</option>
+              <option value="pendiente">⏳ Aún en almacén</option>
+              <option value="fugado">🚚 Salió sin escanear</option>
+              <option value="sin_seguimiento">◌ Sin seguimiento (ASENDIA)</option>
+              <option value="sin_datos">? Sin datos Sendcloud</option>
             </select>
           </div>
         </div>
@@ -280,6 +296,8 @@
   .va-pill.red { background: rgba(239,68,68,0.10); color: var(--red); }
   .va-pill.blue { background: rgba(59,130,246,0.10); color: var(--cobalt); }
   .va-pill.purple { background: rgba(168,85,247,0.10); color: #a855f7; }
+  .va-pill.amber { background: rgba(245,158,11,0.12); color: #f59e0b; }
+  .va-pill.grey { background: rgba(148,163,184,0.12); color: #94a3b8; }
 </style>
 
 <script src="cobertura.js"></script>

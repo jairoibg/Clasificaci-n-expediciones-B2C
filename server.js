@@ -40,6 +40,11 @@ const CONFIG = {
     apiUrl: 'https://panel.sendcloud.sc/api/v2'
   }
 };
+// (#034) Aviso de seguridad: si no hay env vars, se están usando las claves
+// hardcodeadas expuestas en el repositorio. Rotar y configurar en Railway.
+if (!process.env.ODOO_API_KEY || !process.env.SENDCLOUD_SECRET_KEY) {
+  console.warn('🔐 ⚠️ SEGURIDAD: credenciales por FALLBACK hardcodeado (sin env vars). Configurar ODOO_API_KEY / SENDCLOUD_PUBLIC_KEY / SENDCLOUD_SECRET_KEY en Railway y ROTAR las claves expuestas en GitHub.');
+}
 
 const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
 const DATA_FILE = path.join(VOLUME_PATH, 'data.json');
@@ -2871,6 +2876,25 @@ app.get('/api/odoo-outs', async (req, res) => {
 
     console.log('   🔍 Trackings en app: ' + scannedTrackings.size + ' | PickingIDs: ' + scannedPickingIds.size + ' | Extracted patterns: ' + extractedOdooTrackings.size);
 
+    // (#034) Clasificación de los NO escaneados por estado Sendcloud (del índice, O(1)):
+    //  - pendiente:       aún en almacén (Ready to send / Announced) → escaneable todavía
+    //  - fugado:          ya en tránsito/entregado → salió SIN pasar por la app (pérdida real)
+    //  - sin_seguimiento: ASENDIA (no reporta estados a Sendcloud, su "Ready to send" es perpetuo)
+    //  - sin_datos:       tracking sin parcel en el índice/Sendcloud
+    const PENDING_STATUSES = new Set(['READY TO SEND', 'ANNOUNCED', 'BEING ANNOUNCED', 'ANNOUNCEMENT FAILED']);
+    function classifyMissing(carrierKey, trackingRef) {
+      if (!trackingRef) return { scStatus: null, missingKind: 'sin_datos' };
+      const tc = trackingRef.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const e = (trackingIndex.byTracking && trackingIndex.byTracking[tc]) ||
+                (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[tc]);
+      const st = e && e.sendcloudData && e.sendcloudData.status ? String(e.sendcloudData.status) : null;
+      if (!st) return { scStatus: null, missingKind: 'sin_datos' };
+      const isPending = PENDING_STATUSES.has(st.toUpperCase());
+      if (carrierKey === 'ASENDIA' && isPending) return { scStatus: st, missingKind: 'sin_seguimiento' };
+      return { scStatus: st, missingKind: isPending ? 'pendiente' : 'fugado' };
+    }
+    const missingBreakdown = { pendiente: 0, fugado: 0, sin_seguimiento: 0, sin_datos: 0 };
+
     const byCarrier = {};
     for (const c of [...CARRIERS, 'DESCONOCIDO']) {
       byCarrier[c] = { total: 0, scanned: 0, missing: 0, pct: 0, records: [] };
@@ -2929,6 +2953,15 @@ app.get('/api/odoo-outs', async (req, res) => {
 
       byCarrier[key].total++;
       if (isScanned) byCarrier[key].scanned++;
+      // (#034) Estado Sendcloud de los no escaneados: pendiente vs fugado
+      let scStatus = null, missingKind = null;
+      if (!isScanned) {
+        const cls = classifyMissing(key, picking.carrier_tracking_ref);
+        scStatus = cls.scStatus; missingKind = cls.missingKind;
+        missingBreakdown[missingKind]++;
+        byCarrier[key].missingKinds = byCarrier[key].missingKinds || { pendiente: 0, fugado: 0, sin_seguimiento: 0, sin_datos: 0 };
+        byCarrier[key].missingKinds[missingKind]++;
+      }
       byCarrier[key].records.push({
         id:          picking.id,
         name:        picking.name,
@@ -2940,7 +2973,9 @@ app.get('/api/odoo-outs', async (req, res) => {
         origin:      picking.origin || '',
         dateDone:    picking.date_done || '',
         scanned:     isScanned,
-        matchSource: matchSource
+        matchSource: matchSource,
+        scStatus:    scStatus,
+        missingKind: missingKind
       });
     }
 
@@ -2958,12 +2993,18 @@ app.get('/api/odoo-outs', async (req, res) => {
     console.log('   ✅ ' + totalScanned + ' / ' + totalAll + ' escaneados (' +
       (totalAll > 0 ? ((totalScanned / totalAll) * 100).toFixed(1) : 0) + '%)');
 
+    // (#034) Cobertura efectiva: excluye del denominador los que AÚN están en
+    // almacén (pendientes) — mide lo que de verdad salió sin escanear.
+    const stillPending = missingBreakdown.pendiente;
+    const effDenom = totalAll - stillPending;
     const response = {
       from, to,
       total:    totalAll,
       scanned:  totalScanned,
       missing:  totalAll - totalScanned,
       coverage: totalAll > 0 ? Math.min(100, (totalScanned / totalAll) * 100) : 0,
+      missingBreakdown,
+      effectiveCoverage: effDenom > 0 ? Math.min(100, (totalScanned / effDenom) * 100) : 0,
       byCarrier: summary
     };
 

@@ -17,19 +17,25 @@ const xmlrpc = require('xmlrpc');
 // ============================================
 // CONFIGURACIÓN
 // ============================================
+// (#034) Leer credenciales de variables de entorno (Railway). Los literales son
+// FALLBACK temporal: al rotar las claves expuestas, configurar las env vars y
+// eliminar los fallbacks de este fichero y de server.js.
 const CONFIG = {
   odoo: {
-    url: 'https://blackdivision.processcontrol.sh',
-    db: 'blackdivision',
-    user: 'j.bernabe@illice.com',
-    apiKey: '98b68f64a4ee2fd5362f16f3b0427a629877f80f'
+    url: process.env.ODOO_URL || 'https://blackdivision.processcontrol.sh',
+    db: process.env.ODOO_DB || 'blackdivision',
+    user: process.env.ODOO_USER || 'j.bernabe@illice.com',
+    apiKey: process.env.ODOO_API_KEY || '98b68f64a4ee2fd5362f16f3b0427a629877f80f'
   },
   sendcloud: {
-    publicKey: '462e735b-40fc-4fc5-9665-f606016cfb7f',
-    secretKey: 'e2839e70192542ffaffbd01dd9693fe1',
-    apiUrl: 'https://panel.sendcloud.sc/api/v2'
+    publicKey: process.env.SENDCLOUD_PUBLIC_KEY || '462e735b-40fc-4fc5-9665-f606016cfb7f',
+    secretKey: process.env.SENDCLOUD_SECRET_KEY || 'e2839e70192542ffaffbd01dd9693fe1',
+    apiUrl: process.env.SENDCLOUD_API_URL || 'https://panel.sendcloud.sc/api/v2'
   }
 };
+if (!process.env.ODOO_API_KEY || !process.env.SENDCLOUD_SECRET_KEY) {
+  console.warn('   🔐 ⚠️ Credenciales por FALLBACK hardcodeado (no env vars). Configurar en Railway y rotar las claves expuestas.');
+}
 
 // Mapeo de transportistas
 const CARRIER_MAP = {

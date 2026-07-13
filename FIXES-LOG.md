@@ -1649,6 +1649,53 @@ de clasificación" para que el % mida lo que de verdad se clasifica).
 
 ---
 
+## 2026-07-13 · Informe de cobertura accionable (#034)
+
+### #034 · Desglose del "sin escanear": pendiente en almacén vs salió sin escanear
+
+**Necesidad**
+El informe mostraba un único bucket "sin escanear" que mezclaba dos realidades
+opuestas: paquetes AÚN en almacén (escaneables, sobre todo a mediodía con el
+backlog del finde: verificado 13-jul con 173 muestras API → ~97% "Ready to
+send"/"Announced" anunciados vie/sáb) y paquetes que YA salieron sin pasar por
+la app (pérdida real de cobertura). Sin esa distinción, el % de un día en curso
+es ininterpretable y el objetivo ≥95% no es accionable.
+
+**Solución**
+- `server.js /api/odoo-outs`: `classifyMissing()` — para cada no-escaneado,
+  lookup O(1) del estado Sendcloud en el índice → `missingKind`:
+  - `pendiente` (Ready to send / Announced / Being announced / Announcement
+    failed) → aún en almacén, accionable hoy
+  - `fugado` (en tránsito / entregado / etc.) → salió sin escanear
+  - `sin_seguimiento` → ASENDIA con estado "pendiente" (no reporta estados a
+    Sendcloud; su Ready to send es perpetuo → no fiable)
+  - `sin_datos` → sin parcel en el índice
+  Respuesta ampliada: `missingBreakdown` global, `missingKinds` por carrier,
+  `scStatus`+`missingKind` por registro y **`effectiveCoverage`** =
+  escaneados / (total − pendientes) — mide lo que de verdad salió sin escanear.
+- `informe-cobertura.html` + `cobertura.js`: hero con "⏳ Aún en almacén",
+  "🚚 Salieron sin escanear" y "Cobertura efectiva*"; filtro Estado con los 4
+  tipos; pill por fila con tooltip del estado Sendcloud; export Excel con
+  columnas Situación/Estado Sendcloud y desglose en Resumen.
+- Preparación rotación de credenciales: `sync-full.js` lee env vars
+  (antes SOLO hardcodeadas) y ambos procesos avisan al arrancar si están
+  usando el fallback hardcodeado.
+
+**Verificación**: local con rango 2026-01-28 → breakdown correcto
+(604/298/163/30), ASENDIA→sin_seguimiento, effectiveCoverage coherente,
+records con kind+status. Sintaxis OK en los 3 ficheros.
+
+**Nota de uso**: la métrica de gestión diaria pasa a ser **cobertura
+efectiva** (excluye pendientes). El bucket `fugado` es la lista de trabajo
+para operativa Black; `pendiente` a última hora del día ≈ lo que quedará
+fugado mañana si no se escanea.
+
+**Archivos**: `server.js`, `sync-full.js`, `public/informe-cobertura.html`,
+`public/cobertura.js`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
