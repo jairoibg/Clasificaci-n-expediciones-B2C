@@ -1760,6 +1760,63 @@ familias nuevas + 5 regresiones #030/#033 + 4 negativos de borde).
 
 ---
 
+## 2026-07-13 · ASENDIA estrena prefijo 6C21 y etiqueta sin check digit (#036)
+
+### #036 · Etiquetas ASENDIA 6C21 no reconocidas (barcode y QR)
+
+**Síntoma**
+Operarios (Karla): etiqueta ASENDIA "no la reconoce". Caso real DF1441749EU.
+Lecturas reales aportadas:
+- Barcode: `%0094140116C2105250900802250`
+- QR (DataMatrix, dump completo con dirección/contacto): contiene
+  `...802116C2105250900GEOP...`
+- Odoo/Sendcloud: `6C21052509006` (13 chars)
+
+**Causa raíz (triple)**
+1. **ASENDIA estrenó el prefijo `6C21`** (2.977 en índice; `6C20` ya tiene 0).
+   Todas las reglas (shape check, extractor, prefijo-12, sliding frontend,
+   tablas de prefijos) solo conocían `6C20`/`6C16` → el barcode caía en
+   `no_shape` (verificado en producción: rechazo instantáneo).
+2. **La etiqueta lleva el tracking SIN el dígito de control** (12 chars
+   `6C2105250900`) seguido del código de ruta `802...`: la extracción greedy
+   de 13 chars coge un dígito de la ruta (`...9008` vs Odoo `...9006`), y el
+   QR da los 12 justos (seguidos de letras).
+3. En la misma etiqueta conviven 3 variantes del último dígito (num colis
+   `...2`, texto grande `...3`, barcode `...8-de-ruta`) → el único ancla
+   fiable son los primeros 12 chars.
+
+**Solución**
+- `extractAsendiaTracking`: `^6C\d{11}$` directo y extracción embebida
+  `/6C\d{10,11}/` (acepta la forma de 12 sin check digit).
+- `hasKnownCarrierShape`: prefijo `^6C\d{2}` + embebido `/6C\d{10}/`.
+- `findInTrackingIndex` P2.3: prefijo-12 generalizado a `^6C\d\d`.
+- Prefijos → ASENDIA: `^6C2[01]` en `/api/odoo-outs`, sync fallback y
+  diag. **`6C16` NO se añade** (Sendcloud la clasifica SPRING — 258 en
+  índice — y el lookup exacto del índice ya la resuelve bien).
+- Frontend `localLookup`: sliding `/6C\d{10,11}/` + **fallback prefijo-12
+  client-side** (`client-asendia-12`).
+- SW bump `expediciones-v3-2026-07-13b-asendia-6c21`.
+
+**Verificación**: 4/4 con las lecturas REALES (barcode Karla → prefijo-12 →
+`6C21052509006`/DF1441749EU; QR completo → 12 chars → prefijo-12 OK;
+etiqueta foto `0059494116C2105248929802250V` → `6C21052489292`; tracking
+directo → exacto). Post-deploy verificado contra producción.
+
+**Archivos**: `server.js`, `sync-full.js`, `public/index.html`,
+`public/sw.js`, `FIXES-LOG.md`, `CARRIER-RULES.md`
+**Commit**: _pendiente_
+**Lección**:
+- Tercera familia nueva de carrier en 48h (SPRING 181/6548/00373165, INPOST
+  84/85, ASENDIA 6C21): los prefijos hardcodeados envejecen rápido.
+  Generalizar por FORMA (`6C+dígitos`) cuando el formato lo permita, y
+  validar contra el índice para no abrir falsos positivos.
+- Los identificadores impresos en una misma etiqueta pueden diferir en el
+  último dígito según la zona (check digits de distintas simbologías). El
+  ancla estable es el CUERPO del identificador (prefijo-12), nunca el
+  último carácter.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío

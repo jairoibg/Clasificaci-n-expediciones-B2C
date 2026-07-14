@@ -601,7 +601,7 @@ async function sync() {
       else if (/^PK/.test(t)) detectedCarrier = 'CORREOS';
       else if (/^MI/.test(t)) detectedCarrier = 'CORREOS EXPRESS';
       else if (/^9300500/.test(t)) detectedCarrier = 'CORREOS EXPRESS';
-      else if (/^6C20/.test(t)) detectedCarrier = 'ASENDIA';
+      else if (/^6C2[01]/.test(t)) detectedCarrier = 'ASENDIA'; // (#036) 6C21 familia nueva; 6C16 NO (SPRING según Sendcloud)
       else if (/^H103/.test(t)) detectedCarrier = 'ASENDIA';
       else if (/^6A/.test(t)) detectedCarrier = 'SPRING';
       else if (/^LS\d{9}[A-Z]{2}$/.test(t)) detectedCarrier = 'ASENDIA';

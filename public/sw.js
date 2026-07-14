@@ -1,6 +1,6 @@
 // Cache version: BUMPEAR esta cifra cada vez que se haga un deploy
 // para forzar la invalidación de caché viejo en navegadores de operarios.
-const CACHE_NAME = 'expediciones-v3-2026-07-13-spring-familias';
+const CACHE_NAME = 'expediciones-v3-2026-07-13b-asendia-6c21';
 const urlsToCache = [
   '/',
   '/manifest.json'

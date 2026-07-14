@@ -153,10 +153,10 @@ function findInTrackingIndex(tracking) {
     return trackingIndex.byOdooTracking[clean];
   }
 
-  // PASO 2.3: ASENDIA - Si tracking empieza con 6C20 y no tuvo match exacto,
-  // intentar prefijo de 12 chars (último dígito puede variar entre barcode y tracking Odoo)
-  // Ej: barcode extrae 6C20629705008, Odoo tiene 6C20629705001 (comparten 6C2062970500)
-  if (/^6C20/.test(clean) && clean.length >= 12 && trackingIndex.byCarrier && trackingIndex.byCarrier["ASENDIA"]) {
+  // PASO 2.3: ASENDIA - Si tracking empieza con 6C** (#036: 6C20, 6C21, futuros) y no
+  // tuvo match exacto, intentar prefijo de 12 chars (último dígito puede variar)
+  // Ej: barcode extrae 6C21052489298, Odoo tiene 6C21052489292 (comparten 6C2105248929)
+  if (/^6C\d\d/.test(clean) && clean.length >= 12 && trackingIndex.byCarrier && trackingIndex.byCarrier["ASENDIA"]) {
     var prefix12 = clean.substring(0, 12);
     var asCarrierData = trackingIndex.byCarrier["ASENDIA"];
     var asCarrierKeys = Object.keys(asCarrierData);
@@ -997,19 +997,27 @@ class OdooClient {
 // ============================================
 
 // Extrae el tracking de Odoo embebido en un barcode ASENDIA
+// (#036) Generalizado de 6C20 a la familia 6C** completa: ASENDIA estrenó el
+// prefijo 6C21 (2.977 en índice, sustituye a 6C20) y la etiqueta física lleva
+// el tracking embebido en un barcode tipo 0059494116C2105248929802250V.
 function extractAsendiaTracking(scannedClean) {
   // LS-format: LS + 9 digits + 2 letters (ej: LS226449335CH) -> ES el tracking
   if (/^LS\d{9}[A-Z]{2}$/.test(scannedClean)) {
     return { extracted: scannedClean, isDirectMatch: true };
   }
-  // 6C20-format ya como tracking (13 chars) -> ES el tracking
-  if (/^6C20\d{9}$/.test(scannedClean)) {
+  // 6C**-format ya como tracking (13 chars: 6C + 11 dígitos) -> ES el tracking
+  if (/^6C\d{11}$/.test(scannedClean)) {
     return { extracted: scannedClean, isDirectMatch: true };
   }
-  // Barcode largo con 6C20 embebido -> extraer 13 chars
-  var idx = scannedClean.indexOf('6C20');
-  if (idx >= 0 && scannedClean.length >= idx + 13) {
-    return { extracted: scannedClean.substring(idx, idx + 13), isDirectMatch: false };
+  // Barcode/QR largo con 6C embebido -> extraer 6C + 10-11 dígitos.
+  // OJO (#036, verificado con etiqueta real DF1441749EU): la etiqueta lleva el
+  // tracking SIN dígito de control (12 chars) seguido del código de ruta "802...".
+  //  - Barcode %0094140116C2105250900802250 -> greedy extrae 6C21052509008 (el 8
+  //    es de la ruta) -> el fallback prefijo-12 lo corrige contra el índice.
+  //  - QR ...6C2105250900GEOP... -> extrae los 12 justos -> prefijo-12 directo.
+  var m = /6C\d{10,11}/.exec(scannedClean);
+  if (m) {
+    return { extracted: m[0], isDirectMatch: false };
   }
   return { extracted: null, isDirectMatch: false };
 }
@@ -1314,7 +1322,7 @@ function cacheNegativeLookup(tracking) {
 function hasKnownCarrierShape(clean) {
   if (!clean) return false;
   // Prefijos directos
-  if (/^(PK|MI|Z89|6C20|6C16|H103|6A|LS|LX|LV|LT|3[A-Z]|CP|Z96|XSMT|0008|0626|CTT|EA|C0|9300500)/.test(clean)) return true;
+  if (/^(PK|MI|Z89|6C\d{2}|H103|6A|LS|LX|LV|LT|3[A-Z]|CP|Z96|XSMT|0008|0626|CTT|EA|C0|9300500)/.test(clean)) return true;
   // AMAZON: ES seguido de exactamente 10 dígitos (ej. ES2527229735)
   if (/^ES\d{10}$/.test(clean)) return true;
   // 8 dígitos exactos → INPOST candidato
@@ -1326,8 +1334,9 @@ function hasKnownCarrierShape(clean) {
   // Letras de tracking típicas tipo 2-3 letras + 9+ dígitos
   if (/^[A-Z]{1,3}\d{8,}/.test(clean)) return true;
   // PATRONES EMBEBIDOS en barcodes GS1-128 / SSCC largos:
-  // ASENDIA (6C20/6C16), GLS (Z89), ASENDIA H1023 (H103+digits), SPRING (0626/0008 dentro)
-  if (clean.length >= 12 && /(6C20|6C16|Z89[A-Z0-9]{5}|H103\d{4}|0626\d{8}|0008\d{8})/.test(clean)) return true;
+  // ASENDIA (6C** embebido, #036: 10-11 dígitos, la etiqueta omite el check digit),
+  // GLS (Z89), ASENDIA H1023 (H103+digits), SPRING (0626/0008 dentro)
+  if (clean.length >= 12 && /(6C\d{10}|Z89[A-Z0-9]{5}|H103\d{4}|0626\d{8}|0008\d{8})/.test(clean)) return true;
   return false;
 }
 
@@ -2222,7 +2231,7 @@ app.get('/api/diag-tracking/:tracking', async (req, res) => {
   else if (/^MI/.test(clean)) out.prefix = 'CORREOS EXPRESS (MI)';
   else if (/^PK/.test(clean)) out.prefix = 'CORREOS (PK)';
   else if (/^Z89/.test(clean)) out.prefix = 'GLS (Z89)';
-  else if (/^6C20/.test(clean)) out.prefix = 'ASENDIA (6C20)';
+  else if (/^6C2[01]/.test(clean)) out.prefix = 'ASENDIA (6C20/6C21)';
   else if (/^H103/.test(clean)) out.prefix = 'ASENDIA (H103)';
   else if (/^ES\d{10}$/.test(clean)) out.prefix = 'AMAZON (ES + 10 dígitos)';
   else if (/^(0626|0008)/.test(clean)) out.prefix = 'SPRING (0626/0008)';
@@ -2920,7 +2929,7 @@ app.get('/api/odoo-outs', async (req, res) => {
         else if (/^MI/.test(t)) carrier = 'CORREOS EXPRESS';
         else if (/^9300500/.test(t)) carrier = 'CORREOS EXPRESS';
         else if (/^Z89/.test(t)) carrier = 'GLS';
-        else if (/^6C20/.test(t)) carrier = 'ASENDIA';
+        else if (/^6C2[01]/.test(t)) carrier = 'ASENDIA'; // (#036) 6C21 = familia nueva; 6C16 NO (Sendcloud la clasifica SPRING)
         else if (/^H103/.test(t)) carrier = 'ASENDIA';
         else if (/^6A/.test(t)) carrier = 'SPRING';
         else if (/^LS\d{9}[A-Z]{2}$/.test(t)) carrier = 'ASENDIA';

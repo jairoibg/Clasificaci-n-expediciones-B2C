@@ -111,6 +111,7 @@ actual y la evolución de cada uno.
 | 2026-05-22 | Override `^H103` → ASENDIA (los pedidos `H103*` se clasificaban como SPRING por error) | `e43f7bb` | #004b |
 | 2026-05-22 | `extractAsendiaTracking` añadido al cascade de `extractSpecialPatterns` para barcodes GS1 largos | — | — |
 | 2026-05-26 | **#027**: shape check del fast-fail (#026) rechazaba barcodes ASENDIA GS1 (`%…6C20…`). Añadida regla `(6C20\|6C16\|H103\d{4})` en `hasKnownCarrierShape` para barcodes ≥12 chars con patrón embebido | `dd613dc` | #027 |
+| 2026-07-13 | **#036 — nuevo prefijo `6C21`** (2.977 en índice, sustituye a 6C20) **+ etiqueta SIN check digit**: el barcode (`%0094140116C2105250900802250`) y el QR llevan el tracking en 12 chars (sin dígito de control) seguido del código de ruta `802…`. Generalizado TODO a familia `6C**`: extractor `/6C\d{10,11}/`, shape `^6C\d{2}` + embebido `/6C\d{10}/`, prefijo-12 en P2.3 (`^6C\d\d`), sliding frontend con fallback prefijo-12 client-side. Prefijo→ASENDIA: `^6C2[01]` (6C16 queda fuera: Sendcloud la da como SPRING). Caso real verificado: DF1441749EU (`6C21052509006`). | _pendiente_ | #036 |
 
 ---
 

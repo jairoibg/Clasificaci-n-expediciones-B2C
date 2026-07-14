@@ -1707,12 +1707,22 @@
         }
       }
 
-      // 5. ASENDIA sliding (6C20 + 9 chars)
-      const c620 = clean.indexOf('6C20');
-      if (c620 >= 0 && clean.length >= c620 + 13) {
-        const cand = clean.substring(c620, c620 + 13);
+      // 5. ASENDIA sliding — (#036) familia 6C** (6C + 10-11 dígitos): la etiqueta
+      // lleva el tracking SIN check digit + código de ruta 802 (verificado con
+      // DF1441749EU: barcode %0094140116C2105250900802250, QR ...6C2105250900GEOP,
+      // Odoo 6C21052509006). El prefijo-12 resuelve la variación del último dígito.
+      const c6m = /6C\d{10,11}/.exec(clean);
+      if (c6m) {
+        const cand = c6m[0];
         const match = clientIndex.get(cand);
         if (match) return { ...match, source: 'client-asendia' };
+        // prefijo-12: el último dígito del barcode difiere (o falta) vs tracking Odoo
+        const pre12 = cand.substring(0, 12);
+        for (const [k, v] of clientIndex) {
+          if (k.length === 13 && k.startsWith(pre12) && v.carrier === 'ASENDIA') {
+            return { ...v, source: 'client-asendia-12' };
+          }
+        }
       }
 
       // 6. AMAZON sliding (ES + 10 dígitos)
