@@ -1998,6 +1998,44 @@ drástica sospechosa, conservar lo bueno y reintentar.
 
 ---
 
+### #041 · "No funciona" que en realidad es "ya está en el palet" (mensaje claro)
+
+**Síntoma (Karla)**
+"Están leyendo ese [el Código Bulto correcto] y no funciona."
+
+**Diagnóstico (probado en producción, navegador)**
+- El Código Bulto (`0003…001`) SÍ se lee bien: probado con un CTT fresco
+  (DF1446966EU) → se añade correctamente al palet.
+- El caso reportado (DF1442336EU) devolvía `DUPLICADO` "el pedido ya está
+  escaneado (tracking diferente)": el pedido YA estaba en el palet CTT (letra
+  A), añadido antes (07:46) por búsqueda manual y guardado con el tracking
+  corto `0003…137894` (22 díg) en vez del barcode `0003…137894001` (25 díg).
+  Al re-escanear, el check por-pedido lo bloqueaba — correcto, pero el mensaje
+  confundía y el operario creía que "no funciona".
+
+**Solución**
+- `/api/scan`: los duplicados devuelven `YA_EN_PALET` con mensaje CLARO que
+  dice en qué palet (letra) está: "El pedido X YA está en el palet CTT (A). Ya
+  está registrado — no lo escanees otra vez."
+- Cliente: `YA_EN_PALET` → modal tranquilizador (✓ verde + sonido de OK), no
+  error rojo. Turns "no funciona" en "ah, ya está hecho".
+
+**Verificación (producción)**: CTT fresco DF1446966EU → success; DF1442336EU →
+YA_EN_PALET (ya estaba en palet A). SW bump v4-...d-ya-en-palet.
+
+**Nota**: los pedidos añadidos por búsqueda manual quedan con el tracking corto
+(odoo) y salen como YA_EN_PALET al escanear el barcode físico. Es correcto (ya
+están). Con el escaneo directo del Código Bulto (post-#039) los nuevos ya se
+guardan con el barcode completo.
+
+**Archivos**: `server.js`, `public/index.html`, `public/sw.js`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**: un "no funciona" del operario a menudo es feedback confuso, no un
+bug. Antes de tocar lógica, reproducir en producción y ver el error EXACTO: era
+un duplicado legítimo con mal mensaje.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío

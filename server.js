@@ -1985,7 +1985,7 @@ app.post('/api/scan', async (req, res) => {
   // Verificar duplicado en TODAS las sesiones del carrier (no solo la actual)
   const aggregated = getSession(expected);
   if (aggregated.packages.find(p => p.tracking === clean)) {
-    return res.json({ success: false, error: 'DUPLICADO', message: 'Este paquete ya está escaneado', tracking: clean });
+    return res.json({ success: false, error: 'YA_EN_PALET', message: 'Este paquete YA está en el palet ' + expected + '. Ya está registrado — no hace falta escanearlo otra vez.', tracking: clean });
   }
 
   // (#039) Códigos de última milla del PARTNER extranjero que NO están en
@@ -2043,13 +2043,24 @@ app.post('/api/scan', async (req, res) => {
     console.log('   ⚠️ Carrier no verificado pero usuario eligió ' + expected + ' → permitiendo con confianza');
   }
 
-  // Detectar duplicado por pedido (diferentes barcodes CTT multi-collo resuelven al mismo pedido)
+  // Detectar duplicado por pedido (diferentes barcodes CTT multi-collo, o el
+  // mismo pedido añadido antes por búsqueda manual con otra forma del tracking).
+  // (#041) Mensaje CLARO: el operario cree que "no funciona" cuando en realidad
+  // el pedido YA está en su palet. Le decimos en qué palet (letra) está.
   const orderRef = det.picking.origin || '';
   if (orderRef) {
-    const existingByOrder = aggregated.packages.find(p => p.orderRef === orderRef);
-    if (existingByOrder) {
-      console.log('   ⚠️ Pedido ' + orderRef + ' ya escaneado');
-      return res.json({ success: false, error: 'DUPLICADO', message: 'El pedido ' + orderRef + ' ya está escaneado (tracking diferente)', tracking: clean, orderRef: orderRef });
+    let inLetter = null;
+    for (const s of getSessionsArray(expected)) {
+      if (s.packages.find(p => p.orderRef === orderRef)) { inLetter = s.letter || 'A'; break; }
+    }
+    if (inLetter) {
+      console.log('   ⚠️ Pedido ' + orderRef + ' ya en palet ' + expected + ' (' + inLetter + ')');
+      return res.json({
+        success: false,
+        error: 'YA_EN_PALET',
+        message: 'El pedido ' + orderRef + ' YA está en el palet ' + expected + ' (' + inLetter + '). Ya está registrado — no lo escanees otra vez.',
+        tracking: clean, orderRef: orderRef, palletLetter: inLetter
+      });
     }
   }
 
