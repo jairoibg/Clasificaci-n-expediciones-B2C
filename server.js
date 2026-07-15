@@ -2477,7 +2477,7 @@ app.get('/api/search', (req, res) => {
 // PALETS
 // ============================================
 app.post('/api/pallets', (req, res) => {
-  const { carrier, sessionId } = req.body;
+  const { carrier, sessionId, clientPackages } = req.body;
   if (!carrier) return res.status(400).json({ error: 'Carrier requerido' });
 
   const carrierUpper = carrier.toUpperCase();
@@ -2487,11 +2487,39 @@ app.post('/api/pallets', (req, res) => {
   let targetSession;
   if (sessionId) {
     targetSession = sessions.find(s => s.id === sessionId);
-    if (!targetSession) return res.status(404).json({ error: 'Sesión no encontrada' });
   } else {
     targetSession = sessions[0];
   }
-  if (!targetSession || !targetSession.packages || targetSession.packages.length === 0) {
+
+  // RECONCILIACIÓN ANTI-PÉRDIDA (#038): el cliente envía su lista local de
+  // paquetes al cerrar. Cualquiera que no esté ya en la sesión del servidor
+  // (p.ej. su POST /scan no llegó a persistir por un 502) se añade AQUÍ antes
+  // de crear el palet. Así ningún paquete escaneado se pierde al cerrar.
+  let reconciled = 0;
+  if (Array.isArray(clientPackages) && clientPackages.length > 0) {
+    if (!targetSession) targetSession = createNewSession(carrierUpper);
+    const existing = new Set(targetSession.packages.map(p => (p.tracking || '').toUpperCase().trim()));
+    for (const cp of clientPackages) {
+      const trk = String(cp && cp.tracking || '').toUpperCase().trim();
+      if (!trk || existing.has(trk)) continue;
+      const pkg = {
+        tracking: trk,
+        pickingId: cp.pickingId || null,
+        orderRef: cp.orderRef && cp.orderRef !== '…' ? cp.orderRef : '',
+        clientName: cp.clientName && cp.clientName !== 'Procesando…' ? cp.clientName : '',
+        scannedAt: cp.scannedAt || new Date().toISOString(),
+        reconciledAtClose: true
+      };
+      targetSession.packages.push(pkg);
+      _addPackageToGlobalSets(pkg);
+      existing.add(trk);
+      reconciled++;
+    }
+    if (reconciled > 0) { targetSession.lastUpdate = new Date().toISOString(); saveData(); console.log('   🛟 Reconciliados ' + reconciled + ' paquetes del cliente al cerrar (no perdidos por 502)'); }
+  }
+
+  if (!targetSession) return res.status(404).json({ error: 'Sesión no encontrada' });
+  if (!targetSession.packages || targetSession.packages.length === 0) {
     return res.status(400).json({ error: 'No hay paquetes para crear el palet' });
   }
 

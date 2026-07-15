@@ -1897,6 +1897,39 @@ de escaneo SLIM separado (solo campos de scan) o parse en worker_thread.
 
 ---
 
+### #038 · Cierre de palet a prueba de pérdidas (reconciliación cliente→servidor)
+
+**Síntoma (Karla)**
+"Cuando les pasa el error se les borran pedidos y tienen que volver a leerlo."
+Ideal: buen ritmo, tranquilos de no re-escanear.
+
+**Causa**
+`POST /api/pallets` construía el palet desde la SESIÓN del servidor. Si un scan
+no llegó a persistir (502 en su POST /scan), no estaba en la sesión → se perdía
+al cerrar aunque el operario lo veía en su pantalla. #037 evita que se borre del
+UI, pero faltaba garantizar que llegue al palet.
+
+**Solución**
+- Cliente: al cerrar, `flushScanQueue()` fuerza la persistencia pendiente
+  (backoff interrumpible) y luego envía la **lista local completa**
+  (`clientPackages`) en el POST /pallets.
+- Servidor: **reconciliación** — antes de crear el palet, añade a la sesión
+  cualquier `clientPackage` que no esté ya (marca `reconciledAtClose`), actualiza
+  los Sets globales, y solo entonces crea el palet. Si no había sesión, la crea.
+- Botón "Cerrar palet" deshabilitado durante el proceso; error transitorio →
+  toast "pulsa otra vez" (nada se pierde), no modal.
+
+**Verificación (local)**: escenario de 3 escaneos con 2 sin persistir → cerrar
+con `clientPackages` → palet creado con **los 3** (0 perdidos).
+
+**Archivos**: `server.js` (POST /pallets), `public/index.html`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**: el estado autoritativo de un palet al cerrarse debe reconciliar lo
+que el operario realmente escaneó (cliente) con lo que el servidor registró; no
+fiarse solo del servidor cuando la red puede parpadear.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
