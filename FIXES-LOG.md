@@ -1964,6 +1964,40 @@ decirle al operario qué código escanear.
 
 ---
 
+### #040 · Un hipo de Sendcloud envenenaba el índice (8.200 envíos)
+
+**Síntoma**
+Tras varios deploys + mucha actividad contra Sendcloud, el índice de producción
+apareció con `totalSendcloud: 8200` y `matched: 7506` (vs ~50.000 / ~44.000
+normales) → casi todos los scans caían a Odoo (lento). Se auto-curó en el
+siguiente sync, pero dejó ~30-60 min de servicio degradado.
+
+**Causa**
+`fetchSendcloudParcels` abortaba tras **3 errores HTTP consecutivos** y el sync
+escribía el índice IGUAL con lo poco descargado. Un pico transitorio de
+Sendcloud (429/5xx) en la página ~82 dejó el índice en 8.200 envíos. Verificado
+que Sendcloud estaba sano después (12 páginas, todo 200, más datos disponibles).
+
+**Solución**
+- `fetchSendcloudParcels`: 3 → **6 reintentos** con **backoff exponencial**
+  (respeta `Retry-After`), devuelve `{ parcels, aborted, pages }`.
+- **Guard anti-envenenamiento** antes de escribir: si la descarga se ABORTÓ por
+  errores Y el índice nuevo tiene `matched < 50%` del anterior → **NO
+  sobrescribe** el índice bueno y sale con código 2. El servidor trata exit≠0
+  como fallo → conserva el índice en memoria y reintenta en el siguiente sync.
+
+**Verificación**: sonda a Sendcloud (12 pág, 200 OK, hay más) confirmó que el
+`updated_after` funciona; producción se auto-restauró a 50.000/44.031 en el
+sync de 09:30; sintaxis OK; ambos callers actualizados al nuevo retorno.
+
+**Archivos**: `sync-full.js`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**: nunca sobrescribir un índice/estado bueno con el resultado de una
+descarga que se sabe incompleta. Comparar contra el anterior y, ante una caída
+drástica sospechosa, conservar lo bueno y reintentar.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío

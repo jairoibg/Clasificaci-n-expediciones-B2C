@@ -189,7 +189,9 @@ async function fetchSendcloudParcels(daysBack = 7, dateField = 'updated_after') 
   let nextUrl = `${CONFIG.sendcloud.apiUrl}/parcels?${dateField}=${encodeURIComponent(updatedAfter)}&limit=500`;
   let page = 1;
   const MAX_PAGES = 500;
-  let consecutiveErrors = 0;
+  const MAX_ERRORS = 6;            // (#040) antes 3: un hipo puntual de Sendcloud
+  let consecutiveErrors = 0;       // envenenaba el índice (corte a 8.200 envíos)
+  let aborted = false;
 
   while (nextUrl && page <= MAX_PAGES) {
     // Log cada 25 páginas para no saturar
@@ -207,14 +209,17 @@ async function fetchSendcloudParcels(daysBack = 7, dateField = 'updated_after') 
       });
 
       if (!response.ok) {
-        // Reintentar hasta 3 errores consecutivos antes de abortar
         consecutiveErrors++;
-        console.warn(`   ⚠️ HTTP ${response.status} en página ${page} (intento ${consecutiveErrors}/3)`);
-        if (consecutiveErrors >= 3) {
-          console.error(`   ❌ 3 errores consecutivos, abortando paginación`);
+        // Backoff exponencial (respeta Retry-After si viene). 429/5xx transitorios.
+        const retryAfter = Number(response.headers.get('retry-after')) || 0;
+        const wait = Math.max(retryAfter * 1000, Math.min(15000, 1000 * Math.pow(2, consecutiveErrors - 1)));
+        console.warn(`   ⚠️ HTTP ${response.status} en página ${page} (intento ${consecutiveErrors}/${MAX_ERRORS}, espera ${wait}ms)`);
+        if (consecutiveErrors >= MAX_ERRORS) {
+          console.error(`   ❌ ${MAX_ERRORS} errores consecutivos, abortando paginación (índice puede quedar incompleto)`);
+          aborted = true;
           break;
         }
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, wait));
         continue;
       }
 
@@ -234,14 +239,15 @@ async function fetchSendcloudParcels(daysBack = 7, dateField = 'updated_after') 
 
     } catch (err) {
       consecutiveErrors++;
-      console.error(`   ❌ Error en página ${page}: ${err.message} (${consecutiveErrors}/3)`);
-      if (consecutiveErrors >= 3) break;
-      await new Promise(r => setTimeout(r, 1000));
+      const wait = Math.min(15000, 1000 * Math.pow(2, consecutiveErrors - 1));
+      console.error(`   ❌ Error en página ${page}: ${err.message} (${consecutiveErrors}/${MAX_ERRORS}, espera ${wait}ms)`);
+      if (consecutiveErrors >= MAX_ERRORS) { aborted = true; break; }
+      await new Promise(r => setTimeout(r, wait));
     }
   }
 
-  console.log(`   ✅ Total descargado: ${allParcels.length} envíos en ${page - 1} páginas`);
-  return allParcels;
+  console.log(`   ✅ Total descargado: ${allParcels.length} envíos en ${page - 1} páginas` + (aborted ? ' (ABORTADO por errores)' : ''));
+  return { parcels: allParcels, aborted, pages: page - 1 };
 }
 
 // ============================================
@@ -339,12 +345,13 @@ async function sync() {
   // Ahora el barrido announced solo corre en los syncs NOCTURNos (--full).
   // De día basta updated_after 7d para mantener el índice fresco.
   const fullSync = process.argv.includes('--full');
-  const parcelsUpdated = await fetchSendcloudParcels(7, 'updated_after');
-  const parcelsAnnounced = fullSync ? await fetchSendcloudParcels(14, 'announced_after') : [];
+  const updatedRes = await fetchSendcloudParcels(7, 'updated_after');
+  const announcedRes = fullSync ? await fetchSendcloudParcels(14, 'announced_after') : { parcels: [], aborted: false };
   if (!fullSync) console.log('   ⚡ Sync LIGERO (solo updated_after 7d). El backfill announced 14d corre de noche.');
+  const sendcloudAborted = updatedRes.aborted || announcedRes.aborted;
   const seenParcelIds = new Set();
   const parcels = [];
-  for (const p of [...parcelsUpdated, ...parcelsAnnounced]) {
+  for (const p of [...updatedRes.parcels, ...announcedRes.parcels]) {
     const key = p.id || p.tracking_number;
     if (!key || seenParcelIds.has(key)) continue;
     seenParcelIds.add(key);
@@ -731,8 +738,23 @@ async function sync() {
   // ============================================
   // PASO 4: Guardar índice
   // ============================================
+  // GUARD ANTI-ENVENENAMIENTO (#040): si la descarga de Sendcloud se ABORTÓ por
+  // errores y el índice nuevo tiene MUCHOS menos matches que el anterior, NO
+  // sobrescribir el índice bueno. Un hipo puntual de Sendcloud dejó el índice en
+  // 8.200 envíos (7.506 matches) y degradó todos los scans hasta el siguiente sync.
+  try {
+    if (sendcloudAborted && fs.existsSync(INDEX_FILE)) {
+      const prev = JSON.parse(fs.readFileSync(INDEX_FILE, 'utf8'));
+      const prevMatched = prev.matched || 0;
+      if (prevMatched > 0 && matched < prevMatched * 0.5) {
+        console.error(`   🛑 SYNC ABORTADO SIN ESCRIBIR: descarga incompleta (matched ${matched} < 50% del anterior ${prevMatched}). Se conserva el índice bueno.`);
+        process.exit(2);
+      }
+    }
+  } catch (e) { console.warn('   ⚠️ No se pudo comparar con el índice anterior:', e.message); }
+
   fs.writeFileSync(INDEX_FILE, JSON.stringify(trackingIndex, null, 2));
-  
+
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
   console.log('');
