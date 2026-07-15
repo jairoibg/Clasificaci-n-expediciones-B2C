@@ -1988,6 +1988,22 @@ app.post('/api/scan', async (req, res) => {
     return res.json({ success: false, error: 'DUPLICADO', message: 'Este paquete ya está escaneado', tracking: clean });
   }
 
+  // (#039) Códigos de última milla del PARTNER extranjero que NO están en
+  // Odoo/Sendcloud y confunden al operario. En vez de mandarle a "buscar por
+  // cliente" a ciegas, le decimos EXACTAMENTE qué código escanear:
+  //  - CTT Portugal: el barcode de arriba "Cod. Bulto CTT(PT): DS…PT" no está
+  //    en el sistema; el que SÍ funciona es el grande "Código Bulto" (0003…).
+  if (/^DS\d{6,}PT$/.test(clean)) {
+    console.log('   ℹ️ Código CTT-Portugal (partner) — guiar al Código Bulto');
+    return res.json({
+      success: false,
+      error: 'ESCANEA_OTRO_CODIGO',
+      detectedCarrier: 'CTT',
+      message: 'Etiqueta CTT: el código "DS…PT" es de CTT Portugal y no está en el sistema. Escanea el código de barras grande "Código Bulto" (empieza por 0003…).',
+      tracking: clean
+    });
+  }
+
   const det = await getCarrierFromTracking(clean);
 
   if (!det.picking) {

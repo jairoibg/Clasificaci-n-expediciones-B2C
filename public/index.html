@@ -1434,6 +1434,7 @@
       renderPackages(); renderCarriers();
       const e = r && r.error;
       if (e === 'CRX_NO_SINCRONIZADO') { showSearchModal(clean, r.message, 'crx'); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]); }
+      else if (e === 'ESCANEA_OTRO_CODIGO') { showModal('!', 'Escanea el otro código', r.message); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]); }
       else if (e === 'SISTEMA_LENTO') { showToast('⏱ Sistema lento — vuelve a escanear este paquete', 'warning'); playSound('error'); if (navigator.vibrate) navigator.vibrate([100,50,100]); }
       else if (e === 'NO_ENCONTRADO' || e === 'NO_VERIFICADO') { showSearchModal(clean, r.message); playSound('error'); }
       else if (e === 'TRANSPORTISTA_INCORRECTO') { showModal('!', `Paquete de ${r.detectedCarrier}`, r.message); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]); }

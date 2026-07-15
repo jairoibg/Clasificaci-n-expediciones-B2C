@@ -1930,6 +1930,40 @@ fiarse solo del servidor cuando la red puede parpadear.
 
 ---
 
+### #039 · Etiquetas CTT Portugal (DS…PT) — guía en vez de bloqueo
+
+**Síntoma (Karla, con foto)**
+Etiqueta CTT Express a Portugal (pedido CO537514) "no le deja leer". El
+operario escanea el barcode de ARRIBA "Cod. Bulto CTT(PT): DS394097635PT".
+
+**Diagnóstico (verificado en producción vía navegador)**
+- `DS394097635PT` → `carrier:null` (no está en Odoo NI en Sendcloud: es el
+  código de última milla de CTT Portugal, como los códigos griegos de GLS).
+- `0003010003019702145683001` (barcode "Código Bulto", el grande) → **CTT,
+  CO537514 ✓**. Sendcloud/Odoo tienen el nº español `0003…145683`.
+→ El operario escanea el código equivocado. El `DS…PT` es INMATCHEABLE (no
+existe vínculo en ningún sistema).
+
+**Solución**
+`/api/scan`: si el código es `^DS\d{6,}PT$` → error `ESCANEA_OTRO_CODIGO` con
+mensaje CTT específico ("escanea el 'Código Bulto' que empieza por 0003…") en
+vez de mandar a "buscar por cliente" a ciegas. Cliente: modal claro.
+
+**Nota GLS Grecia** (DF1446622EU): igual patrón — los códigos griegos
+(`615813…`, `396443…`) no están en el sistema; el que funciona es el GLS
+`Z89TS4BU`. No se puede pattern-matchear con fiabilidad (numéricos genéricos);
+guía operativa: escanear el código Z89 o buscar por pedido.
+
+**Archivos**: `server.js`, `public/index.html`, `public/sw.js`, `FIXES-LOG.md`,
+`CARRIER-RULES.md`
+**Commit**: _pendiente_
+**Lección**: en envíos internacionales, el barcode más prominente suele ser el
+del PARTNER de última milla (CTT-PT `DS…PT`, GLS-GR griego), que no está en
+nuestros sistemas. No se puede auto-resolver; lo útil es detectar el formato y
+decirle al operario qué código escanear.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
