@@ -1,6 +1,6 @@
 // Cache version: BUMPEAR esta cifra cada vez que se haga un deploy
 // para forzar la invalidación de caché viejo en navegadores de operarios.
-const CACHE_NAME = 'expediciones-v4-2026-07-15d-ya-en-palet';
+const CACHE_NAME = 'expediciones-v4-2026-07-15e-buscar-pedido';
 const urlsToCache = [
   '/',
   '/manifest.json'

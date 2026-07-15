@@ -2031,7 +2031,7 @@ app.post('/api/scan', async (req, res) => {
       });
     }
     console.log('   ❌ No existe en Odoo');
-    return res.json({ success: false, error: 'NO_ENCONTRADO', message: 'El tracking ' + clean + ' no existe en Odoo', tracking: clean });
+    return res.json({ success: false, error: 'NO_ENCONTRADO', message: 'Código no reconocido. En etiquetas internacionales escanea el código de barras ANCHO de abajo, o busca por la Referencia Pedido de la etiqueta (DF…/CO…/KA…).', tracking: clean });
   }
 
   if (det.carrier && det.carrier !== 'DESCONOCIDO' && det.carrier !== expected) {

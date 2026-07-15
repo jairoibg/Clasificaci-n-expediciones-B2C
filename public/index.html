@@ -2365,8 +2365,10 @@
         input.placeholder = 'ID del pedido (13 dígitos junto al barcode)…';
         document.querySelector('#searchModal .modal-title').textContent = 'CRX: busca el ID del pedido';
       } else {
-        input.placeholder = 'Nombre del cliente…';
-        document.querySelector('#searchModal .modal-title').textContent = 'Buscar por cliente';
+        // El buscador acepta Referencia Pedido (DF…/CO…/KA…) O nombre de cliente.
+        // Clave para etiquetas internacionales cuyo barcode no está en el sistema.
+        input.placeholder = 'Referencia Pedido (DF…/CO…) o cliente…';
+        document.querySelector('#searchModal .modal-title').textContent = 'Buscar por pedido o cliente';
       }
       document.getElementById('searchModal').classList.add('show');
       input.value = '';

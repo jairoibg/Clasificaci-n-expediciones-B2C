@@ -2036,6 +2036,46 @@ un duplicado legítimo con mal mensaje.
 
 ---
 
+### #042 · Etiquetas INPOST Polonia — escanear el barcode ancho + buscar por pedido
+
+**Síntoma (Karla, foto)**
+"No reconoce estas etiquetas, son de Inpost." Etiqueta INPOST a Polonia
+(Wrocław), pedido DF1446678EU.
+
+**Diagnóstico (producción)**
+- Odoo tiene tracking INPOST `85315450` (8 díg). 
+- Barcode **ANCHO de abajo** `13853154500101985823316009` → **INPOST /
+  DF1446678EU ✓** (sliding window extrae `85315450`). Verificado con
+  `/api/scan` real (se añade correcto).
+- Barcode **vertical** de la izquierda `25541204000000000242569` → not_found.
+  Es el código de InPost Polonia (última milla), NO está en Odoo/Sendcloud —
+  mismo patrón que CTT-PT (`DS…PT`) y GLS-GR (griegos).
+
+**Solución (general, segura)**
+El barcode vertical es INMATCHEABLE (no está en ningún sistema). Como es un
+código numérico genérico no se puede pattern-matchear con fiabilidad. En su
+lugar se refuerza el fallback universal:
+- `/api/scan` NO_ENCONTRADO: mensaje que guía a "escanea el código ANCHO de
+  abajo, o busca por la Referencia Pedido (DF…/CO…/KA…)".
+- Buscador: título "Buscar por pedido o cliente" + placeholder "Referencia
+  Pedido (DF…/CO…) o cliente…" (el endpoint ya aceptaba refs de pedido; ahora
+  la UI lo dice). Los operarios pueden resolver CUALQUIER etiqueta
+  internacional tecleando/escaneando la Referencia Pedido impresa.
+- SW bump v4-...e-buscar-pedido.
+
+**Regla operativa**: en INPOST Polonia (y CTT-PT / GLS-GR) escanear el barcode
+ANCHO (el que lleva el tracking nuestro embebido), no el código del partner
+extranjero. Si no, buscar por Referencia Pedido.
+
+**Archivos**: `server.js`, `public/index.html`, `public/sw.js`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**: los envíos internacionales traen 2+ barcodes; el del partner de
+destino no está en nuestros sistemas. Patrón recurrente (CTT-PT, GLS-GR,
+INPOST-PL). Solución robusta y única: guiar SIEMPRE a la Referencia Pedido como
+red de seguridad, además de enseñar a escanear el barcode correcto.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
