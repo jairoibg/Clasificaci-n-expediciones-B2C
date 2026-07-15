@@ -332,8 +332,16 @@ async function sync() {
   // announced_after a 14 días: alineado con la ventana Odoo. Cubre etiquetas
   // anunciadas días antes de la validación del picking (date_done), que el
   // barrido de updates truncado dejaba fuera (~30% del cohorte verificado).
+  // MODO LIGERO vs COMPLETO (#037): el barrido announced_after 14d es caro
+  // (~24k parcels extra + bucle de matching más largo) y, sumado al JSON.parse
+  // del índice en el padre, alarga el sync y la contención de CPU cada 30 min
+  // → contribuía a los 502 "Application failed to respond" en hora punta.
+  // Ahora el barrido announced solo corre en los syncs NOCTURNos (--full).
+  // De día basta updated_after 7d para mantener el índice fresco.
+  const fullSync = process.argv.includes('--full');
   const parcelsUpdated = await fetchSendcloudParcels(7, 'updated_after');
-  const parcelsAnnounced = await fetchSendcloudParcels(14, 'announced_after');
+  const parcelsAnnounced = fullSync ? await fetchSendcloudParcels(14, 'announced_after') : [];
+  if (!fullSync) console.log('   ⚡ Sync LIGERO (solo updated_after 7d). El backfill announced 14d corre de noche.');
   const seenParcelIds = new Set();
   const parcels = [];
   for (const p of [...parcelsUpdated, ...parcelsAnnounced]) {

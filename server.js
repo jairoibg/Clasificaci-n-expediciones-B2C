@@ -86,20 +86,25 @@ const CARRIERS = ['AMAZON', 'ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS
 let sendcloudCache = { parcels: {} };
 let sendcloudCacheUpper = {}; // Índice O(1) case-insensitive
 
-function loadSendcloudCache() {
+async function loadSendcloudCache() {
   try {
     if (fs.existsSync(SENDCLOUD_CACHE_FILE)) {
-      const data = fs.readFileSync(SENDCLOUD_CACHE_FILE, 'utf8');
-      sendcloudCache = JSON.parse(data);
+      // Lectura ASÍNCRONA (#037): no bloquea el event loop durante el I/O del
+      // fichero de ~17MB. El JSON.parse sigue siendo síncrono pero es menos.
+      const data = await fs.promises.readFile(SENDCLOUD_CACHE_FILE, 'utf8');
+      const parsed = JSON.parse(data);
+      sendcloudCache = parsed;
       // Construir índice uppercase para O(1) lookup case-insensitive
-      sendcloudCacheUpper = {};
+      const upper = {};
       for (const [key, value] of Object.entries(sendcloudCache.parcels || {})) {
-        sendcloudCacheUpper[key.toUpperCase()] = value;
+        upper[key.toUpperCase()] = value;
       }
+      sendcloudCacheUpper = upper;
       console.log('📦 Caché Sendcloud cargada: ' + Object.keys(sendcloudCache.parcels || {}).length + ' envíos (index O(1) listo)');
     }
   } catch (err) {
-    console.error('Error cargando caché Sendcloud:', err.message);
+    // No pisar la caché en memoria si el parse falla (fichero a medio escribir)
+    console.error('Error cargando caché Sendcloud (se mantiene la anterior):', err.message);
   }
 }
 
@@ -121,17 +126,25 @@ let trackingIndex = {
   byTracking: {}, byOdooTracking: {}, byCarrier: {}
 };
 
-function loadTrackingIndex() {
+async function loadTrackingIndex() {
   try {
     if (fs.existsSync(TRACKING_INDEX_FILE)) {
-      const data = fs.readFileSync(TRACKING_INDEX_FILE, 'utf8');
-      trackingIndex = JSON.parse(data);
+      // Lectura ASÍNCRONA (#037) del índice (grande, ~100-186MB): el I/O ya no
+      // bloquea el event loop. El JSON.parse posterior sí bloquea, pero se
+      // construye un objeto NUEVO y solo se sustituye si el parse tiene éxito
+      // (nunca se deja el índice a medias por un fichero corrupto).
+      const data = await fs.promises.readFile(TRACKING_INDEX_FILE, 'utf8');
+      const parsed = JSON.parse(data);
+      if (!parsed || typeof parsed !== 'object' || !parsed.byTracking) throw new Error('estructura de índice inválida');
+      trackingIndex = parsed;
       const age = trackingIndex.lastSync ? Math.round((Date.now() - new Date(trackingIndex.lastSync).getTime()) / 60000) : 'N/A';
       console.log('📊 Índice cargado: ' + trackingIndex.matched + ' coincidencias (hace ' + age + ' min)');
       return true;
     }
   } catch (err) {
-    console.error('⚠️ Error cargando índice:', err.message);
+    // Mantener el índice en memoria si el nuevo no parsea (no degradar el servicio)
+    console.error('⚠️ Error cargando índice (se mantiene el anterior):', err.message);
+    return false;
   }
   console.log('📊 Sin índice previo - se regenerará');
   return false;
@@ -369,17 +382,20 @@ function findInTrackingIndex(tracking) {
 let syncInProgress = false;
 let lastSyncAttempt = null;
 
-async function runSync() {
+async function runSync(opts = {}) {
   if (syncInProgress) { console.log('⏳ Sync ya en progreso...'); return false; }
   const syncScript = path.join(__dirname, 'sync-full.js');
   if (!fs.existsSync(syncScript)) { console.log('⚠️ sync-full.js no encontrado'); return false; }
-  
+
   syncInProgress = true;
   lastSyncAttempt = new Date().toISOString();
-  console.log('\n🔄 Iniciando sync completo... (' + lastSyncAttempt + ')');
-  
+  // --full (barrido announced 14d) solo de noche o si se fuerza: de día el sync
+  // es ligero para no alargar la contención de CPU en hora punta (#037).
+  const args = opts.full ? [syncScript, '--full'] : [syncScript];
+  console.log('\n🔄 Iniciando sync ' + (opts.full ? 'COMPLETO' : 'ligero') + '... (' + lastSyncAttempt + ')');
+
   return new Promise((resolve) => {
-    const child = spawn('node', [syncScript], { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('node', args, { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout.on('data', (data) => {
       data.toString().split('\n').filter(l => l.trim()).forEach(line => console.log('   ' + line));
     });
@@ -388,11 +404,17 @@ async function runSync() {
       syncInProgress = false;
       if (code === 0) {
         console.log('✅ Sync completado');
-        loadTrackingIndex();
-        loadSendcloudCache();
-        // Pre-serializar el índice de escaneo cliente AHORA (no en la 1ª request del día)
-        // para no bloquear el event loop cuando los operarios abren la app por la mañana.
-        try { buildScanningIndexJson(); } catch (e) { console.error('⚠️ Error pre-serializando índice:', e.message); }
+        // La recarga del índice hace JSON.parse de un fichero grande (bloqueante).
+        // Se difiere con setImmediate para drenar antes las requests en vuelo, y
+        // se mide su duración para vigilar el bloqueo del event loop (#037).
+        setImmediate(async () => {
+          const t0 = Date.now();
+          await loadTrackingIndex();
+          await loadSendcloudCache();
+          try { buildScanningIndexJson(); } catch (e) { console.error('⚠️ Error pre-serializando índice:', e.message); }
+          const ms = Date.now() - t0;
+          console.log('🔁 Índice recargado en ' + ms + 'ms' + (ms > 1500 ? ' ⚠️ (bloqueo largo del event loop)' : ''));
+        });
         resolve(true);
       }
       else { console.log('❌ Sync falló con código ' + code); resolve(false); }
@@ -408,19 +430,19 @@ function setupScheduledSync() {
     const now = new Date();
     const hour = now.getHours();
     const minute = now.getMinutes();
-    // En horario laboral 6-22h: cada 30 min (en :00 y :30)
+    // En horario laboral 6-22h: cada 30 min (en :00 y :30) — sync LIGERO
     if (hour >= 6 && hour <= 22 && (minute === 0 || minute === 30)) {
       console.log('\n⏰ Sync programado (' + hour + ':' + String(minute).padStart(2,'0') + ')');
       runSync();
       return;
     }
-    // Fuera de horario: cada 4 horas (00:00, 04:00)
+    // Fuera de horario: 00:00 y 04:00 — sync COMPLETO (backfill announced 14d)
     if ((hour === 0 || hour === 4) && minute === 0) {
-      console.log('\n⏰ Sync nocturno (' + hour + ':00)');
-      runSync();
+      console.log('\n⏰ Sync nocturno COMPLETO (' + hour + ':00)');
+      runSync({ full: true });
     }
   }, 60000);
-  console.log('⏰ Sync programado cada 30 min (6h-22h) + 2 nocturnos (00, 04)');
+  console.log('⏰ Sync ligero cada 30 min (6h-22h) + 2 nocturnos COMPLETOS (00, 04)');
 }
 
 // ============================================
@@ -1806,10 +1828,12 @@ app.get('/api/scanning-index', (req, res) => {
 
 app.post('/api/reload-index', (req, res) => {
   if (syncInProgress) return res.json({ success: false, message: 'Sync ya en progreso' });
-  console.log('🔄 Recarga de índice solicitada');
-  // Fire-and-forget: el sync de 14 días tarda >4 min y el proxy de Railway
-  // corta conexiones largas (HTTP 000). Respondemos ya y el sync corre detrás.
-  runSync();
+  // ?light=1 para forzar sync ligero; por defecto la recarga MANUAL es completa.
+  const full = req.query.light !== '1';
+  console.log('🔄 Recarga de índice solicitada (' + (full ? 'completo' : 'ligero') + ')');
+  // Fire-and-forget: el sync tarda varios min y el proxy de Railway corta
+  // conexiones largas. Respondemos ya y el sync corre detrás.
+  runSync({ full });
   res.json({ success: true, started: true, message: 'Sync iniciado en background — consulta /api/index-diagnostic para ver el progreso' });
 });
 
@@ -3067,9 +3091,9 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log('║  🔄 Recargar: POST /api/reload-index                          ║');
   console.log('╚═══════════════════════════════════════════════════════════════╝');
   
-  const indexLoaded = loadTrackingIndex();
+  const indexLoaded = await loadTrackingIndex();
   // Pre-serializar el índice de escaneo cliente al arrancar (evita que la 1ª
-  // request del día bloquee el event loop serializando 2.4MB).
+  // request del día bloquee el event loop serializando el índice).
   if (indexLoaded) {
     try { buildScanningIndexJson(); } catch (e) { console.error('⚠️ Error pre-serializando índice al arrancar:', e.message); }
   }
@@ -3084,13 +3108,13 @@ app.listen(PORT, '0.0.0.0', async () => {
   setupScheduledSync();
   
   if (!indexLoaded || !trackingIndex.lastSync) {
-    console.log('\n⏳ Auto-sync programado en 10 segundos...');
-    setTimeout(() => { console.log('\n🚀 Ejecutando auto-sync inicial...'); runSync(); }, 10000);
+    console.log('\n⏳ Auto-sync inicial (completo) programado en 10 segundos...');
+    setTimeout(() => { console.log('\n🚀 Ejecutando auto-sync inicial...'); runSync({ full: true }); }, 10000);
   } else {
     const ageHours = (Date.now() - new Date(trackingIndex.lastSync).getTime()) / 3600000;
     if (ageHours > 4) {
-      console.log('\n⏳ Índice antiguo (' + Math.round(ageHours) + 'h), auto-sync en 10 segundos...');
-      setTimeout(() => runSync(), 10000);
+      console.log('\n⏳ Índice antiguo (' + Math.round(ageHours) + 'h), auto-sync completo en 10 segundos...');
+      setTimeout(() => runSync({ full: true }), 10000);
     }
   }
 });

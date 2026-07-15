@@ -1817,6 +1817,86 @@ directo → exacto). Post-deploy verificado contra producción.
 
 ---
 
+## 2026-07-15 · "Application failed to respond" al leer rápido (#037)
+
+### #037 · 502 de Railway en hora punta + flujo de escaneo bloqueante
+
+**Síntoma (Karla + operarios)**
+"Sigue saliendo este error por leer rápido los paquetes" — modal "Error ·
+Application failed to respond" (página 502 de Railway). Volumen alto, el flujo
+debe ser fluido sin perjudicar tiempo de lectura ni experiencia.
+
+**Causa raíz (medida en producción)**
+1. **Bloqueo del event loop tras cada sync**: el proceso padre hacía
+   `JSON.parse(fs.readFileSync(...))` SÍNCRONO del `tracking-index.json`
+   (~100-186MB) + caché Sendcloud (17MB) + `buildScanningIndexJson` en cada
+   sync (cada 30 min en 6-22h). ~2-4s de event loop BLOQUEADO → todas las
+   requests encoladas → Railway devuelve 502. El doble barrido de #033 agrandó
+   el índice y alargó el bloqueo.
+   Medido: index-hit p50=1.8s, ráfaga concurrente x20 → todas a ~4.8s.
+2. **El cliente ESPERABA al servidor** en los paquetes fuera del índice local
+   (await del POST /scan). Bajo carga, 4-5s de espera o error visible.
+3. **El Service Worker dejaba pasar el 502**: para HTML/JS/CSS hacía
+   `fetch().catch(...)` que SOLO captura fallo de red, no una respuesta 502
+   (que es válida) → el operario veía la página de error de Railway.
+4. **Pérdida silenciosa**: si el POST /scan fallaba (502), el paquete quedaba
+   en el UI local pero NO en la sesión del servidor → al cerrar el palet se
+   perdía (y contaminaba la cobertura).
+
+**Solución (garantías cliente + reducción de causa servidor)**
+`public/index.html`:
+- **Cola de persistencia con reintentos** (`enqueueScanSync`): TODO scan (esté
+  o no en el índice local) se añade al UI al instante y su POST va por una cola
+  con backoff (6 intentos, ~40s). El operario NUNCA espera al servidor.
+- **`apiCall` con timeout** (AbortController 9s) y detección de fallo
+  transitorio (`err.transient` en timeout/5xx/red/non-JSON) vs respuesta
+  definitiva del servidor.
+- **Reconciliación async**: éxito → datos del servidor; error definitivo
+  (TRANSPORTISTA_INCORRECTO/NO_ENCONTRADO/CRX/DUPLICADO) → rollback + UI de
+  siempre; transitorio → reintento silencioso; agotado → paquete marcado
+  "⚠ sin guardar" (borde ámbar, no bloqueante) para re-escanear.
+- Indicadores por paquete: ✓ guardado · ↻ guardando · ⚠ sin guardar.
+`public/sw.js`:
+- **Fallback a caché también en 5xx** (`networkFirstWithCache`): el 502 de
+  Railway ya no se muestra; la app sigue viva desde caché y el escaneo continúa
+  (el matching local es 0ms). Cachea las respuestas buenas para tener fallback.
+  Bump `expediciones-v4-2026-07-15-fluidez`.
+`server.js` + `sync-full.js`:
+- **Sync LIGERO de día** (solo `updated_after 7d`), **COMPLETO de noche**
+  (`--full`, con backfill `announced_after 14d`): el sync diario vuelve a ser
+  ~4min (vs ~10) → índice más pequeño, parse más corto, menos contención.
+- **Carga de índice ASÍNCRONA** (`fs.promises.readFile`) + `setImmediate` para
+  drenar requests en vuelo antes de reparsear + **medición del tiempo de
+  recarga** (avisa si >1.5s) + **no pisar el índice en memoria si el parse
+  falla** (fichero a medio escribir).
+
+**Verificación**: server + sync + JS del cliente `--check` OK; cola de
+reintentos 4/4 (éxito, transitorio→éxito, transitorio-siempre→unsynced sin
+loop, carrier-incorrecto→rollback); SW válido; boot local con carga async OK.
+
+**Nota de propagación**: el SW nuevo se activa en cada PDA en la siguiente
+carga (skipWaiting+claim+bump de CACHE_NAME). Una recarga y listo.
+
+**Pendiente (mejora de fondo)**: el `JSON.parse` del índice sigue siendo el
+punto caliente; si reaparece bloqueo >1.5s en logs, siguiente paso = índice
+de escaneo SLIM separado (solo campos de scan) o parse en worker_thread.
+
+**Archivos**: `server.js`, `sync-full.js`, `public/index.html`, `public/sw.js`,
+`FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**:
+- En un servidor Node monohilo, cualquier `JSON.parse`/`readFileSync` de un
+  fichero grande en el hot path bloquea TODAS las requests. Ficheros de estado
+  grandes se leen async y, si es posible, se parsean fuera del hilo o se
+  parten en un formato más ligero.
+- El SW debe tratar 5xx como "caído" (fallback a caché), no solo el fallo de
+  red: si no, propaga la página de error del proxy a los operarios.
+- Un scan de almacén no puede depender de un round-trip a Singapur: UI
+  optimista + cola de reintentos = fluido y sin pérdida aunque el backend
+  parpadee.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
