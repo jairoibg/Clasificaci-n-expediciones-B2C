@@ -1900,6 +1900,50 @@ app.get('/api/persistence-status', (req, res) => {
   });
 });
 
+// ============================================
+// BACKUP / RESTORE (#046) — para migrar de región de Railway sin perder palets
+// ============================================
+// Backup: descarga el data.json completo (palets/sesiones/recogidas/manifiestos).
+// Solo lectura; los mismos datos ya son accesibles por la API abierta, así que
+// si ADMIN_TOKEN no está configurado se permite (para poder hacer el backup
+// previo a la migración). Si está configurado, se exige token.
+app.get('/api/admin/backup-data', (req, res) => {
+  if (process.env.ADMIN_TOKEN) {
+    const provided = req.query.token || req.headers['x-admin-token'];
+    if (provided !== process.env.ADMIN_TOKEN) return res.status(403).json({ error: 'token inválido' });
+  }
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="data-backup-${stamp}.json"`);
+  res.setHeader('X-Pallets', String(Object.keys(database.pallets).length));
+  res.setHeader('X-Pickups', String(Object.keys(database.pickups).length));
+  res.end(JSON.stringify(database));
+});
+
+// Restore: sube un data.json y lo escribe en el volumen. SIEMPRE requiere
+// ADMIN_TOKEN (sobrescribe TODOS los palets). Guarda el actual antes de pisar.
+// Se usa express.raw para aceptar el fichero grande (~40MB) saltando el
+// límite global de express.json (10mb). El cliente debe enviarlo con
+// Content-Type: application/octet-stream.
+app.post('/api/admin/restore-data', express.raw({ type: '*/*', limit: '300mb' }), (req, res) => {
+  if (!process.env.ADMIN_TOKEN) return res.status(403).json({ error: 'Configura ADMIN_TOKEN en Railway antes de restaurar' });
+  const provided = req.query.token || req.headers['x-admin-token'];
+  if (provided !== process.env.ADMIN_TOKEN) return res.status(403).json({ error: 'token inválido' });
+  let incoming;
+  try { incoming = JSON.parse(req.body.toString('utf8')); }
+  catch (e) { return res.status(400).json({ error: 'JSON inválido: ' + e.message }); }
+  if (!incoming || typeof incoming !== 'object' || !incoming.pallets) {
+    return res.status(400).json({ error: 'data.json inválido (falta "pallets")' });
+  }
+  // Salvaguarda: copia del actual antes de sobrescribir
+  try { if (fs.existsSync(DATA_FILE)) fs.copyFileSync(DATA_FILE, DATA_FILE + '.pre-restore-' + Date.now()); } catch (_) {}
+  database = Object.assign({ activeSessions: {}, pallets: {}, pickups: {}, manifests: {} }, incoming);
+  saveDataSync();
+  try { rebuildGlobalScans(); } catch (_) {}
+  console.log('♻️ RESTORE aplicado: ' + Object.keys(database.pallets).length + ' palets, ' + Object.keys(database.pickups).length + ' recogidas');
+  res.json({ success: true, pallets: Object.keys(database.pallets).length, pickups: Object.keys(database.pickups).length, manifests: Object.keys(database.manifests || {}).length });
+});
+
 // Sesiones
 // Sesión agregada (legacy compat): devuelve TODOS los paquetes del carrier combinados
 app.get('/api/session/:carrier', (req, res) => {
