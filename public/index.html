@@ -1076,6 +1076,23 @@
       .d3 .h { max-width: 1280px; }
       .body { padding: 28px 48px; }
     }
+    /* ═══════════════════════════════════════════════════════════════
+       #044 · FLUIDEZ EN PDAs DE GAMA BAJA
+       Elimina los dos mayores costes de GPU en móvil, que causaban el lag
+       general (scroll, cambio de pestaña/palet, abrir modales):
+         · backdrop-filter: blur() (×21 superficies) → recomposición cara por frame
+         · background-attachment: fixed → repaint de TODA la página en cada scroll
+       Las superficies (antes translúcidas + blur) se opacan para seguir nítidas.
+       No se tocan las de color (.car.on, .fab, botones, badges).
+       ═══════════════════════════════════════════════════════════════ */
+    .d3, body.d3 { background: #e9edf3 !important; background-attachment: scroll !important; }
+    .d3 *, .d3 *::before, .d3 *::after {
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+    .d3 .topbar, .d3 .nav, .d3 .glass, .d3 .scanner, .d3 .pkg,
+    .d3 .sc-input, .d3 .modal-content, .d3 .search-results,
+    .d3 .car:not(.on) { background: #ffffff !important; }
   </style>
 </head>
 <body class="d3">
@@ -1524,43 +1541,48 @@
       }).join('');
     }
 
+    let carrierLoadSeq = 0;
     async function selectCarrier(carrier) {
+      // INSTANTÁNEO (#044): abrir el scanner YA con la caché de sesiones; la red
+      // (paquetes + refresco de sesiones) corre en segundo plano. Antes esto
+      // esperaba 2 llamadas de red secuenciales → 0,5-2s de lag por cada toque.
+      const myToken = ++carrierLoadSeq;
       state.selectedCarrier = carrier;
-      // Refrescar el detalle de sesiones antes de decidir
-      await loadSessions();
-      const detail = state.sessionsDetail[carrier];
+      const detail = state.sessionsDetail[carrier];   // caché (poblada por loadSessions)
 
-      // Si hay 2+ palets abiertos → mostrar selector
-      if (detail && detail.palletCount > 1) {
-        showPalletSelector(carrier);
-        return;
-      }
+      // 2+ palets abiertos → selector (con lo cacheado; refresca detrás)
+      if (detail && detail.palletCount > 1) { showPalletSelector(carrier); loadSessions(); return; }
 
-      // Si hay 1 palet abierto → cargarlo
-      if (detail && detail.sessions && detail.sessions.length >= 1) {
-        state.selectedSessionId = detail.sessions[0].id;
-      } else {
-        state.selectedSessionId = null; // se creará al primer escaneo
-      }
+      state.selectedSessionId = (detail && detail.sessions && detail.sessions.length >= 1)
+        ? detail.sessions[0].id : null;
 
-      await loadSessionPackages(carrier, state.selectedSessionId);
-      openScannerForCarrier(carrier);
+      state.packages = [];              // limpiar; se rellena async
+      openScannerForCarrier(carrier);   // ← se abre AL INSTANTE
+
+      // Cargar paquetes de la sesión + refrescar sesiones en SEGUNDO PLANO
+      loadSessionPackages(carrier, state.selectedSessionId, myToken).then(() => {
+        if (myToken === carrierLoadSeq) { renderPackages(); updateActivePalletBar(); }
+      });
+      loadSessions().then(() => { if (myToken === carrierLoadSeq) updateActivePalletBar(); });
     }
 
-    async function loadSessionPackages(carrier, sessionId) {
+    async function loadSessionPackages(carrier, sessionId, token) {
+      // token (opcional): si al volver de la red ya se seleccionó otro carrier,
+      // NO pisar state.packages con datos viejos (evita parpadeo/lista incorrecta).
+      const stillValid = () => (token === undefined || token === carrierLoadSeq);
       try {
+        let pkgs;
         if (sessionId) {
-          // Pedir todas las sesiones del carrier y extraer la nuestra
           const r = await apiCall(`/sessions/${encodeURIComponent(carrier)}`);
           const sess = (r.sessions || []).find(s => s.id === sessionId);
-          state.packages = sess ? (sess.packages || []) : [];
+          pkgs = sess ? (sess.packages || []) : [];
         } else {
-          // Sin sessionId: pedir agregado (compat)
           const r = await apiCall(`/session/${encodeURIComponent(carrier)}`);
-          state.packages = r.packages || [];
+          pkgs = r.packages || [];
         }
+        if (stillValid()) state.packages = pkgs;
       } catch {
-        state.packages = [];
+        if (stillValid()) state.packages = [];
       }
     }
 
@@ -1680,12 +1702,17 @@
       document.getElementById('palletSelectorModal').classList.remove('show');
     }
 
-    async function selectExistingSession(sessionId) {
+    function selectExistingSession(sessionId) {
+      // INSTANTÁNEO (#044): cerrar selector + abrir scanner YA; cargar detrás.
+      const myToken = ++carrierLoadSeq;
       state.selectedSessionId = sessionId;
-      await loadSessionPackages(state.selectedCarrier, sessionId);
+      state.packages = [];
       closePalletSelector();
       openScannerForCarrier(state.selectedCarrier);
-      showToast(`Trabajando en palet activo`, 'success');
+      showToast('Trabajando en palet activo', 'success');
+      loadSessionPackages(state.selectedCarrier, sessionId, myToken).then(() => {
+        if (myToken === carrierLoadSeq) { renderPackages(); updateActivePalletBar(); }
+      });
     }
 
     async function openNewSessionForSelected() {
@@ -2182,20 +2209,26 @@
         else { showModal('!', 'Error', r.error || 'Error al deshacer'); }
       } catch { showToast('Error de conexión', 'error'); }
     }
+    let pickupInProgress = false;
     async function confirmPickupFromPalets() {
-      if (state.selectedPallets.size === 0) return;
+      if (state.selectedPallets.size === 0 || pickupInProgress) return;
       const palletIds = [...state.selectedPallets];
       const pallets = palletIds.map(id => { for (const [c, info] of Object.entries(state.palletsData.carriers)) { const f = [...info.pending, ...info.pickedUp].find(p => p.id === id); if (f) return { ...f, carrier: c }; } }).filter(Boolean);
       const carriers = [...new Set(pallets.map(p => p.carrier))];
       if (carriers.length > 1) { showModal('!', 'Error', 'Selecciona palets de un solo transportista'); return; }
+      // Feedback inmediato + guard: el /pickup actualiza Odoo (segundos) y sin
+      // esto parecía congelado y permitía doble confirmación.
+      pickupInProgress = true;
+      showToast('Confirmando recogida… actualizando Odoo', 'warning');
       try {
-        const r = await apiCall('/pickup', { method: 'POST', body: JSON.stringify({ carrier: carriers[0], palletIds }) });
+        const r = await apiCall('/pickup', { method: 'POST', body: JSON.stringify({ carrier: carriers[0], palletIds }), timeoutMs: 30000 });
         if (r.success) {
           window.open(`${API_URL}/api/manifest/${r.pickup.id}`, '_blank');
-          showToast('Recogida confirmada', 'success');
+          showToast('✓ Recogida confirmada', 'success');
           state.selectedPallets.clear(); updateSelectionBar(); loadPallets();
         } else { showModal('!', 'Error', r.error); }
-      } catch { showModal('×', 'Error', 'Error de conexión'); }
+      } catch (e) { showToast(e && e.transient ? 'Sistema lento — reintenta la confirmación' : 'Error de conexión', 'error'); }
+      finally { pickupInProgress = false; }
     }
 
     // ─── BÚSQUEDA ───
@@ -2302,16 +2335,21 @@
       if (state.pickupPallets.length === 0) return;
       if (confirm('¿Limpiar?')) { state.pickupPallets = []; renderPickupPallets(); }
     });
-    document.getElementById('confirmPickupBtn').addEventListener('click', async () => {
-      if (state.pickupPallets.length === 0) return;
+    document.getElementById('confirmPickupBtn').addEventListener('click', async (ev) => {
+      if (state.pickupPallets.length === 0 || pickupInProgress) return;
+      const btn = ev.currentTarget;
+      pickupInProgress = true;
+      const prevTxt = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Confirmando… (Odoo)';
       try {
-        const r = await apiCall('/pickup', { method: 'POST', body: JSON.stringify({ carrier: state.pickupCarrier, palletIds: state.pickupPallets.map(p => p.id) }) });
+        const r = await apiCall('/pickup', { method: 'POST', body: JSON.stringify({ carrier: state.pickupCarrier, palletIds: state.pickupPallets.map(p => p.id) }), timeoutMs: 30000 });
         if (r.success) {
           window.open(`${API_URL}/api/manifest/${r.pickup.id}`, '_blank');
           showModal('✓', 'Recogida confirmada', `${state.pickupPallets.length} palets\n${r.pickup.totalPackages} envíos`, null, true);
           state.pickupPallets = []; renderPickupPallets();
         } else { showModal('!', 'Error', r.error); }
-      } catch { showModal('×', 'Error', 'Error de conexión'); }
+      } catch (e) { showToast(e && e.transient ? 'Sistema lento — reintenta la confirmación' : 'Error de conexión', 'error'); }
+      finally { pickupInProgress = false; btn.disabled = false; btn.textContent = prevTxt; }
     });
 
     // ─── DOCS ───

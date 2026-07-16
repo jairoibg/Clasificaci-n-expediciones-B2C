@@ -2115,6 +2115,54 @@ sin que salte ninguna alarma. Ver [[coverage-audit-2026-07]].
 
 ---
 
+### #044 · Fluidez de la UI en las PDAs (lag general, cambio de carrier/palet, recogida)
+
+**Síntoma (Karla)**
+"Va muy lento el programa, mucho lag en las PDAs: cambio de palets,
+transportista, cerrar el manifiesto, en general."
+
+**Causa raíz (dos frentes)**
+1. **GPU**: el diseño usa `backdrop-filter: blur()` en **21 superficies**
+   (topbar, nav, tarjetas, cada paquete, modales…) + `background-attachment:
+   fixed`. En Android de gama baja, el blur obliga a recomponer y desenfocar
+   todo lo de detrás en cada repintado, y `fixed` repinta la página entera en
+   cada frame de scroll → jank en TODO (scroll, cambio de pestaña, abrir modal).
+2. **Red bloqueante**: `selectCarrier` hacía `await loadSessions()` +
+   `await loadSessionPackages()` (2 round-trips a Singapur) ANTES de abrir el
+   scanner → 0,5-2s de lag por cada toque de transportista. Igual en
+   `selectExistingSession` (cambio de palet).
+
+**Solución (`public/index.html`)**
+- **CSS perf**: override que anula TODO `backdrop-filter` (`!important`), pasa el
+  fondo a plano sin `fixed`, y opaca las superficies (antes translúcidas+blur)
+  para que sigan nítidas. No toca superficies de color (`.car.on`, `.fab`…).
+- **`selectCarrier` instantáneo**: abre el scanner YA con la caché de sesiones
+  (`state.sessionsDetail`); paquetes + refresco de sesiones cargan en segundo
+  plano. Token `carrierLoadSeq` para que una carga lenta no pise un carrier
+  seleccionado después.
+- **`selectExistingSession` instantáneo**: cierra selector + abre scanner ya,
+  carga detrás.
+- **Recogida/manifiesto**: el `/pickup` (escribe `manual_expedition_date` en
+  Odoo, segundos) NO puede ser optimista, pero ahora da feedback inmediato
+  ("Confirmando… Odoo"), deshabilita el botón y evita doble confirmación +
+  timeout 30s.
+- SW bump v5-...fluidez.
+
+**Verificación**: JS `new Function` OK. Pendiente medir en PDA real.
+
+**Pendiente (si sigue habiendo lag)**: `renderPackages` reconstruye todo el
+`innerHTML` en cada scan; con palets de 800+ envíos puede dar tirones →
+siguiente paso sería render incremental (append del último) o virtualización.
+
+**Archivos**: `public/index.html`, `public/sw.js`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**: en dispositivos de gama baja, `backdrop-filter: blur` y
+`background-attachment: fixed` son los dos mayores asesinos de fluidez —
+evitarlos de entrada. Y ninguna acción de UILe debe esperar a un round-trip de
+red: abrir al instante con lo cacheado y reconciliar en segundo plano.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
