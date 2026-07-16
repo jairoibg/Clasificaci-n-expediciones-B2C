@@ -396,11 +396,20 @@ async function runSync(opts = {}) {
 
   return new Promise((resolve) => {
     const child = spawn('node', args, { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
+    // WATCHDOG (#043): si el sync se cuelga (socket sin timeout, Odoo colgado…),
+    // matarlo a los 25 min. Sin esto, syncInProgress quedaba true PARA SIEMPRE
+    // y el índice dejaba de refrescarse (verificado: 23h sin sync → escaneos
+    // del día cayendo a Odoo → "va muy lento").
+    const watchdog = setTimeout(() => {
+      console.error('   ⏱️🛑 WATCHDOG: sync >25 min — matando proceso hijo colgado');
+      try { child.kill('SIGKILL'); } catch (_) {}
+    }, 25 * 60 * 1000);
     child.stdout.on('data', (data) => {
       data.toString().split('\n').filter(l => l.trim()).forEach(line => console.log('   ' + line));
     });
     child.stderr.on('data', (data) => console.error('   ❌ ' + data.toString()));
     child.on('close', (code) => {
+      clearTimeout(watchdog);
       syncInProgress = false;
       if (code === 0) {
         console.log('✅ Sync completado');
@@ -430,6 +439,16 @@ function setupScheduledSync() {
     const now = new Date();
     const hour = now.getHours();
     const minute = now.getMinutes();
+    // AUTO-CURADO (#043): si el índice envejece >90 min en horario laboral y no
+    // hay sync corriendo, relanzar YA (no esperar a :00/:30). Cubre cualquier
+    // fallo del schedule (proceso reiniciado, sync abortado, cuelgue previo…).
+    const idxAgeMin = trackingIndex.lastSync ? (Date.now() - new Date(trackingIndex.lastSync).getTime()) / 60000 : 99999;
+    if (hour >= 6 && hour <= 22 && idxAgeMin > 90 && !syncInProgress) {
+      console.error('\n🚑 AUTO-CURADO: índice con ' + Math.round(idxAgeMin) + ' min de antigüedad en horario laboral — relanzando sync');
+      runSync();
+      return;
+    }
+
     // En horario laboral 6-22h: cada 30 min (en :00 y :30) — sync LIGERO
     if (hour >= 6 && hour <= 22 && (minute === 0 || minute === 30)) {
       console.log('\n⏰ Sync programado (' + hour + ':' + String(minute).padStart(2,'0') + ')');

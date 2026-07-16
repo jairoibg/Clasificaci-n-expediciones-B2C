@@ -200,13 +200,22 @@ async function fetchSendcloudParcels(daysBack = 7, dateField = 'updated_after') 
     }
 
     try {
-      const response = await fetch(nextUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': authHeader,
-          'Content-Type': 'application/json'
-        }
-      });
+      // (#043) Timeout por página: un socket colgado sin timeout congelaba el
+      // proceso hijo PARA SIEMPRE → syncInProgress atascado → índice sin
+      // refrescar durante horas ("va muy lento": los pedidos del día caían a Odoo).
+      const pageCtl = new AbortController();
+      const pageTimer = setTimeout(() => pageCtl.abort(), 30000);
+      let response;
+      try {
+        response = await fetch(nextUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json'
+          },
+          signal: pageCtl.signal
+        });
+      } finally { clearTimeout(pageTimer); }
 
       if (!response.ok) {
         consecutiveErrors++;
@@ -357,7 +366,7 @@ async function sync() {
     seenParcelIds.add(key);
     parcels.push(p);
   }
-  console.log(`   📬 ${parcels.length} envíos únicos (updated: ${parcelsUpdated.length} + announced: ${parcelsAnnounced.length})`);
+  console.log(`   📬 ${parcels.length} envíos únicos (updated: ${updatedRes.parcels.length} + announced: ${announcedRes.parcels.length})`);
   console.log('');
 
   // Procesar parcels de Sendcloud
