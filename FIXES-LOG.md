@@ -2076,6 +2076,45 @@ red de seguridad, además de enseñar a escanear el barcode correcto.
 
 ---
 
+### #043 · CRÍTICO: sync roto 23h por regresión de #040 → lecturas lentas
+
+**Síntoma (Karla)**
+"Va muy lento el programa para la lectura de los paquetes."
+
+**Causa raíz**
+El fix #040 (mañana del 15-jul) renombró las variables a `updatedRes` /
+`announcedRes` pero dejó una referencia vieja `parcelsUpdated.length` en un
+`console.log` (línea 369). Cada sync descargaba TODO (61k OUTs + 50k parcels) y
+al terminar reventaba con `ReferenceError: parcelsUpdated is not defined` ANTES
+de guardar el índice. Resultado: el índice se quedó congelado 23h (lastSync
+09:30 del día anterior). Los pedidos nuevos del día NO estaban en el índice →
+cada `/api/scan` caía a Odoo (1-3s) en vez de resolver en 0ms → lentitud.
+`node --check` no lo detecta (la var existe en otra rama del flujo).
+
+**Solución**
+- Fix del `ReferenceError` (`updatedRes.parcels.length`).
+- **Timeout 30s por página** en `fetchSendcloudParcels`: un socket colgado sin
+  timeout podía congelar el proceso hijo indefinidamente.
+- **Watchdog** en `runSync`: mata el hijo si el sync supera 25 min (evita
+  `syncInProgress` atascado para siempre).
+- **Auto-curado** en el scheduler: si el índice envejece >90 min en horario
+  laboral y no hay sync corriendo, relanza uno automáticamente. Blindaje para
+  que un fallo de sync no degrade el servicio durante horas.
+
+**Verificación**: sync local completo end-to-end SIN error (50k parcels, 44.934
+matches, índice guardado, 300s). Producción: boot-sync tras el deploy refresca
+el índice.
+
+**Archivos**: `server.js`, `sync-full.js`, `FIXES-LOG.md`
+**Commit**: `5434eb5`
+**Lección**: SIEMPRE correr un sync completo local antes de desplegar cambios en
+`sync-full.js` — `node --check` no pilla un ReferenceError en una rama no
+ejecutada durante el parseo. Y todo proceso de fondo crítico necesita watchdog
++ auto-curado: un fallo silencioso que no se auto-recupera degrada el servicio
+sin que salte ninguna alarma. Ver [[coverage-audit-2026-07]].
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
