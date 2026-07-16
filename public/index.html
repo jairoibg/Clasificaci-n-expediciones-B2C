@@ -1880,6 +1880,7 @@
     }
 
     async function scanPackage(tracking) {
+      window._lastScanTs = Date.now();   // (#045) marca para que el refresco de badges no pise el conteo optimista mientras se escanea
       const clean = tracking.trim().toUpperCase();
 
       // 1. Duplicado local (instantáneo)
@@ -2519,6 +2520,11 @@
         for (const c of carriersWithEmpty) {
           apiCall(`/sessions/${encodeURIComponent(c)}/prune-empty`, { method: 'POST' }).catch(() => {});
         }
+        // (#045) Refrescar SIEMPRE los badges del grid tras recargar sesiones.
+        // Sin esto, tras cerrar/recoger un palet el conteo quedaba "fantasma"
+        // (ej. SPRING mostraba 550 con la sesión ya vacía → parecía que faltaban
+        // paquetes, aunque estaban a salvo en palets cerrados/recogidos).
+        renderCarriers();
       } catch (err) {
         console.warn('loadSessions error', err);
       }
@@ -2545,6 +2551,16 @@
       setInterval(() => {
         fetch(`${API_URL}/api/health`, { cache: 'no-store' }).catch(() => {});
       }, 60000);
+
+      // (#045) Refresco periódico de sesiones/badges: mantiene los conteos del
+      // grid al día aunque otro operario/PDA cierre o recoja un palet. Evita
+      // los "fantasmas" (badge con paquetes que ya están en palets cerrados).
+      // Se salta si el operario está escaneando (para no pisar el conteo optimista).
+      setInterval(() => {
+        if (Date.now() - (window._lastScanTs || 0) < 4000) return;   // escaneando: no molestar
+        if (document.getElementById('modal')?.classList.contains('show')) return;
+        loadSessions();   // ya re-renderiza el grid (renderCarriers dentro)
+      }, 20000);
     }
     init();
   </script>

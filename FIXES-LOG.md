@@ -2163,6 +2163,42 @@ red: abrir al instante con lo cacheado y reconciliar en segundo plano.
 
 ---
 
+### #045 · Badges "fantasma": conteo del grid no se refrescaba tras cerrar/recoger palet
+
+**Síntoma (Karla)**
+"En la PDA no aparecen todos estos paquetes que aparecen en el navegador,
+necesitamos que no se borre nada." Captura: SPRING con badge **550** pero al
+seleccionarlo la sesión mostraba **0 envíos**.
+
+**Diagnóstico (foto atómica de producción)**
+NADA borrado: SPRING tenía **3 palets / 1.718 envíos / los 3 ya RECOGIDOS**. La
+sesión a 0 es correcta (se cerraron y recogieron). El **badge 550 era un conteo
+FANTASMA** del cliente: `loadSessions()` reconstruye `state.sessions` fresco pero
+NO re-renderizaba el grid, y mi `selectCarrier` de #044 dejó de re-renderizar
+los badges tras el refresco en segundo plano (antes el `await loadSessions()` +
+`renderCarriers` lo hacía). Regresión introducida por #044.
+
+**Solución (`public/index.html`)**
+- `loadSessions()` llama **siempre** a `renderCarriers()` al final → los badges
+  reflejan el estado real tras cualquier recarga (cerrar/recoger palet, etc.).
+- **Refresco periódico** (cada 20s) de sesiones/badges: se mantienen al día
+  aunque otro operario/PDA cierre o recoja un palet. Se salta si se está
+  escaneando (`window._lastScanTs`, marca puesta en `scanPackage`) o hay un
+  modal abierto, para no pisar el conteo optimista.
+- SW bump v5-...b-badges.
+
+**Verificación**: JS OK. Confirmado en producción que los 1.718 envíos SPRING
+están a salvo (palets recogidos), no hubo pérdida — solo display.
+
+**Archivos**: `public/index.html`, `public/sw.js`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**: al pasar una acción de "await + render" a "optimista + carga en
+2º plano" (#044), hay que asegurarse de re-renderizar TODO lo que el await
+refrescaba (aquí, los badges), no solo la parte visible inmediata. Un conteo
+que no cuadra con la realidad asusta al operario aunque no haya pérdida real.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
