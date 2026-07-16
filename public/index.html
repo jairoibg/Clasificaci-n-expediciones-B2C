@@ -1452,7 +1452,7 @@
       const e = r && r.error;
       if (e === 'CRX_NO_SINCRONIZADO') { showSearchModal(clean, r.message, 'crx'); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]); }
       else if (e === 'ESCANEA_OTRO_CODIGO') { showModal('!', 'Escanea el otro código', r.message); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]); }
-      else if (e === 'SISTEMA_LENTO') { showToast('⏱ Sistema lento — vuelve a escanear este paquete', 'warning'); playSound('error'); if (navigator.vibrate) navigator.vibrate([100,50,100]); }
+      else if (e === 'SISTEMA_LENTO') { showModal('!', 'Sistema lento', 'No se pudo confirmar el pedido ' + (r.orderRef || clean) + '.\n\nVuelve a escanearlo.\n\n(tracking: ' + clean + ')'); playSound('error'); if (navigator.vibrate) navigator.vibrate([100,50,100]); }
       else if (e === 'NO_ENCONTRADO' || e === 'NO_VERIFICADO') { showSearchModal(clean, r.message); playSound('error'); }
       else if (e === 'TRANSPORTISTA_INCORRECTO') { showModal('!', `Paquete de ${r.detectedCarrier}`, r.message); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]); }
       else if (e === 'YA_EN_PALET') { showModal('✓', 'Ya está en el palet', r.message || 'Este pedido ya está registrado — no lo escanees otra vez.'); playSound('success'); }
@@ -1467,6 +1467,14 @@
       p.unsynced = !retrying ? true : false;
       p.syncing = retrying;
       renderPackages();
+      // (#047) Al agotar los reintentos, DECIR QUÉ PEDIDO ha fallado para que el
+      // operario sepa exactamente cuál re-escanear (antes solo salía un ⚠ mudo).
+      if (!retrying) {
+        const id = (p.orderRef && p.orderRef !== '…') ? p.orderRef : clean;
+        showModal('!', 'No se pudo guardar', 'El pedido ' + id + ' NO se guardó por un fallo de conexión.\n\nVuelve a escanearlo.\n\n(tracking: ' + clean + ')');
+        playSound('error');
+        if (navigator.vibrate) navigator.vibrate([250, 120, 250]);
+      }
     }
 
     // ─── Topbar updates ───
