@@ -1439,16 +1439,20 @@
     function reconcileScan(clean, r) {
       const idx = state.packages.findIndex(p => p.tracking === clean);
       if (r && r.success && r.package) {
+        // (#048) actualizar SOLO esa fila (no reconstruir toda la lista). La fila
+        // se pintó con data-trk=clean; el servidor devuelve el mismo tracking.
+        const el = document.querySelector('#packageList .pkg[data-trk="' + String(clean).replace(/["\\]/g, '') + '"]');
         if (idx >= 0) state.packages[idx] = r.package;
         if (typeof r.sessionCount === 'number') state.sessions[state.selectedCarrier] = r.sessionCount;
         if (r.sessionId && !state.selectedSessionId) { state.selectedSessionId = r.sessionId; loadSessions().then(updateActivePalletBar); }
-        renderPackages(); renderCarriers();
+        if (el && idx >= 0) el.outerHTML = packageRowHtml(state.packages[idx]); else renderPackages();
+        renderCarriers();
         return;
       }
       // Respuesta definitiva negativa: rollback del optimista + UI según el error
       if (idx >= 0) state.packages.splice(idx, 1);
       state.sessions[state.selectedCarrier] = Math.max(0, (state.sessions[state.selectedCarrier] || 0) - 1);
-      renderPackages(); renderCarriers();
+      updatePackageRow(clean); renderCarriers();
       const e = r && r.error;
       if (e === 'CRX_NO_SINCRONIZADO') { showSearchModal(clean, r.message, 'crx'); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]); }
       else if (e === 'ESCANEA_OTRO_CODIGO') { showModal('!', 'Escanea el otro código', r.message); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]); }
@@ -1466,7 +1470,7 @@
       if (!p) return;
       p.unsynced = !retrying ? true : false;
       p.syncing = retrying;
-      renderPackages();
+      updatePackageRow(clean);
       // (#047) Al agotar los reintentos, DECIR QUÉ PEDIDO ha fallado para que el
       // operario sepa exactamente cuál re-escanear (antes solo salía un ⚠ mudo).
       if (!retrying) {
@@ -1755,20 +1759,32 @@
     });
 
     // ─── ÍNDICE CLIENTE-SIDE ─── (0ms matching)
-    const clientIndex = new Map(); // tracking → {pickingId, orderRef, clientName, carrier}
+    let clientIndex = new Map(); // tracking → {pickingId, orderRef, clientName, carrier}
     let clientIndexLastSync = null;
     let clientIndexLoaded = false;
 
+    // (#048) Carga NO BLOQUEANTE del índice (58k+ entradas, ~15MB parseado).
+    // Antes se construía el Map de golpe → congelaba la PDA al cargar y cada 15 min.
+    // Ahora se construye en un Map nuevo por trozos (cediendo el hilo) y se
+    // intercambia al final (sin vaciar el actual → los escaneos siguen funcionando
+    // mientras se reconstruye).
     async function loadClientIndex() {
       try {
         const r = await fetch(`${API_URL}/api/scanning-index`);
         if (!r.ok) { console.warn('Index load failed:', r.status); return; }
         const data = await r.json();
-        clientIndex.clear();
-        for (const entry of data.entries) {
-          const [tracking, pickingId, orderRef, clientName, carrier] = entry;
-          clientIndex.set(tracking, { pickingId, orderRef, clientName, carrier });
+        const entries = data.entries || [];
+        const next = new Map();
+        const CHUNK = 8000;
+        for (let i = 0; i < entries.length; i += CHUNK) {
+          const end = Math.min(i + CHUNK, entries.length);
+          for (let j = i; j < end; j++) {
+            const e = entries[j];
+            next.set(e[0], { pickingId: e[1], orderRef: e[2], clientName: e[3], carrier: e[4] });
+          }
+          if (end < entries.length) await new Promise(res => setTimeout(res)); // ceder el hilo entre trozos
         }
+        clientIndex = next;                 // intercambio atómico
         clientIndexLastSync = data.lastSync;
         clientIndexLoaded = true;
         console.log('⚡ Índice cliente cargado:', data.count, 'entradas');
@@ -1930,7 +1946,7 @@
         };
         state.packages.push(pkg);
         state.sessions[state.selectedCarrier] = (state.sessions[state.selectedCarrier] || 0) + 1;
-        renderPackages(); renderCarriers();
+        prependPackageRow(pkg); renderCarriers();
         showToast(`✓ ${local.orderRef || clean.slice(-8)}`, 'success');
         playSound('success');
         document.getElementById('scanInput').focus();
@@ -1948,13 +1964,33 @@
       };
       state.packages.push(optimisticEntry);
       state.sessions[state.selectedCarrier] = (state.sessions[state.selectedCarrier] || 0) + 1;
-      renderPackages(); renderCarriers();
+      prependPackageRow(optimisticEntry); renderCarriers();
       playSound('success');
       document.getElementById('scanInput').focus();
 
       enqueueScanSync({ tracking, expectedCarrier: state.selectedCarrier, sessionId: state.selectedSessionId }, clean);
     }
 
+    // (#048) HTML de UNA fila de paquete (reutilizable para render incremental)
+    function packageRowHtml(p) {
+      const time = p.scannedAt ? new Date(p.scannedAt).toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit' }) : '';
+      const pendingCls = p.pending ? ' pending' : '';
+      const mark = p.unsynced ? '⚠' : (p.syncing ? '↻' : (p.pending ? '…' : '✓'));
+      const markTitle = p.unsynced ? 'No se pudo guardar en el servidor — re-escanea este paquete' : (p.syncing ? 'Guardando…' : '');
+      const unsyncedCls = p.unsynced ? ' unsynced' : '';
+      const trk = String(p.tracking || '');
+      return `<div class="pkg${pendingCls}${unsyncedCls}" data-trk="${trk}">
+            <div class="check"${markTitle ? ` title="${markTitle}"` : ''}>${mark}</div>
+            <div class="info">
+              <div class="t">${p.tracking}</div>
+              <div class="d">${p.orderRef ? `<span class="or">${p.orderRef}</span> · ` : ''}${p.clientName || 'Sin cliente'}</div>
+            </div>
+            <div class="time">${time}</div>
+            <button class="x" onclick="deletePackage('${trk}')">×</button>
+          </div>`;
+    }
+
+    // Render COMPLETO: solo al cargar/borrar/limpiar (no en cada escaneo)
     function renderPackages() {
       const list = document.getElementById('packageList'), count = state.packages.length;
       document.getElementById('packageCount').textContent = count;
@@ -1964,25 +2000,35 @@
         list.innerHTML = '<div class="empty"><div class="ic-glyph">⊘</div>Sin paquetes escaneados</div>';
         return;
       }
-      list.innerHTML = [...state.packages].reverse().map((p, i) => {
-        const time = p.scannedAt ? new Date(p.scannedAt).toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit' }) : '';
-        const pendingCls = p.pending ? ' pending' : '';
-        // Estado de persistencia: ✓ guardado · ↻ guardando (reintento) · ⚠ sin guardar
-        const mark = p.unsynced ? '⚠' : (p.syncing ? '↻' : (p.pending ? '…' : '✓'));
-        const markTitle = p.unsynced ? 'No se pudo guardar en el servidor — re-escanea este paquete' : (p.syncing ? 'Guardando…' : '');
-        const unsyncedCls = p.unsynced ? ' unsynced' : '';
-        return `
-          <div class="pkg${pendingCls}${unsyncedCls}">
-            <div class="check"${markTitle ? ` title="${markTitle}"` : ''}>${mark}</div>
-            <div class="info">
-              <div class="t">${p.tracking}</div>
-              <div class="d">${p.orderRef ? `<span class="or">${p.orderRef}</span> · ` : ''}${p.clientName || 'Sin cliente'}</div>
-            </div>
-            <div class="time">${time}</div>
-            <button class="x" onclick="deletePackage('${p.tracking}')">×</button>
-          </div>
-        `;
-      }).join('');
+      list.innerHTML = [...state.packages].reverse().map(packageRowHtml).join('');
+    }
+
+    // (#048) Render INCREMENTAL: añade 1 fila arriba sin reconstruir toda la lista.
+    // En palets de cientos de envíos, reconstruir todo en cada escaneo bloqueaba
+    // la PDA (gama baja) → sensación de lentitud. Ahora cada escaneo = 1 nodo.
+    function prependPackageRow(p) {
+      const list = document.getElementById('packageList');
+      if (state.packages.length === 1) list.innerHTML = '';   // quitar el placeholder "vacío"
+      list.insertAdjacentHTML('afterbegin', packageRowHtml(p));
+      document.getElementById('packageCount').textContent = state.packages.length;
+      document.getElementById('closePalletBtn').disabled = false;
+      updateHeaderStats();
+    }
+
+    // (#048) Actualiza/elimina el nodo de UN paquete (tras reconciliar con el servidor)
+    function updatePackageRow(tracking) {
+      const list = document.getElementById('packageList');
+      const el = list.querySelector('.pkg[data-trk="' + String(tracking).replace(/["\\]/g, '') + '"]');
+      const p = state.packages.find(x => x.tracking === tracking);
+      if (!el) { if (p) renderPackages(); return; }        // no estaba: fallback a full
+      if (!p) {                                            // se eliminó (rollback)
+        el.remove();
+        document.getElementById('packageCount').textContent = state.packages.length;
+        if (state.packages.length === 0) renderPackages();
+        updateHeaderStats();
+        return;
+      }
+      el.outerHTML = packageRowHtml(p);                    // actualizar esa fila
     }
 
     async function deletePackage(t) {

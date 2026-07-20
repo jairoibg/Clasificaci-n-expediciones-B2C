@@ -2199,6 +2199,43 @@ que no cuadra con la realidad asusta al operario aunque no haya pérdida real.
 
 ---
 
+### #048 · Rendimiento en PDAs: render incremental + carga de índice no bloqueante
+
+**Síntoma (Karla)**
+"Va lento" — incluso tras migrar a EU (servidor a 49-54 ms, índice fresco). El
+cuello de botella es el CLIENTE (PDAs de gama baja), no el servidor ni la red.
+
+**Causas (código cliente)**
+1. `renderPackages()` reconstruía TODA la lista (innerHTML de N filas) en CADA
+   escaneo. Con palets de 300-500 envíos, cada lectura repintaba cientos de
+   nodos → bloqueo del hilo → lag al escanear rápido.
+2. `loadClientIndex()` parseaba ~15MB y construía el Map de 58k entradas de
+   golpe (bloqueante) al cargar y cada 15 min → congelación periódica.
+
+**Solución (`public/index.html`)**
+- **Render incremental**: `packageRowHtml(p)` (fila reutilizable) +
+  `prependPackageRow(p)` (inserta 1 nodo arriba) + `updatePackageRow(trk)`
+  (actualiza/elimina 1 nodo). El escaneo ahora añade 1 nodo en vez de
+  reconstruir la lista. `renderPackages()` completo solo en carga/borrado/
+  cambio de carrier. Cada fila lleva `data-trk` para localizarla.
+- **Carga de índice no bloqueante**: construye un Map nuevo por trozos de 8000
+  cediendo el hilo entre trozos, y lo intercambia atómicamente al final (sin
+  vaciar el actual → los escaneos siguen funcionando durante la reconstrucción).
+- SW bump v6.
+
+**Nota**: el servidor ya iba a 49 ms tras la migración a EU. Esto ataca lo que
+queda: el hilo de UI en equipos débiles. Combinado con #044 (sin blur), la
+fluidez debería ser la buscada. Requiere recarga de la PDA para tomar v6.
+
+**Archivos**: `public/index.html`, `public/sw.js`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**: en dispositivos de gama baja, reconstruir el DOM completo en un
+bucle caliente (cada escaneo) y parsear/indexar megas de golpe son los dos
+asesinos de fluidez más comunes. Render incremental + trabajo por trozos con
+cesión del hilo. El servidor rápido no salva una UI que se bloquea sola.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
