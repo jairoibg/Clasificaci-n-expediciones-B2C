@@ -75,10 +75,18 @@ const SENDCLOUD_CARRIER_MAP = {
   'amazon': 'AMAZON',
   'amazon_shipping': 'AMAZON',
   'amazon_logistics': 'AMAZON',
-  'amazon_es': 'AMAZON'
+  'amazon_es': 'AMAZON',
+  // UPS (#050): envíos a México principalmente. Sendcloud lo da como 'ups' y variantes.
+  'ups': 'UPS',
+  'ups_es': 'UPS',
+  'ups_express': 'UPS',
+  'ups_standard': 'UPS',
+  'ups_expedited': 'UPS',
+  'ups_saver': 'UPS',
+  'ups_access_point': 'UPS'
 };
 
-const CARRIERS = ['AMAZON', 'ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST', 'SPRING'];
+const CARRIERS = ['AMAZON', 'ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST', 'SPRING', 'UPS'];
 
 // =============================================
 // CACHÉ SENDCLOUD
@@ -1366,6 +1374,8 @@ function hasKnownCarrierShape(clean) {
   if (/^(PK|MI|Z89|6C\d{2}|H103|6A|LS|LX|LV|LT|3[A-Z]|CP|Z96|XSMT|0008|0626|CTT|EA|C0|9300500)/.test(clean)) return true;
   // AMAZON: ES seguido de exactamente 10 dígitos (ej. ES2527229735)
   if (/^ES\d{10}$/.test(clean)) return true;
+  // UPS (#050): 1Z + 16 alfanuméricos = 18 chars (ej. 1ZB5K6220434533424). México.
+  if (/^1Z[0-9A-Z]{16}$/.test(clean)) return true;
   // 8 dígitos exactos → INPOST candidato
   if (/^\d{8}$/.test(clean)) return true;
   // Barcodes numéricos largos (típico GS1) → SPRING/CTT/INPOST embebido
@@ -1699,6 +1709,18 @@ async function getCarrierFromTracking(tracking) {
     }
   }
 
+  // 3.5 UPS (#050): prefijo 1Z (18 chars). En Odoo el carrier sale como genérico
+  // "Correos - SC - Gold", así que el nombre NO sirve; el discriminador fiable es
+  // el prefijo del tracking. Va ANTES del cache/API Sendcloud para no depender de
+  // que Sendcloud tenga el parcel (etiquetas México pueden no estar en el cache).
+  {
+    const upsT = (odooTracking || clean).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (/^1Z[0-9A-Z]{16}$/.test(upsT)) {
+      console.log('   ✅ UPS detectado por prefijo 1Z: ' + (picking.origin || 'sin pedido') + ' (' + (Date.now() - startTime) + 'ms)');
+      return { carrier: 'UPS', picking, source: 'ups-prefix', elapsed: Date.now() - startTime };
+    }
+  }
+
   // 4. Caché Sendcloud
   const cached = findInSendcloudCache(odooTracking);
   if (cached && cached.carrier) {
@@ -1743,6 +1765,7 @@ function detectCarrierFromOdooName(carrierName) {
   if (n.includes('SPRING'))                                  return 'SPRING';
   if (n.includes('ASENDIA'))                                 return 'ASENDIA';
   if (n.includes('AMAZON'))                                  return 'AMAZON';
+  if (n.includes('UPS'))                                     return 'UPS';
   return null;
 }
 
@@ -3081,6 +3104,7 @@ app.get('/api/odoo-outs', async (req, res) => {
         else if (/^C0/.test(t)) carrier = 'CORREOS';
         else if (/^\d{8}$/.test(t)) carrier = 'INPOST';
         else if (/^ES\d{10}$/.test(t)) carrier = 'AMAZON';
+        else if (/^1Z[0-9A-Z]{16}$/.test(t)) carrier = 'UPS'; // (#050) 1Z + 16 = UPS (México)
       }
 
       // 2. Lookup exacto en índice (O(1), sin pattern matching costoso)

@@ -2236,6 +2236,50 @@ cesión del hilo. El servidor rápido no salva una UI que se bloquea sola.
 
 ---
 
+## 2026-07-29 · Nuevo transportista UPS (México) (#050)
+
+### #050 · Reconocimiento de etiquetas UPS `1Z…`
+
+**Síntoma (Jairo)**
+Los pedidos a México van por **UPS** y las etiquetas no se pueden leer en la app.
+
+**Causa**
+UPS no tenía ninguna regla de detección. El tracking UPS es `1Z` + 16
+alfanuméricos (18 chars, ej. `1ZB5K6220434533424`). Como no encajaba en ningún
+prefijo/forma conocida, `hasKnownCarrierShape` lo rechazaba (`no_shape`) y una
+etiqueta que aún no estuviese en el índice **no se buscaba en Odoo**. Además, en
+Odoo el carrier de estos pedidos sale como genérico `Correos - SC - Gold`, así
+que el nombre no distingue UPS — el único discriminador fiable es el prefijo
+`1Z`. (El bucket "UPS" ya existía en los informes porque el sync mapeaba el
+código Sendcloud `ups`→`UPS` por el fallback a mayúsculas, pero las etiquetas
+frescas no eran legibles.)
+
+**Solución (`server.js`, `public/index.html`, `public/sw.js`)**
+- `hasKnownCarrierShape`: acepta `^1Z[0-9A-Z]{16}$`.
+- `getCarrierFromTracking` **paso 3.5**: tras localizar el picking, si el tracking
+  matchea `^1Z…` → carrier `UPS` (antes del cache/API Sendcloud, para no depender
+  de que Sendcloud tenga el parcel).
+- Cascada de prefijos de `/api/odoo-outs`: `^1Z[0-9A-Z]{16}$` → `UPS`.
+- `SENDCLOUD_CARRIER_MAP`: `ups` + variantes → `UPS` (explícito).
+- `CARRIERS` (server y frontend) incluye `UPS`; `detectCarrierFromOdooName`
+  reconoce "UPS" (defensivo).
+- Frontend: tile/color UPS (marrón→oro). No necesita sliding window (el barcode
+  ES el tracking → match exacto en `localLookup`). SW bump `v7`.
+
+**Anclado en `^1Z`**: hay trackings CORREOS que *acaban* en `1Z`
+(`PK7L7H…1Z`). El prefijo `PK` se evalúa primero → esos quedan CORREOS. Test:
+4 trackings UPS reales de 27-28 jul → TRUE; PK…1Z / INPOST 8díg / AMAZON ES /
+ASENDIA 6C → FALSE. 0 falsos positivos.
+
+**Archivos**: `server.js`, `public/index.html`, `public/sw.js`, `CARRIER-RULES.md`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**: un carrier de bajo volumen puede estar "a medias" en el sistema
+(indexado por Sendcloud pero irreconocible al escanear fresco). El discriminador
+tiene que ser el dato fiable de la etiqueta (prefijo del tracking), no el nombre
+del carrier en Odoo cuando es genérico.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío

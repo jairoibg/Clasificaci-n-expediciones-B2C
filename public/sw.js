@@ -1,6 +1,6 @@
 // Cache version: BUMPEAR esta cifra cada vez que se haga un deploy
 // para forzar la invalidación de caché viejo en navegadores de operarios.
-const CACHE_NAME = 'expediciones-v6-2026-07-20-render-incremental';
+const CACHE_NAME = 'expediciones-v7-2026-07-29-ups';
 const urlsToCache = [
   '/',
   '/manifest.json'

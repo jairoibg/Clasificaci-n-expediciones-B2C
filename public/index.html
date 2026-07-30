@@ -1328,7 +1328,7 @@
   <script>
     const DEFAULT_API_URL = window.location.origin;
     let API_URL = localStorage.getItem('apiUrl') || DEFAULT_API_URL;
-    const CARRIERS = ['AMAZON', 'ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST', 'SPRING'];
+    const CARRIERS = ['AMAZON', 'ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST', 'SPRING', 'UPS'];
     const CARRIER_COLOR = {
       'GLS':             'linear-gradient(135deg, #00b884, #009069)',
       'ASENDIA':         'linear-gradient(135deg, #a78bfa, #7c3aed)',
@@ -1338,6 +1338,7 @@
       'INPOST':          'linear-gradient(135deg, #facc15, #eab308)',
       'SPRING':          'linear-gradient(135deg, #e879f9, #c026d3)',
       'AMAZON':          'linear-gradient(135deg, #232f3e, #ff9900)',
+      'UPS':             'linear-gradient(135deg, #5a3a1a, #ffb500)',
     };
 
     const state = {

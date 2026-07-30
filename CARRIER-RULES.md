@@ -39,6 +39,7 @@ actual y la evolución de cada uno.
 - [GLS](#gls)
 - [INPOST](#inpost)
 - [SPRING](#spring)
+- [UPS](#ups)
 
 ---
 
@@ -313,6 +314,38 @@ actual y la evolución de cada uno.
 
 ---
 
+## UPS
+
+### Identificadores y formatos
+
+- **Prefijo directo**: `1Z` + 16 alfanuméricos = **18 chars** (ej. `1ZB5K6220434533424`). Regex: `^1Z[0-9A-Z]{16}$`.
+- **Carrier Sendcloud**: `ups` (y variantes `ups_es`, `ups_express`, `ups_standard`, `ups_saver`, `ups_access_point`).
+- **Carrier Odoo (nombre)**: sale como **genérico `Correos - SC - Gold`** (igual que Amazon/Asendia vía Sendcloud) → el nombre de Odoo **NO** sirve para distinguir UPS; `detectCarrierFromOdooName("Correos - SC - Gold")` daría `CORREOS`. **El único discriminador fiable es el prefijo `1Z` del tracking.**
+- **Uso**: envíos a **México** (pedidos `DF…MX`). Volumen bajo pero recurrente (76 el 27-jul, 15 el 28-jul).
+- **Formato barcode físico**: el barcode inferior de la etiqueta UPS es el propio tracking `1Z…` (Code-128). El operario escanea ese. (La etiqueta también lleva un MaxiCode 2D que NO se usa.)
+
+### Reglas vigentes (detección)
+
+1. **Prefijo directo `^1Z[0-9A-Z]{16}$` → UPS** (en `/api/odoo-outs`, `getCarrierFromTracking` paso 3.5, `hasKnownCarrierShape`).
+2. **Anclado en inicio (`^1Z`)**: crítico porque hay trackings CORREOS que *acaban* en `1Z` (ej. `PK7L7H9800671380115111Z`). El prefijo `PK` se evalúa primero y esos quedan CORREOS.
+3. **Mapping Sendcloud**: `carrier.code === 'ups'` → UPS (el sync ya lo indexaba así por el fallback a mayúsculas; ahora explícito en `SENDCLOUD_CARRIER_MAP`).
+4. **Match exacto** en índice (FAST PATH 3) devuelve UPS cuando el tracking ya está sincronizado.
+5. **Etiqueta fresca (no en índice)**: `hasKnownCarrierShape` acepta `^1Z…` → se busca en Odoo por tracking exacto → el bloque UPS (paso 3.5) la etiqueta por el prefijo `1Z`, sin depender de que Sendcloud tenga el parcel.
+6. **`detectCarrierFromOdooName`**: `nombre.includes('UPS')` → UPS (defensivo, por si algún día Odoo pone el nombre real).
+7. **Frontend**: `1Z…` es un tracking limpio → `localLookup` hace match exacto en `clientIndex` (0 ms) cuando está indexado; si no, cae al servidor. No necesita sliding window (el barcode = el tracking). Tile/color UPS añadido (marrón→oro `#5a3a1a`→`#ffb500`).
+
+### Matching Sendcloud↔Odoo
+
+- **Match exacto** del `tracking_number` Sendcloud (`1Z…`) con `carrier_tracking_ref` Odoo. El sync ya funcionaba (bucket UPS poblado y con escaneos), pero las etiquetas nuevas antes del sync se rechazaban como `no_shape`.
+
+### Historial de cambios
+
+| Fecha | Cambio | Commit | Fix |
+|---|---|---|---|
+| 2026-07-29 | **Nuevo carrier UPS añadido** (envíos México). Prefijo `^1Z[0-9A-Z]{16}$` en `hasKnownCarrierShape`, `getCarrierFromTracking` (paso 3.5), cascada `/api/odoo-outs` y `detectCarrierFromOdooName`. `SENDCLOUD_CARRIER_MAP` (`ups`+variantes), `CARRIERS` array (server+frontend), color frontend, bump SW `v7`. Verificado con trackings reales de 27-28 jul (`1ZB5K6220434533424` = DF144424MX, etc.); 0 falsos positivos vs CORREOS terminados en `1Z`. | _pendiente_ | #050 |
+
+---
+
 ## Reglas transversales (no específicas de un carrier)
 
 ### `findInTrackingIndex` (server)
@@ -343,6 +376,7 @@ Aplicado en `extractInpostTracking`, `overrideCarrier` (server) y `localLookup` 
 Decide si un input vale la pena buscar en Odoo:
 - Prefijos directos: `^(PK|MI|Z89|6C20|6C16|H103|6A|LS|LX|LV|LT|3[A-Z]|CP|Z96|XSMT|0008|0626|CTT|EA|C0|9300500)`
 - 8 dígitos exactos: `^\d{8}$`
+- UPS: `^1Z[0-9A-Z]{16}$` (#050)
 - Barcode numérico largo: `length≥10 && /^\d+$/`
 - GLS QR: `ES[A-Z]\d{2}[A-Z0-9]{5}[A-Z]{2,3}`
 - Letras+dígitos típicos: `^[A-Z]{1,3}\d{8,}`
