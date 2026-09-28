@@ -2347,9 +2347,97 @@ Y `/api/health` no toca Odoo: el fallo no se ve en el health check.
 
 ---
 
+## 2026-09-28 · Bloqueo de pedidos cancelados al escanear (#052)
+
+### #052 · Un pedido cancelado en Odoo ya no se puede meter en un palet
+
+**Petición (Jairo)**
+"Cuando escanee un pedido y tenga un OUT o PICK cancelado, que no les permita
+añadirlo a un palet." Una vez en el palet no se deshace: el control tiene que
+estar en el escaneo.
+
+**Diagnóstico (datos reales, 14 días)**
+- Hoy un cancelado SÍ entraba al palet: el sync **excluye** los pickings
+  cancelados, pero (a) si se cancela después del último sync sigue en el índice
+  con su estado viejo, y (b) la búsqueda de respaldo en Odoo **no miraba el
+  estado**. Caso real: **BW46035** (`PK7L7F9800582400110004W`) escaneado 07:12,
+  OUT cancelado, recogido 12:37 → **salió en el camión**. En el barrido del
+  índice de hoy aparecieron 2 más vivos (DF1554676EU, DF1553212EU).
+- 304 pedidos con algún PICK/OUT cancelado: 184 cancelados enteros, 46 sin OUT
+  activo, y **74 con un PICK/OUT sobrante cancelado pero su envío válido** (p.ej.
+  DF92898SF). La regla literal "cualquier PICK/OUT cancelado" bloquearía esos 74.
+- Trampa: **DF930728ES** tiene la MISMA etiqueta en un OUT cancelado y en otro
+  hecho (y en el PICK) → con `order id desc` Odoo devolvía el cancelado.
+
+**Regla acordada**: bloquear si el **OUT de esa etiqueta está cancelado** (y no
+hay otro OUT activo con la misma etiqueta) o si el **pedido (sale.order) está
+cancelado**. Sin revisión en la recogida (decisión operativa).
+
+**Solución (`server.js`, `public/index.html`, `public/sw.js`)**
+- `refreshCancelled()` (~cada 90 s, ventana 30 días): OUT cancelados →
+  `cancelledPickingIds` (cubre etiquetas vaciadas al cancelar); sus etiquetas −
+  las que tienen otro OUT activo **del mismo pedido** (`cancelledActiveTwin`) →
+  `cancelledTrackings`; `sale.order` cancelados → `cancelledOrders` (nombre =
+  `origin`). ~5-10 s en segundo plano, **0 ms por escaneo**. Si Odoo falla se
+  conserva la lista y se espera más (90 s, 3, 6… máx 10 min). La lista se
+  guarda en `cancelled.json` (volumen) y se carga al arrancar: sin hueco tras
+  un deploy. Estado en `/api/index-stats` (`cancelled`).
+- `cancelledReason(picking, escaneado)`: `state==='cancel'`, etiqueta, id de OUT
+  o pedido en las listas. Si el picking viene cancelado pero Odoo no dejó
+  comprobar el gemelo activo → `UNVERIFIED` → `SISTEMA_LENTO` (re-escanear), para
+  no bloquear un envío quizá válido.
+- Las TRES entradas a palet comprueban: `/api/scan`, `/api/add-tracking` y la
+  **reconciliación al cerrar palet** (`POST /api/pallets`, que metía paquetes
+  aún sin confirmar de la lista local: se saltaba el bloqueo — lo cazó la
+  revisión). Los rechazados vuelven en `rejectedCancelled`.
+- `OdooClient.preferActivePicking`: si lo encontrado está cancelado, busca un OUT
+  activo con la misma etiqueta **y mismo pedido** (solo en ese caso raro).
+  Late-cache (#051) sin cancelados. Camino 6A también.
+- **PDA**: descarga `/api/cancelled` (~35 KB, cada 90 s) y comprueba ANTES de
+  añadir o pitar OK (antes daba ✓ y pitido y el bloqueo llegaba después, con la
+  caja ya en el palet). Aviso **fijo** "PEDIDO CANCELADO" (pedido, cliente, final
+  de etiqueta), sonido propio (3 tonos graves) y vibración larga; va por encima
+  de cualquier otro modal (también el de etiqueta de palet), acumula varios y no
+  se deja tapar: hasta pulsar OK no se escanea nada más.
+- Compatibilidad: la respuesta lleva `error:'TRANSPORTISTA_INCORRECTO'` +
+  `detectedCarrier:'PEDIDO CANCELADO'` para que las PDAs sin recargar (≤v8)
+  muestren un modal claro; los clientes v9 miran `cancelled:true`. SW `v9`.
+- `/api/detect-carrier` devuelve `cancelled` → verificable sin tocar palets.
+
+**Revisión adversarial** (2 rondas, agentes en paralelo): 1ª ronda 12 hallazgos
+confirmados (1 blocker: cierre de palet) → todos aplicados salvo la identidad
+por `sale_id` en vez de nombre (muy raro, ver Pendientes). 2ª ronda 6 hallazgos
+(0 blocker) → aplicados: los avisos que llegan con el de cancelado abierto van a
+una COLA y salen al pulsar OK (antes se degradaban a toast y se perdían "Sistema
+lento"/"No se pudo guardar"); el OUT cancelado con gemelo activo se excluye de la
+lista por id EN ORIGEN (no depende del código leído); el atajo caché+pedido elige
+la entrada no cancelada (re-etiquetados); el cierre de palet quita los
+rechazados de la lista local y avisa antes de cualquier espera; si Odoo confirma
+un gemelo activo, manda sobre la lista. Pendiente transitorio: una PDA sin
+recargar (v8) que cierre palet con un rechazado no verá aviso → recargar PDAs.
+
+**Pruebas (código real, Odoo real solo lectura, índice real)**: lista 790
+pedidos / 142 etiquetas / 2.753 OUT; BW46035 bloqueado (escaneo, "no
+comprobado" y cierre de palet); DF930728ES → OUT activo, NO bloqueado (y
+"no comprobado" → re-escanear); 16/16 cancelados bloqueados; **75/75 envíos
+válidos con sobrantes cancelados permitidos**; barrido del índice: 2 marcados,
+ambos cancelados de verdad; regresión 403/403; lista en disco recuperada tras
+reinicio; **PDA y servidor deciden igual en 22.688/22.688**; gemelo fuera de la
+lista por id. **518 OK, 0 fallos** + avisos de la PDA con DOM simulado (cola,
+orden, callbacks, z-index) **13/13** + regresión #051 **663/663** y **22.688/22.688**.
+
+**Archivos**: `server.js`, `public/index.html`, `public/sw.js`, `CARRIER-RULES.md`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**: una regla de negocio literal ("cualquier cancelado") puede chocar
+con cómo usa Odoo los pickings (sobrantes, backorders, etiquetas duplicadas):
+medir con datos reales antes de fijar la regla.
+
+---
+
 ## Pendientes / Mejoras futuras
 
 - [ ] (#051) `data.json` crece sin límite (116 MB a 28-sep): archivar palets ya recogidos de >N días en ficheros aparte para que el guardado frecuente solo serialice lo vivo. Requiere cuidado (historial, `/api/pallets?date`, `rebuildGlobalScans`, cobertura).
+- [ ] (#052) Pedidos cancelados identificados por NOMBRE de `sale.order` (= `origin` del picking). Casos raros no cubiertos: `origin` fusionado ("DF1, DF2") o pedido cancelado y reimportado con el mismo nombre. Mejora: usar `sale_id` (el índice ya guarda `saleId`).
 - [ ] (#051) Regla de prefijo `^6A` → SPRING en `/api/odoo-outs` y en el fallback de `sync-full.js` es incorrecta para el 97 % (238 ASENDIA / 8 SPRING en índice): usar el carrier del índice/Sendcloud o mapear a ASENDIA. Afecta solo al reparto por transportista del informe de cobertura, no al escaneo.
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
 - [ ] Cambiar Railway region a EU (reducir latencia ~250ms → ~50ms)

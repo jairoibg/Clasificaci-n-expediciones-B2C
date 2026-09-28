@@ -30,7 +30,7 @@ app.use(express.json({ limit: '10mb' }));
 const CONFIG = {
   odoo: {
     url: process.env.ODOO_URL || 'https://blackdivision.processcontrol.sh',
-    db: process.env.ODOO_DB || 'blackdivision',
+    db: process.env.ODOO_DB || 'odoo-project-00002129-build-00021657',
     user: process.env.ODOO_USER || 'j.bernabe@illice.com',
     apiKey: process.env.ODOO_API_KEY || '98b68f64a4ee2fd5362f16f3b0427a629877f80f'
   },
@@ -470,6 +470,12 @@ function setupScheduledSync() {
     }
   }, 60000);
   console.log('⏰ Sync ligero cada 30 min (6h-22h) + 2 nocturnos COMPLETOS (00, 04)');
+  // (#052) Lista de pedidos/OUT cancelados: nada más arrancar y cada 90 s
+  // El tick es de 15 s pero refreshCancelled se autorregula: 85 s tras un éxito y
+  // espera creciente (90 s, 3, 6… máx 10 min) tras un fallo.
+  refreshCancelled();
+  setInterval(refreshCancelled, 15 * 1000);
+  console.log('🚫 Lista de pedidos cancelados: refresco cada ~90 s (ventana ' + CANCELLED_WINDOW_DAYS + ' días)');
 }
 
 // ============================================
@@ -925,6 +931,146 @@ function recallOdooHit(tracking) {
 }
 
 // ============================================
+// (#052) PEDIDOS CANCELADOS — no se pueden meter en un palet
+// ============================================
+// Regla acordada con Jairo (28-sep): se BLOQUEA el escaneo si el OUT de ESA
+// etiqueta está cancelado (y no hay otro OUT activo con la misma etiqueta) o si
+// el PEDIDO (sale.order) está cancelado. NO se bloquea por PICK/OUT "sobrantes"
+// cancelados de un pedido que sí se envía (74 pedidos en 2 semanas los tienen y
+// son envíos válidos). Una vez en el palet no se revisa (decisión operativa).
+// Caso real: BW46035 (PK7L7F9800582400110004W), cancelado y enviado el 17-sep.
+// El sync EXCLUYE los pickings cancelados, pero un pedido cancelado DESPUÉS del
+// último sync sigue en el índice (y la búsqueda Odoo no miraba el estado): esta
+// lista, refrescada cada 90 s, lo cubre con coste 0 por escaneo.
+let cancelledOrders = new Set();       // nombres de sale.order cancelados (= origin del picking)
+let cancelledTrackings = new Set();    // etiquetas de OUT cancelados SIN otro OUT activo del mismo pedido
+let cancelledPickingIds = new Set();   // ids de OUT cancelados (cubre etiquetas vaciadas al cancelar)
+let cancelledActiveTwin = new Set();   // etiquetas de un OUT cancelado CON otro OUT activo del MISMO pedido (DF930728ES)
+let cancelledStatus = { at: null, ms: 0, orders: 0, trackings: 0, pickingIds: 0, error: null, source: null };
+let cancelledRefreshing = false;
+let cancelledFailCount = 0;
+let cancelledNextAt = 0;               // espera creciente tras fallos (no cargar más a un Odoo lento)
+let cancelledListJson = null;          // caché del GET /api/cancelled (se invalida en cada refresco)
+let cancelledLastWritten = '';
+const CANCELLED_WINDOW_DAYS = 30;
+const CANCELLED_FILE = path.join(VOLUME_PATH, 'cancelled.json');
+
+// Al arrancar se carga la última lista buena del disco: sin esto, tras cada
+// deploy/reinicio habría un hueco (lista vacía) hasta el primer refresco de Odoo.
+function loadCancelledFromDisk() {
+  try {
+    if (!fs.existsSync(CANCELLED_FILE)) return;
+    const j = JSON.parse(fs.readFileSync(CANCELLED_FILE, 'utf8'));
+    cancelledOrders = new Set(j.orders || []);
+    cancelledTrackings = new Set(j.trackings || []);
+    cancelledPickingIds = new Set(j.pickingIds || []);
+    cancelledActiveTwin = new Set(j.activeTwin || []);
+    cancelledStatus = { at: j.at || null, ms: 0, orders: cancelledOrders.size, trackings: cancelledTrackings.size, pickingIds: cancelledPickingIds.size, error: null, source: 'disco' };
+    cancelledListJson = null;
+    console.log('🚫 Lista de cancelados cargada de disco (' + j.at + '): ' + cancelledOrders.size + ' pedidos, ' + cancelledTrackings.size + ' etiquetas');
+  } catch (e) { console.warn('⚠️ No se pudo leer ' + CANCELLED_FILE + ': ' + e.message); }
+}
+loadCancelledFromDisk();
+
+async function refreshCancelled() {
+  if (cancelledRefreshing || Date.now() < cancelledNextAt) return;
+  cancelledRefreshing = true;
+  const t0 = Date.now();
+  try {
+    const since = new Date(Date.now() - CANCELLED_WINDOW_DAYS * 864e5).toISOString().slice(0, 19).replace('T', ' ');
+    const [outs, sales] = await Promise.all([
+      odooClient.executeWithTimeout('stock.picking', 'search_read',
+        [[['state', '=', 'cancel'], ['write_date', '>=', since], ['picking_type_code', '=', 'outgoing']]],
+        { fields: ['id', 'carrier_tracking_ref', 'sale_id'] }, 60000),
+      odooClient.executeWithTimeout('sale.order', 'search_read',
+        [[['state', '=', 'cancel'], ['write_date', '>=', since]]],
+        { fields: ['name'] }, 60000)
+    ]);
+    const norm = x => String(x || '').toUpperCase().trim();
+    const saleOf = x => (x.sale_id && x.sale_id[0]) || 0;
+    const withTrk = outs.filter(p => p.carrier_tracking_ref);
+    const rawTrk = [...new Set(withTrk.map(p => p.carrier_tracking_ref))];
+    let active = [];
+    if (rawTrk.length) {
+      active = await odooClient.executeWithTimeout('stock.picking', 'search_read',
+        [[['carrier_tracking_ref', 'in', rawTrk], ['state', '!=', 'cancel'], ['picking_type_code', '=', 'outgoing']]],
+        { fields: ['carrier_tracking_ref', 'sale_id'] }, 60000);
+    }
+    // "Gemelo activo" = OUT NO cancelado con la MISMA etiqueta y del MISMO pedido
+    // (DF930728ES: ese paquete SÍ se envía). Uno de OTRO pedido no desbloquea.
+    const activePairs = new Set(active.map(p => norm(p.carrier_tracking_ref) + '|' + saleOf(p)));
+    const newTrk = new Set(), newTwin = new Set();
+    for (const p of withTrk) {
+      const t = norm(p.carrier_tracking_ref);
+      if (activePairs.has(t + '|' + saleOf(p))) newTwin.add(t); else newTrk.add(t);
+    }
+    for (const t of newTwin) newTrk.delete(t);
+    // Un OUT cancelado con gemelo activo (misma etiqueta y pedido) NO bloquea por id:
+    // así la excepción no depende de qué código se lea (barcode largo, buscador, cierre).
+    const newIds = new Set(outs.filter(p => !(p.carrier_tracking_ref && activePairs.has(norm(p.carrier_tracking_ref) + '|' + saleOf(p)))).map(p => p.id));
+    const newOrd = new Set(sales.map(s => norm(s.name)).filter(Boolean));
+    cancelledTrackings = newTrk; cancelledActiveTwin = newTwin; cancelledPickingIds = newIds; cancelledOrders = newOrd;
+    cancelledFailCount = 0;
+    cancelledNextAt = Date.now() + 85 * 1000;
+    cancelledStatus = { at: new Date().toISOString(), ms: Date.now() - t0, orders: newOrd.size, trackings: newTrk.size, pickingIds: newIds.size, error: null, source: 'odoo' };
+    cancelledListJson = null;
+    const snap = JSON.stringify({ orders: [...newOrd].sort(), trackings: [...newTrk].sort(), pickingIds: [...newIds].sort((a, b) => a - b), activeTwin: [...newTwin].sort() });
+    if (snap !== cancelledLastWritten) {
+      try { atomicWriteFileSync(CANCELLED_FILE, JSON.stringify(Object.assign({ at: cancelledStatus.at }, JSON.parse(snap)))); cancelledLastWritten = snap; }
+      catch (e) { console.warn('⚠️ No se pudo guardar ' + CANCELLED_FILE + ': ' + e.message); }
+    }
+  } catch (e) {
+    // Mantener la lista anterior y ESPERAR más antes de reintentar (90 s, 3, 6… máx 10 min):
+    // las consultas que vencen siguen vivas en Odoo; reintentar a ritmo fijo solo lo cargaría más.
+    cancelledFailCount++;
+    const wait = Math.min(10 * 60000, 90000 * Math.pow(2, cancelledFailCount - 1));
+    cancelledNextAt = Date.now() + wait;
+    cancelledStatus = Object.assign({}, cancelledStatus, { error: e.message, errorAt: new Date().toISOString(), retryInS: Math.round(wait / 1000) });
+    console.warn('⚠️ Refresco de pedidos cancelados falló (' + e.message + ') — se mantiene la lista anterior, reintento en ' + Math.round(wait / 1000) + ' s');
+  } finally { cancelledRefreshing = false; }
+}
+
+// ¿Pertenece a un pedido/OUT cancelado? Devuelve el motivo (texto), 'UNVERIFIED'
+// (no se pudo comprobar → que re-escanee, sin bloquear un envío quizá válido) o null.
+// picking: { id?, state?, carrier_tracking_ref?, origin?, _activeCheck? } · scanned: lo leído
+function cancelledReason(picking, scanned) {
+  const p = picking || {};
+  const norm = x => String(x || '').toUpperCase().trim();
+  const trks = [scanned, p.carrier_tracking_ref].map(norm).filter(Boolean);
+  const twin = trks.some(t => cancelledActiveTwin.has(t));
+  const trkCancelled = trks.some(t => cancelledTrackings.has(t));
+  const o = norm(p.origin);
+  const ordCancelled = !!(o && cancelledOrders.has(o));
+  // Odoo acaba de confirmar un OUT activo del mismo pedido (preferActivePicking):
+  // manda sobre las listas (pueden tener hasta ~90 s); solo cuenta el pedido cancelado.
+  if (p._activeTwin) return ordCancelled ? 'pedido cancelado' : null;
+  if (p.state === 'cancel') {
+    // preferActivePicking ya descartó un OUT activo del mismo pedido... salvo que Odoo no respondiera
+    if (p._activeCheck !== 'unknown') return 'OUT cancelado';
+    if (trkCancelled || ordCancelled) return 'OUT cancelado';
+    if (twin) return null; // la lista ya sabe que hay OUT activo del mismo pedido
+    return 'UNVERIFIED';
+  }
+  if (trkCancelled) return 'OUT cancelado';
+  if (p.id && cancelledPickingIds.has(p.id) && !twin) return 'OUT cancelado';
+  if (ordCancelled) return 'pedido cancelado';
+  return null;
+}
+
+// Respuesta de bloqueo para la PDA. SHIM de compatibilidad: error
+// 'TRANSPORTISTA_INCORRECTO' + detectedCarrier hace que las PDAs con el cliente
+// ≤v8 (sin la rama nueva) muestren un modal "Paquete de PEDIDO CANCELADO" en vez
+// de un toast genérico "re-escanea". Los clientes v9+ miran primero r.cancelled.
+function cancelledResponse(ref, client, scanned) {
+  return {
+    success: false, cancelled: true, error: 'TRANSPORTISTA_INCORRECTO', code: 'PEDIDO_CANCELADO',
+    detectedCarrier: 'PEDIDO CANCELADO', orderRef: ref, clientName: client || '', tracking: scanned,
+    message: 'Pedido ' + ref + (client ? ' — ' + client : '') + '\nEtiqueta: …' + String(scanned || '').slice(-8) +
+      '\n\nEste pedido está CANCELADO. NO lo metas en el palet (si ya lo has puesto, sácalo). Apártalo y avisa a tu responsable.'
+  };
+}
+
+// ============================================
 // CLIENTE ODOO
 // ============================================
 class OdooClient {
@@ -972,12 +1118,33 @@ class OdooClient {
     return { domain: [[['carrier_tracking_ref', '=', value]]], order: undefined };
   }
 
+  // (#052) Si el picking encontrado está CANCELADO, comprobar si la MISMA etiqueta
+  // tiene un OUT activo y devolver ese (caso DF930728ES: etiqueta en un OUT cancelado
+  // y en otro hecho → el paquete SÍ se envía; con order id desc salía el cancelado).
+  // Solo se consulta en este caso raro: el camino normal no paga nada extra.
+  async preferActivePicking(p, F) {
+    if (!p || p.state !== 'cancel' || !p.carrier_tracking_ref) return p;
+    const ex = this.exactDomainAndOrder(String(p.carrier_tracking_ref));
+    const dom0 = [...ex.domain[0], ['state', '!=', 'cancel'], ['picking_type_code', '=', 'outgoing']];
+    // Solo cuenta un gemelo del MISMO pedido: uno de otro pedido no desbloquea
+    if (p.sale_id && p.sale_id[0]) dom0.push(['sale_id', '=', p.sale_id[0]]);
+    try {
+      const act = await this.executeWithTimeout('stock.picking', 'search_read', [dom0],
+        ex.order ? { fields: F, limit: 1, order: ex.order } : { fields: F, limit: 1 }, 3000);
+      return (act && act.length) ? Object.assign({}, act[0], { _activeTwin: true }) : p;
+    } catch (e) {
+      // No se pudo comprobar (timeout/error): marcarlo para que cancelledReason decida
+      // por las listas o pida re-escanear, en vez de bloquear un envío quizá válido.
+      return Object.assign({}, p, { _activeCheck: 'unknown' });
+    }
+  }
+
   async findPickingByTracking(tracking, meta = {}) {
     // meta.timedOut se pone a true si ALGUNA de las búsquedas falló por timeout.
     // El caller lo usa para NO cachear como negativo un tracking que quizá existe
     // pero Odoo no respondió a tiempo (evita envenenar el negative cache).
     const t0 = Date.now();
-    const F = ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'];
+    const F = ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id', 'sale_id'];
     // (#051) Acierto TARDÍO de una búsqueda anterior que llegó después del timeout
     // (típico: el re-escaneo que pide el aviso "Sistema lento" → ahora instantáneo).
     const late = recallOdooHit(tracking);
@@ -988,13 +1155,13 @@ class OdooClient {
       // se guarda para el siguiente intento en vez de tirarse.
       const ex = this.exactDomainAndOrder(tracking);
       const exactP = this.execute('stock.picking', 'search_read', ex.domain, ex.order ? { fields: F, limit: 1, order: ex.order } : { fields: F, limit: 1 });
-      exactP.then(r => { if (r && r.length) rememberOdooHit(tracking, r[0]); }).catch(() => {});
+      exactP.then(r => { if (r && r.length && r[0].state !== 'cancel') rememberOdooHit(tracking, r[0]); }).catch(() => {});
       let pickings = await Promise.race([exactP, new Promise((_, rej) => setTimeout(() => rej(new Error('odoo-timeout')), 5000))])
         .catch(e => { console.warn('   ⏱️ Odoo exact timeout (' + e.message + ')'); meta.timedOut = true; return null; });
       // Si la exacta ya agotó el tiempo, NO encadenar ilike/patrones (aún más lentos):
       // devolver ya para que el operario reciba el aviso sin esperar ~10 s más.
       if (pickings === null) return null;
-      if (pickings.length > 0) { console.log('   🔍 Odoo exact match: ' + (Date.now()-t0) + 'ms'); return pickings[0]; }
+      if (pickings.length > 0) { console.log('   🔍 Odoo exact match: ' + (Date.now()-t0) + 'ms'); return await this.preferActivePicking(pickings[0], F); }
 
       // 1.5 (#033): 8 dígitos puros = espacio de tracking minúsculo (INPOST). El ilike
       // con 8 dígitos matchea cualquier tracking largo que los CONTENGA (falsos
@@ -1003,16 +1170,16 @@ class OdooClient {
         const exE1 = this.exactDomainAndOrder('E1' + tracking);
         const e1 = await this.executeWithTimeout('stock.picking', 'search_read', exE1.domain, exE1.order ? { fields: F, limit: 1, order: exE1.order } : { fields: F, limit: 1 },
           3000).catch(e => { console.warn('   ⏱️ Odoo E1-exact timeout (' + e.message + ')'); meta.timedOut = true; return []; });
-        if (e1.length > 0) { console.log('   🔍 Odoo E1-exact match: ' + (Date.now()-t0) + 'ms'); return e1[0]; }
+        if (e1.length > 0) { console.log('   🔍 Odoo E1-exact match: ' + (Date.now()-t0) + 'ms'); return await this.preferActivePicking(e1[0], F); }
         console.log('   🚫 8 dígitos sin match exacto en Odoo — no se intenta ilike (anti-falso-positivo)');
         return null;
       }
 
       // 2. ilike with full barcode — 2s timeout
       pickings = await this.executeWithTimeout('stock.picking', 'search_read', [[['carrier_tracking_ref', 'ilike', tracking]]], {
-        fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1
+        fields: F, limit: 1
       }, 2000).catch(e => { console.warn('   ⏱️ Odoo ilike timeout'); meta.timedOut = true; return []; });
-      if (pickings.length > 0) { console.log('   🔍 Odoo ilike match: ' + (Date.now()-t0) + 'ms'); return pickings[0]; }
+      if (pickings.length > 0) { console.log('   🔍 Odoo ilike match: ' + (Date.now()-t0) + 'ms'); return await this.preferActivePicking(pickings[0], F); }
 
       // 3. Pattern matching - LIMITADO a top 2 patrones (antes 3) y timeout 2s cada uno
       const patterns = this.extractTrackingPatterns(tracking).slice(0, 2);
@@ -1519,12 +1686,14 @@ async function getCarrierFromTracking(tracking) {
         }
         // 2) Aún no indexada (recién impresa): Odoo '=like' prefijo-12 + 1 carácter (~170 ms)
         try {
+          const F6 = ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id', 'sale_id'];
           const r = await odooClient.executeWithTimeout('stock.picking', 'search_read',
             [[['carrier_tracking_ref', '=like', pre12 + '_']]],
-            { fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 3, order: 'id desc' }, 4000);
+            { fields: F6, limit: 3, order: 'id desc' }, 4000);
           const refs = new Set((r || []).map(x => x.carrier_tracking_ref));
           if (r && r.length > 0 && refs.size === 1) {
-            const p = r[0];
+            // (#052) preferir el OUT activo (y si el top-3 solo trae cancelados, buscarlo)
+            const p = await odooClient.preferActivePicking(r.find(x => x.state !== 'cancel') || r[0], F6);
             const ref = p.carrier_tracking_ref;
             let c6 = null;
             const sc = findInSendcloudCache(ref);
@@ -1742,8 +1911,14 @@ async function getCarrierFromTracking(tracking) {
   if (directCache && directCache.carrier && directCache.orderId) {
     const orderRefUpper = directCache.orderId.toUpperCase();
     const byOrderEntries = trackingIndex.byOrderRef && trackingIndex.byOrderRef[orderRefUpper];
-    if (byOrderEntries && byOrderEntries.length > 0) {
-      const e = byOrderEntries[0];
+    // (#052) Elegir la entrada de ESTA etiqueta (o una no cancelada), no la primera
+    // del pedido: tras un re-etiquetado la primera puede ser el OUT viejo ya cancelado
+    // (falso "cancelado"). Si todas están canceladas, no usar el atajo: que decida
+    // Odoo con la etiqueta leída (ahora ~120 ms, #051).
+    const ntk = x => String(x || '').toUpperCase().trim();
+    const isCanc = x => cancelledPickingIds.has(x.pickingId) || cancelledTrackings.has(ntk(x.tracking));
+    const e = byOrderEntries && (byOrderEntries.find(x => ntk(x.tracking) === clean && !isCanc(x)) || byOrderEntries.find(x => !isCanc(x)));
+    if (e) {
       const finalCarrier = overrideCarrier(directCache.carrier, clean);
       const elapsed = Date.now() - startTime;
       console.log('   ⚡ Cache+OrderRef: ' + finalCarrier + ' via ' + orderRefUpper + ' (' + elapsed + 'ms)');
@@ -1898,9 +2073,17 @@ app.get('/api/test-sendcloud', async (req, res) => {
 });
 
 // Índice
+// (#052) Lista de pedidos/etiquetas CANCELADOS para la PDA: comprueba ANTES de dar
+// el OK (pitido/✓) al escanear, sin esperar la respuesta del servidor. ~30 KB.
+app.get('/api/cancelled', (req, res) => {
+  if (!cancelledListJson) cancelledListJson = JSON.stringify({ at: cancelledStatus.at, orders: [...cancelledOrders], trackings: [...cancelledTrackings], pickingIds: [...cancelledPickingIds], activeTwin: [...cancelledActiveTwin] });
+  res.setHeader('Cache-Control', 'no-store');
+  res.type('application/json').send(cancelledListJson);
+});
+
 app.get('/api/index-stats', (req, res) => {
   const age = trackingIndex.lastSync ? Math.round((Date.now() - new Date(trackingIndex.lastSync).getTime()) / 60000) : null;
-  res.json({ lastSync: trackingIndex.lastSync, ageMinutes: age, totalOdoo: trackingIndex.totalOdoo, totalSendcloud: trackingIndex.totalSendcloud, matched: trackingIndex.matched, unmatched: trackingIndex.unmatched || 0, byCarrier: trackingIndex.byCarrier || {}, syncInProgress, lastSyncAttempt });
+  res.json({ lastSync: trackingIndex.lastSync, ageMinutes: age, totalOdoo: trackingIndex.totalOdoo, totalSendcloud: trackingIndex.totalSendcloud, matched: trackingIndex.matched, unmatched: trackingIndex.unmatched || 0, byCarrier: trackingIndex.byCarrier || {}, syncInProgress, lastSyncAttempt, cancelled: cancelledStatus });
 });
 
 // Índice compacto para escaneo del lado del cliente (0ms matching)
@@ -2226,6 +2409,20 @@ app.post('/api/scan', async (req, res) => {
     return res.json({ success: false, error: 'NO_ENCONTRADO', message: 'Código no reconocido. En etiquetas internacionales escanea el código de barras ANCHO de abajo, o busca por la Referencia Pedido de la etiqueta (DF…/CO…/KA…).', tracking: clean });
   }
 
+  // (#052) Pedido u OUT CANCELADO en Odoo → NO se puede meter en un palet.
+  // Va antes que cualquier otra comprobación: es lo más importante que el operario debe saber.
+  const cancelWhy = cancelledReason(det.picking, clean);
+  if (cancelWhy === 'UNVERIFIED') {
+    console.log('   ⏱️ Picking cancelado sin poder comprobar gemelo activo — pedir reintento');
+    return res.json({ success: false, error: 'SISTEMA_LENTO', message: 'El sistema está lento. Vuelve a escanear este paquete en unos segundos.', tracking: clean, orderRef: det.picking.origin || '' });
+  }
+  if (cancelWhy) {
+    const ref = det.picking.origin || clean;
+    const cli = det.picking.partner_id ? det.picking.partner_id[1] : '';
+    console.log('   🚫 CANCELADO (' + cancelWhy + '): ' + ref + ' | ' + clean);
+    return res.json(cancelledResponse(ref, cli, clean));
+  }
+
   if (det.carrier && det.carrier !== 'DESCONOCIDO' && det.carrier !== expected) {
     console.log('   ❌ Es ' + det.carrier + ', no ' + expected);
     return res.json({ success: false, error: 'TRANSPORTISTA_INCORRECTO', message: 'Este paquete es de ' + det.carrier + ', no de ' + expected, detectedCarrier: det.carrier });
@@ -2282,6 +2479,20 @@ app.post('/api/add-tracking', async (req, res) => {
   }
 
   const det = await getCarrierFromTracking(clean);
+  // (#052) Pedido u OUT CANCELADO → tampoco por añadido manual (buscador)
+  const pid = pickingId ? Number(pickingId) : undefined;
+  const whyA = det.picking ? cancelledReason(det.picking, clean) : cancelledReason({ id: pid }, clean);
+  const whyB = cancelledReason({ id: pid, origin: orderRef }, clean);
+  const cancelWhy = (whyA && whyA !== 'UNVERIFIED') ? whyA : ((whyB && whyB !== 'UNVERIFIED') ? whyB : whyA);
+  if (cancelWhy === 'UNVERIFIED') {
+    return res.json({ success: false, error: 'SISTEMA_LENTO', message: 'El sistema está lento. Vuelve a intentarlo en unos segundos.', tracking: clean });
+  }
+  if (cancelWhy) {
+    const ref = orderRef || (det.picking && det.picking.origin) || clean;
+    const cli = clientName || (det.picking && det.picking.partner_id ? det.picking.partner_id[1] : '');
+    console.log('   🚫 CANCELADO manual (' + cancelWhy + '): ' + ref + ' | ' + clean);
+    return res.json(cancelledResponse(ref, cli, clean));
+  }
   if (det.carrier && det.carrier !== 'DESCONOCIDO' && det.carrier !== carrierUpper) {
     return res.json({ success: false, error: 'TRANSPORTISTA_INCORRECTO', message: 'Este paquete es de ' + det.carrier + ', no de ' + carrierUpper, detectedCarrier: det.carrier });
   }
@@ -2298,7 +2509,9 @@ app.post('/api/add-tracking', async (req, res) => {
 
 app.get('/api/detect-carrier/:tracking', async (req, res) => {
   const result = await getCarrierFromTracking(req.params.tracking.trim());
-  res.json({ carrier: result.carrier, picking: result.picking, source: result.source, time: result.elapsed });
+  // (#052) cancelled: motivo si /api/scan lo bloquearía por pedido/OUT cancelado (solo lectura)
+  res.json({ carrier: result.carrier, picking: result.picking, source: result.source, time: result.elapsed,
+    cancelled: cancelledReason(result.picking, req.params.tracking.trim().toUpperCase()) });
 });
 
 app.get('/api/search-client/:name', async (req, res) => {
@@ -2715,12 +2928,28 @@ app.post('/api/pallets', (req, res) => {
   // (p.ej. su POST /scan no llegó a persistir por un 502) se añade AQUÍ antes
   // de crear el palet. Así ningún paquete escaneado se pierde al cerrar.
   let reconciled = 0;
+  const rejectedCancelled = []; // (#052) paquetes NO reconciliados por pedido/OUT cancelado
   if (Array.isArray(clientPackages) && clientPackages.length > 0) {
     if (!targetSession) targetSession = createNewSession(carrierUpper);
     const existing = new Set(targetSession.packages.map(p => (p.tracking || '').toUpperCase().trim()));
     for (const cp of clientPackages) {
       const trk = String(cp && cp.tracking || '').toUpperCase().trim();
       if (!trk || existing.has(trk)) continue;
+      // (#052) Un paquete que el servidor aún no confirmó (cola/reintentos agotados)
+      // NO entra al palet si su pedido/OUT está cancelado: esta reconciliación era un
+      // camino que se saltaba el bloqueo del escaneo. Datos del índice en memoria (0 ms).
+      const idx = (trackingIndex.byTracking && trackingIndex.byTracking[trk]) ||
+                  (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[trk.replace(/[^A-Z0-9]/g, '')]);
+      const cpRef = cp.orderRef && cp.orderRef !== '…' ? cp.orderRef : '';
+      const why = cancelledReason({
+        id: (cp.pickingId ? Number(cp.pickingId) : null) || (idx && idx.pickingId) || null,
+        origin: cpRef || (idx && idx.orderRef) || '',
+        carrier_tracking_ref: idx && idx.odooTracking
+      }, trk);
+      if (why && why !== 'UNVERIFIED') {
+        rejectedCancelled.push({ tracking: trk, orderRef: cpRef || (idx && idx.orderRef) || '', clientName: (idx && idx.clientName) || '' });
+        continue;
+      }
       const pkg = {
         tracking: trk,
         pickingId: cp.pickingId || null,
@@ -2735,11 +2964,12 @@ app.post('/api/pallets', (req, res) => {
       reconciled++;
     }
     if (reconciled > 0) { targetSession.lastUpdate = new Date().toISOString(); saveData(); console.log('   🛟 Reconciliados ' + reconciled + ' paquetes del cliente al cerrar (no perdidos por 502)'); }
+    if (rejectedCancelled.length) console.log('   🚫 NO reconciliados al cerrar por pedido CANCELADO: ' + rejectedCancelled.map(x => x.orderRef || x.tracking).join(', '));
   }
 
   if (!targetSession) return res.status(404).json({ error: 'Sesión no encontrada' });
   if (!targetSession.packages || targetSession.packages.length === 0) {
-    return res.status(400).json({ error: 'No hay paquetes para crear el palet' });
+    return res.status(400).json({ error: 'No hay paquetes para crear el palet', rejectedCancelled });
   }
 
   const now = new Date();
@@ -2762,7 +2992,7 @@ app.post('/api/pallets', (req, res) => {
   database.pallets[palletId] = pallet;
   clearSession(carrierUpper, targetSession.id);
   console.log('\n📦 PALET CREADO: ' + palletId + ' (Sesión ' + (targetSession.letter || 'A') + ') - ' + pallet.totalPackages + ' paquetes');
-  res.json({ success: true, pallet });
+  res.json({ success: true, pallet, rejectedCancelled });
 });
 
 app.get('/api/pallets', (req, res) => {

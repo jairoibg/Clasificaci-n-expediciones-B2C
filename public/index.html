@@ -1455,7 +1455,10 @@
       state.sessions[state.selectedCarrier] = Math.max(0, (state.sessions[state.selectedCarrier] || 0) - 1);
       updatePackageRow(clean); renderCarriers();
       const e = r && r.error;
-      if (e === 'CRX_NO_SINCRONIZADO') { showSearchModal(clean, r.message, 'crx'); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]); }
+      // (#052) Primero r.cancelled: el servidor manda error 'TRANSPORTISTA_INCORRECTO' como
+      // compatibilidad con PDAs antiguas, así que esta rama debe ir antes que las demás.
+      if (r && (r.cancelled || e === 'PEDIDO_CANCELADO')) { showCancelAlert({ tracking: clean, orderRef: r.orderRef, clientName: r.clientName }, r.message); }
+      else if (e === 'CRX_NO_SINCRONIZADO') { showSearchModal(clean, r.message, 'crx'); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]); }
       else if (e === 'ESCANEA_OTRO_CODIGO') { showModal('!', 'Escanea el otro código', r.message); playSound('error'); if (navigator.vibrate) navigator.vibrate([200,100,200]); }
       else if (e === 'SISTEMA_LENTO') { showModal('!', 'Sistema lento', 'No se pudo confirmar el pedido ' + (r.orderRef || clean) + '.\n\nVuelve a escanearlo.\n\n(tracking: ' + clean + ')'); playSound('error'); if (navigator.vibrate) navigator.vibrate([100,50,100]); }
       else if (e === 'NO_ENCONTRADO' || e === 'NO_VERIFICADO') { showSearchModal(clean, r.message); playSound('error'); }
@@ -1920,6 +1923,12 @@
     }
 
     async function scanPackage(tracking) {
+      // (#052) Hasta que el operario confirme el aviso de PEDIDO CANCELADO no se escanea nada más
+      if (window._cancelAlertOpen) {
+        showToast('Primero pulsa OK en el aviso de PEDIDO CANCELADO', 'error'); playSound('error');
+        document.getElementById('scanInput').focus();
+        return;
+      }
       window._lastScanTs = Date.now();   // (#045) marca para que el refresco de badges no pise el conteo optimista mientras se escanea
       const clean = tracking.trim().toUpperCase();
 
@@ -1932,6 +1941,14 @@
 
       // 2. LOOKUP LOCAL 0ms
       const local = localLookup(clean);
+
+      // (#052) Pedido CANCELADO → ni se añade ni pita OK (comprobado ANTES de todo).
+      // Sin match local solo se puede mirar la etiqueta; el resto lo decide el servidor.
+      if (localCancelled(clean, local)) {
+        showCancelAlert({ tracking: clean, orderRef: local && local.orderRef, clientName: local && local.clientName });
+        document.getElementById('scanInput').focus();
+        return;
+      }
 
       if (local) {
         // Match instantáneo: detectar si el carrier coincide
@@ -2077,6 +2094,19 @@
           method: 'POST', timeoutMs: 20000,
           body: JSON.stringify({ carrier: state.selectedCarrier, sessionId: state.selectedSessionId, clientPackages })
         });
+        // (#052) Paquetes que el servidor NO metió en el palet por pedido CANCELADO (llegaron
+        // sin confirmar en la lista local). Se quitan de la lista (si no, cada "Cerrar palet"
+        // repetiría el rechazo) y se avisa YA, antes de cualquier otra espera; el aviso va
+        // por encima de la etiqueta del palet.
+        const rej = (r && Array.isArray(r.rejectedCancelled)) ? r.rejectedCancelled : [];
+        if (rej.length) {
+          const rt = new Set(rej.map(x => String(x.tracking).toUpperCase().trim()));
+          const before = state.packages.length;
+          state.packages = state.packages.filter(p => !rt.has(String(p.tracking).toUpperCase().trim()));
+          state.sessions[state.selectedCarrier] = Math.max(0, (state.sessions[state.selectedCarrier] || 0) - (before - state.packages.length));
+          renderPackages(); renderCarriers();
+          rej.forEach(x => showCancelAlert({ tracking: x.tracking, orderRef: x.orderRef, clientName: x.clientName }));
+        }
         if (r.success) {
           showLabelModal(r.pallet);
           // Limpiar estado local
@@ -2450,7 +2480,67 @@
     }
 
     // ─── MODALS ───
+    // ─── (#052) PEDIDOS CANCELADOS ───
+    // Lista del servidor (refresco 90 s) para bloquear ANTES de dar el OK al escanear.
+    let cancelledList = { at: null, orders: new Set(), trackings: new Set(), ids: new Set(), twin: new Set() };
+    async function loadCancelledList() {
+      try {
+        const r = await apiCall('/cancelled', { timeoutMs: 15000 });
+        if (r && Array.isArray(r.orders)) {
+          cancelledList = { at: r.at, orders: new Set(r.orders), trackings: new Set(r.trackings || []), ids: new Set(r.pickingIds || []), twin: new Set(r.activeTwin || []) };
+        }
+      } catch (_) { /* mantener la lista anterior */ }
+    }
+    // Misma regla que el servidor (cancelledReason) con los datos que tiene la PDA
+    function localCancelled(clean, local) {
+      const twin = cancelledList.twin.has(clean);
+      if (cancelledList.trackings.has(clean)) return true;
+      if (local && local.pickingId && cancelledList.ids.has(Number(local.pickingId)) && !twin) return true;
+      if (local && local.orderRef && cancelledList.orders.has(String(local.orderRef).toUpperCase().trim())) return true;
+      return false;
+    }
+    // Aviso de PEDIDO CANCELADO: acumula los pendientes, va por encima de cualquier otro
+    // modal (también del de etiqueta de palet) y no se deja tapar por avisos posteriores.
+    window._cancelAlerts = [];
+    window._cancelAlertOpen = false;
+    function showCancelAlert(item, serverMessage) {
+      if (!window._cancelAlerts.find(a => a.tracking === item.tracking)) window._cancelAlerts.push(item);
+      const n = window._cancelAlerts.length;
+      const msg = (n === 1 && serverMessage) ? serverMessage
+        : (n === 1
+            ? 'Pedido ' + (item.orderRef || '?') + (item.clientName ? ' — ' + item.clientName : '') + '\nEtiqueta: …' + String(item.tracking).slice(-8) +
+              '\n\nEste pedido está CANCELADO. NO lo metas en el palet (si ya lo has puesto, sácalo). Apártalo y avisa a tu responsable.'
+            : 'Estos paquetes son de pedidos CANCELADOS:\n\n' +
+              window._cancelAlerts.map(a => '• ' + (a.orderRef || '?') + (a.clientName ? ' — ' + a.clientName : '') + '  (…' + String(a.tracking).slice(-8) + ')').join('\n') +
+              '\n\nNO los metas en el palet (si ya los has puesto, sácalos). Apártalos y avisa a tu responsable.');
+      const modal = document.getElementById('modal');
+      // Si había OTRO aviso abierto sin confirmar, no se pierde: vuelve a salir después
+      if (!window._cancelAlertOpen && modal.classList.contains('show') && window._currentModalArgs) window._deferredModals.unshift(window._currentModalArgs);
+      window._cancelAlertOpen = true;
+      modal.style.zIndex = '300';
+      _showModalRaw('×', 'PEDIDO CANCELADO', msg, () => { window._cancelAlerts = []; window._cancelAlertOpen = false; modal.style.zIndex = ''; _flushDeferredModals(); });
+      playSound('cancel');
+      if (navigator.vibrate) navigator.vibrate([400,150,400,150,400]);
+    }
+
+    // Avisos que llegan con el de cancelado abierto: se guardan (con su OK) y salen
+    // uno a uno al confirmarlo. Así ni el cancelado se tapa ni se pierden los demás
+    // ("Sistema lento", "No se pudo guardar"…).
+    window._deferredModals = [];
+    window._currentModalArgs = null;
+    function _flushDeferredModals() {
+      const next = window._deferredModals.shift();
+      if (!next) return;
+      const [icon, title, message, onOk, isSuccess] = next;
+      _showModalRaw(icon, title, message, () => { if (onOk) onOk(); _flushDeferredModals(); }, isSuccess);
+      window._currentModalArgs = next; // los argumentos ORIGINALES (sin el encadenado)
+    }
     function showModal(icon, title, message, onOk, isSuccess) {
+      if (window._cancelAlertOpen) { window._deferredModals.push([icon, title, message, onOk, isSuccess]); return; }
+      _showModalRaw(icon, title, message, onOk, isSuccess);
+    }
+    function _showModalRaw(icon, title, message, onOk, isSuccess) {
+      window._currentModalArgs = [icon, title, message, onOk, isSuccess];
       const iconEl = document.getElementById('modalIcon');
       iconEl.textContent = icon;
       iconEl.className = 'modal-icon' + (isSuccess ? ' success' : '');
@@ -2509,6 +2599,12 @@
     }
     async function selectSearchResult(tracking, pickingId, orderRef, clientName) {
       if (!tracking) { showModal('×', 'Sin tracking', 'Este pedido no tiene tracking aún. Espera unos minutos y reintenta.'); return; }
+      // (#052) Pedido CANCELADO → no se añade ni por el buscador
+      if (localCancelled(String(tracking).toUpperCase().trim(), { pickingId, orderRef })) {
+        closeSearchModal();
+        showCancelAlert({ tracking: String(tracking).toUpperCase().trim(), orderRef, clientName });
+        return;
+      }
       try {
         const r = await apiCall('/add-tracking', { method: 'POST', body: JSON.stringify({ tracking, carrier: state.selectedCarrier, pickingId, orderRef, clientName, sessionId: state.selectedSessionId }) });
         if (r.success) {
@@ -2520,7 +2616,11 @@
           renderPackages(); renderCarriers(); closeSearchModal();
           window._pendingCrxTracking = null;
           showToast(`✓ ${orderRef || tracking}`, 'success'); playSound('success');
-        } else { showModal('×', 'Error', r.message); playSound('error'); }
+        } else if (r.cancelled || r.error === 'PEDIDO_CANCELADO') {
+          closeSearchModal();
+          showCancelAlert({ tracking: String(tracking).toUpperCase().trim(), orderRef: r.orderRef || orderRef, clientName: r.clientName || clientName }, r.message);
+        }
+        else { showModal('×', 'Error', r.message); playSound('error'); }
       } catch { showToast('Error', 'error'); }
     }
     document.getElementById('clientSearchInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') searchClient(); });
@@ -2560,6 +2660,12 @@
           osc.frequency.value = 800; gain.gain.value = 0.3; osc.start();
           setTimeout(() => osc.frequency.value = 1000, 100);
           setTimeout(() => osc.stop(), 200);
+        } else if (type === 'cancel') {
+          // (#052) tres tonos graves: distinto del error normal para que no pase desapercibido
+          osc.frequency.value = 220; gain.gain.value = 0.35; osc.start();
+          setTimeout(() => gain.gain.value = 0, 220); setTimeout(() => gain.gain.value = 0.35, 320);
+          setTimeout(() => gain.gain.value = 0, 540); setTimeout(() => gain.gain.value = 0.35, 640);
+          setTimeout(() => osc.stop(), 900);
         } else {
           osc.frequency.value = 300; gain.gain.value = 0.3; osc.start();
           setTimeout(() => osc.stop(), 300);
@@ -2616,6 +2722,10 @@
       // con el sync (cada 30 min), así que refrescar más a menudo solo añade
       // carga innecesaria. Además el ETag devuelve 304 si no cambió (sin re-descargar).
       setInterval(loadClientIndex, 15 * 60 * 1000);
+
+      // (#052) Lista de pedidos CANCELADOS: al arrancar y cada 90 s (~30 KB)
+      loadCancelledList();
+      setInterval(loadCancelledList, 90 * 1000);
 
       // Keep-alive: ping cada 60s para evitar cold starts del servidor Railway
       setInterval(() => {

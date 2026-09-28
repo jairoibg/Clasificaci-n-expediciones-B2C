@@ -383,6 +383,21 @@ Decide si un input vale la pena buscar en Odoo:
 - Letras+dígitos típicos: `^[A-Z]{1,3}\d{8,}`
 - **Patrón embebido**: `length≥12 && /(6C20|6C16|Z89[A-Z0-9]{5}|H103\d{4}|0626\d{8}|0008\d{8})/`
 
+### Bloqueo de pedidos cancelados (#052, todos los transportistas)
+Antes de meter un paquete en un palet (`/api/scan`, `/api/add-tracking` y la
+reconciliación al cerrar palet `POST /api/pallets`) `cancelledReason()` lo
+rechaza (`cancelled:true`) si:
+- el picking encontrado está `cancel` (camino Odoo; `preferActivePicking` ya
+  descartó otro OUT activo con la misma etiqueta y del mismo pedido), o
+- la etiqueta está en `cancelledTrackings` (sus OUT del pedido, cancelados), o
+- el id del OUT está en `cancelledPickingIds` (salvo gemelo activo), o
+- el pedido (`origin` = nombre de `sale.order`) está en `cancelledOrders`.
+Si Odoo no deja comprobar el gemelo activo → `SISTEMA_LENTO` (re-escanear).
+Listas refrescadas ~cada 90 s desde Odoo (ventana 30 días), guardadas en
+`cancelled.json` y enviadas a la PDA (`/api/cancelled`), que comprueba ANTES de
+dar el OK. NO bloquea por PICK/OUT sobrantes cancelados de un pedido que sí se
+envía. No se revisa en la recogida (decisión operativa: el palet no se deshace).
+
 ### `negativeLookupCache`
 TTL 5 min, max 10k entries. Trackings que ya buscamos en Odoo sin encontrar
 nada se cachean para no repetir la búsqueda costosa.
