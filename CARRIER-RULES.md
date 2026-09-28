@@ -113,6 +113,7 @@ actual y la evolución de cada uno.
 | 2026-05-22 | `extractAsendiaTracking` añadido al cascade de `extractSpecialPatterns` para barcodes GS1 largos | — | — |
 | 2026-05-26 | **#027**: shape check del fast-fail (#026) rechazaba barcodes ASENDIA GS1 (`%…6C20…`). Añadida regla `(6C20\|6C16\|H103\d{4})` en `hasKnownCarrierShape` para barcodes ≥12 chars con patrón embebido | `dd613dc` | #027 |
 | 2026-07-13 | **#036 — nuevo prefijo `6C21`** (2.977 en índice, sustituye a 6C20) **+ etiqueta SIN check digit**: el barcode (`%0094140116C2105250900802250`) y el QR llevan el tracking en 12 chars (sin dígito de control) seguido del código de ruta `802…`. Generalizado TODO a familia `6C**`: extractor `/6C\d{10,11}/`, shape `^6C\d{2}` + embebido `/6C\d{10}/`, prefijo-12 en P2.3 (`^6C\d\d`), sliding frontend con fallback prefijo-12 client-side. Prefijo→ASENDIA: `^6C2[01]` (6C16 queda fuera: Sendcloud la da como SPRING). Caso real verificado: DF1441749EU (`6C21052509006`). | _pendiente_ | #036 |
+| 2026-09-28 | **#051 — Colissimo `6A` (La Poste) desde el barcode largo**: el barcode (`0038280116A07857567858012502`) lleva `6A`+10 dígitos SIN dígito de control + ruta `801…`; tracking real `6A`+11 (13 chars). Se prueban las 10 variantes del dígito en el índice (solo 1 coincidencia; 0 colisiones en 246) y, si no está indexada, Odoo `=like 'prefijo12_'`. Carrier del índice/Sendcloud: **6A = 238 ASENDIA / 8 SPRING** → nunca por prefijo. Server (`getCarrierFromTracking`, `hasKnownCarrierShape`) + cliente (`localLookup`). Verificado: 246/246, foto real → DF156883SF ASENDIA. | _pendiente_ | #051 |
 
 ---
 
@@ -415,7 +416,7 @@ tracking `LX071833722NL`).
   indexación por prefijo.
 
 ### Timeouts Odoo (`executeWithTimeout`)
-- Exact match: 3s
+- Exact match: **5s** (#051; antes 3s). Consulta **`=like` + `order: 'id desc'`** si el tracking es alfanumérico puro (~120 ms en la BD migrada vs 3-13 s con `=`); con `%`/`_` se usa `=`. Si vence: NO se encadena ilike/patrones y el resultado tardío se guarda en `odooHitCache` (30 min) para el re-escaneo.
 - ilike: 2s
 - Pattern matching: 2s × 2 patterns
-- Total máximo por scan que cae a Odoo: ~9s
+- Total máximo por scan que cae a Odoo: ~5s si la exacta vence; ~9s si la exacta responde vacío y se prueba ilike+patrones

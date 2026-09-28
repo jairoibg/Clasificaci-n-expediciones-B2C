@@ -1,6 +1,6 @@
 // Cache version: BUMPEAR esta cifra cada vez que se haga un deploy
 // para forzar la invalidación de caché viejo en navegadores de operarios.
-const CACHE_NAME = 'expediciones-v7-2026-07-29-ups';
+const CACHE_NAME = 'expediciones-v8-2026-09-28-odoo-rapido-6a';
 const urlsToCache = [
   '/',
   '/manifest.json'

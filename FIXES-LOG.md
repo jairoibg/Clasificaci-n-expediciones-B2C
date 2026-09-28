@@ -2280,8 +2280,77 @@ del carrier en Odoo cuando es genérico.
 
 ---
 
+## 2026-09-28 · "Sistema lento" tras la migración de Odoo + Colissimo 6A (#051)
+
+### #051 · Búsqueda en Odoo 30× más rápida, etiquetas Colissimo `6A`, menos bloqueos
+
+**Síntoma (operarios, 28-sep)**
+"Va mal y lento". Aviso **"Sistema lento — No se pudo confirmar el pedido
+PK7L7F9800612770144002B"**. Además, etiquetas **Colissimo** (La Poste) no se
+reconocen al leer el código de barras grande.
+
+**Diagnóstico (medido, no supuesto)**
+1. **Odoo migrado** (~25-sep) a la BD `odoo-project-00002129-build-00021657`. El
+   B2C conecta bien (uid 3114), pero la consulta de escaneo
+   `('carrier_tracking_ref','=',x)` + `limit 1` tarda **3,7 s de mediana, hasta
+   12,8 s** (mal plan en la BD nueva). El servidor cortaba a **3 s** → **8 de cada
+   10** búsquedas de etiquetas no indexadas daban timeout → `SISTEMA_LENTO`.
+2. Experimento controlado (mismas 4 etiquetas × 2 rondas, 32 consultas, mismos
+   resultados): `=` 3.716 ms · `=` + order id 3.353 ms · `=like` 429 ms ·
+   **`=like` + order `id desc` 116 ms (máx 153 ms)**.
+3. El cliente envía los escaneos en **cola secuencial** (9 s de espera, hasta 6
+   reintentos): un escaneo atascado en Odoo (~9 s de cadena exacta+ilike+patrones)
+   frenaba **todos** los escaneos siguientes de esa PDA → "va lento" general.
+4. **Colissimo 6A**: el barcode grande (`0038 2801 16A0 7857 5678 5801 2502`)
+   lleva `6A` + 10 dígitos **sin el dígito de control** + código de ruta `801…`
+   (mismo caso que ASENDIA 6C21, #036). Empieza por `0038` y tiene una `A` →
+   ninguna forma conocida → `no_shape`. Tracking real = `6A` + 11 dígitos (13
+   chars; 246/246 en índice, 0 colisiones de prefijo-12). Carrier según índice:
+   **238 ASENDIA / 8 SPRING** (la regla de prefijo `^6A`→SPRING es incorrecta
+   para el 97 %; ver Pendientes).
+5. `data.json` = **116 MB** (47 MB en julio). Cada guardado (máx. cada 2 s con
+   escaneos) serializa y escribe todo en el hilo principal → bloqueos de ~1-2 s
+   (visto: `/api/health` 1.632 ms coincidiendo con una escritura).
+
+**Solución (`server.js`, `public/index.html`, `public/sw.js`)**
+- `findPickingByTracking`: exacta con **`=like` + `order: 'id desc'`** cuando el
+  tracking es alfanumérico puro (`exactDomainAndOrder`; con `%`/`_` —comodines de
+  LIKE, p.ej. GS1 crudo— se mantiene `=`). Timeout 3 s → 5 s (lo normal ~120 ms).
+  Si aun así vence, **no** se encadenan ilike/patrones (más lentos) y la respuesta
+  tardía se guarda en `odooHitCache` (30 min) → el re-escaneo es instantáneo.
+  E1+8 (INPOST) con la misma consulta rápida.
+- Colissimo 6A: `hasKnownCarrierShape` acepta `6A\d{10}` embebido;
+  `getCarrierFromTracking` extrae todas las ocurrencias, prueba las 10 variantes
+  del dígito de control en el índice (solo acepta 1 coincidencia) y, si la
+  etiqueta es tan nueva que no está indexada, `=like 'prefijo12_'` en Odoo
+  (~170 ms). Carrier del índice/Sendcloud, **nunca** del prefijo. Mismo algoritmo
+  en `localLookup` del cliente (0 ms). SW bump `v8`.
+- Guardado agrupado cada **5 s** (antes 2 s): menos de la mitad de bloqueos. Sin
+  cambios de formato ni de escritura atómica; SIGTERM sigue guardando todo. Log
+  si un guardado supera 800 ms.
+
+**Pruebas (código real contra índice real de producción y Odoo real, solo lectura)**
+Servidor: 246/246 barcodes 6A → carrier+pedido correctos; foto → ASENDIA
+DF156883SF; regresión 406/406; fuera de índice: PK 1,7 s (incl. auth) y
+re-escaneo 3 ms, 6A 0,5 s; 6A inventado y PK inexistente → `not_found` (no
+`SISTEMA_LENTO`); guardas `%`/`_` → `=`. Cliente: 246/246, regresión
+22.688/22.688, 6A inventado sin match. **663 + 22.936 comprobaciones, 0 fallos.**
+
+**Descartado a propósito**: refresco incremental del índice cada 3 min — con la
+búsqueda exacta a ~120 ms ya no hace falta y añadía piezas móviles.
+
+**Archivos**: `server.js`, `public/index.html`, `public/sw.js`, `CARRIER-RULES.md`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**: tras una migración de BD, medir SIEMPRE la latencia de las consultas
+del camino caliente: el mismo dominio puede cambiar de 100 ms a 4 s por el plan.
+Y `/api/health` no toca Odoo: el fallo no se ve en el health check.
+
+---
+
 ## Pendientes / Mejoras futuras
 
+- [ ] (#051) `data.json` crece sin límite (116 MB a 28-sep): archivar palets ya recogidos de >N días en ficheros aparte para que el guardado frecuente solo serialice lo vivo. Requiere cuidado (historial, `/api/pallets?date`, `rebuildGlobalScans`, cobertura).
+- [ ] (#051) Regla de prefijo `^6A` → SPRING en `/api/odoo-outs` y en el fallback de `sync-full.js` es incorrecta para el 97 % (238 ASENDIA / 8 SPRING en índice): usar el carrier del índice/Sendcloud o mapear a ASENDIA. Afecta solo al reparto por transportista del informe de cobertura, no al escaneo.
 - [ ] Webhook Sendcloud para sincronizar en tiempo real al crear envío
 - [ ] Cambiar Railway region a EU (reducir latencia ~250ms → ~50ms)
 - [ ] Versión offline-first con Service Worker para almacén sin red

@@ -1901,6 +1901,21 @@
         if (match && match.carrier === 'AMAZON') return { ...match, source: 'client-amazon' };
       }
 
+      // 7. (#051) COLISSIMO 6A: el barcode largo lleva 6A + 10 dígitos SIN el dígito
+      // de control (ej. 0038280116A07857567858012502 → tracking 6A07857567854).
+      // Se prueban las 10 variantes del último dígito (10 lookups O(1)); solo se
+      // acepta si hay UNA coincidencia. El carrier es el del índice (6A no es de un
+      // único transportista: mayoría ASENDIA, algunos SPRING).
+      if (clean.length >= 12 && !/^6A\d{11}$/.test(clean)) {
+        const re6 = /6A\d{10}/g; let m6;
+        while ((m6 = re6.exec(clean)) !== null) {
+          const hits = [];
+          for (let d = 0; d <= 9; d++) { const v = clientIndex.get(m6[0] + d); if (v) hits.push(v); }
+          if (hits.length === 1) return { ...hits[0], source: 'client-6a' };
+          re6.lastIndex = m6.index + 1;
+        }
+      }
+
       return null;
     }
 

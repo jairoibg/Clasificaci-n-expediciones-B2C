@@ -620,9 +620,15 @@ function saveData() {
     saveTimer = null;
     if (!savePending) return;
     savePending = false;
-    try { writeDatabaseToDisk(); }
+    try {
+      const tw = Date.now();
+      writeDatabaseToDisk();
+      const msw = Date.now() - tw;
+      if (msw > 800) console.log('💾 Guardado data.json: ' + msw + 'ms (bloquea el servidor; crece con el histórico)');
+    }
     catch (err) { console.error('Error guardando:', err.message); }
-  }, 2000);
+  }, 5000); // (#051) 2 s → 5 s: con data.json de ~116 MB cada guardado bloquea ~1-2 s;
+            // agrupar más escaneos por guardado reduce los bloqueos a menos de la mitad.
 }
 
 // Save síncrono para situaciones críticas (shutdown, etc.)
@@ -900,6 +906,24 @@ function getSession(carrier) {
 migrateSessionsFormat();
 rebuildGlobalScans();
 
+// (#051) Caché de aciertos TARDÍOS de Odoo: si una búsqueda exacta vence el timeout
+// pero Odoo acaba respondiendo con el picking, se guarda aquí (30 min) para que el
+// re-escaneo sea instantáneo en vez de repetir la consulta lenta.
+const odooHitCache = new Map(); // tracking → { picking, ts }
+const ODOO_HIT_TTL_MS = 30 * 60 * 1000;
+function rememberOdooHit(tracking, picking) {
+  if (!tracking || !picking) return;
+  if (odooHitCache.size > 5000) odooHitCache.clear();
+  odooHitCache.set(tracking, { picking, ts: Date.now() });
+  try { negativeLookupCache.delete(tracking); } catch (_) {}
+}
+function recallOdooHit(tracking) {
+  const e = odooHitCache.get(tracking);
+  if (!e) return null;
+  if (Date.now() - e.ts > ODOO_HIT_TTL_MS) { odooHitCache.delete(tracking); return null; }
+  return e.picking;
+}
+
 // ============================================
 // CLIENTE ODOO
 // ============================================
@@ -937,25 +961,48 @@ class OdooClient {
     ]);
   }
 
+  // (#051) Búsqueda EXACTA rápida. Tras la migración de Odoo (sept-2026) la consulta
+  // ('carrier_tracking_ref','=',x) con limit 1 tarda 3-13 s (mal plan en la BD nueva);
+  // la MISMA búsqueda con '=like' + order 'id desc' tarda ~120 ms (medido 28-sep:
+  // mediana 3.716 ms → 116 ms, mismos resultados en 32/32 casos). '=like' sin
+  // comodines equivale a '=', pero '%' y '_' SÍ son comodines → solo se usa si el
+  // valor es alfanumérico puro (los barcodes GS1 crudos empiezan por '%').
+  exactDomainAndOrder(value) {
+    if (/^[A-Z0-9]+$/i.test(value)) return { domain: [[['carrier_tracking_ref', '=like', value]]], order: 'id desc' };
+    return { domain: [[['carrier_tracking_ref', '=', value]]], order: undefined };
+  }
+
   async findPickingByTracking(tracking, meta = {}) {
     // meta.timedOut se pone a true si ALGUNA de las búsquedas falló por timeout.
     // El caller lo usa para NO cachear como negativo un tracking que quizá existe
     // pero Odoo no respondió a tiempo (evita envenenar el negative cache).
     const t0 = Date.now();
+    const F = ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'];
+    // (#051) Acierto TARDÍO de una búsqueda anterior que llegó después del timeout
+    // (típico: el re-escaneo que pide el aviso "Sistema lento" → ahora instantáneo).
+    const late = recallOdooHit(tracking);
+    if (late) { console.log('   ⚡ Odoo acierto tardío (caché): ' + (late.origin || 'sin pedido')); return late; }
     try {
-      // 1. Exact match (most common case, fast) — 3s timeout
-      let pickings = await this.executeWithTimeout('stock.picking', 'search_read', [[['carrier_tracking_ref', '=', tracking]]], {
-        fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1
-      }, 3000).catch(e => { console.warn('   ⏱️ Odoo exact timeout (' + e.message + ')'); meta.timedOut = true; return []; });
+      // 1. Exact match (most common case, fast) — 5s timeout (lo normal ahora son ~120 ms).
+      // La consulta NO se cancela al vencer el timeout: si acaba encontrando el picking,
+      // se guarda para el siguiente intento en vez de tirarse.
+      const ex = this.exactDomainAndOrder(tracking);
+      const exactP = this.execute('stock.picking', 'search_read', ex.domain, ex.order ? { fields: F, limit: 1, order: ex.order } : { fields: F, limit: 1 });
+      exactP.then(r => { if (r && r.length) rememberOdooHit(tracking, r[0]); }).catch(() => {});
+      let pickings = await Promise.race([exactP, new Promise((_, rej) => setTimeout(() => rej(new Error('odoo-timeout')), 5000))])
+        .catch(e => { console.warn('   ⏱️ Odoo exact timeout (' + e.message + ')'); meta.timedOut = true; return null; });
+      // Si la exacta ya agotó el tiempo, NO encadenar ilike/patrones (aún más lentos):
+      // devolver ya para que el operario reciba el aviso sin esperar ~10 s más.
+      if (pickings === null) return null;
       if (pickings.length > 0) { console.log('   🔍 Odoo exact match: ' + (Date.now()-t0) + 'ms'); return pickings[0]; }
 
       // 1.5 (#033): 8 dígitos puros = espacio de tracking minúsculo (INPOST). El ilike
       // con 8 dígitos matchea cualquier tracking largo que los CONTENGA (falsos
       // positivos verificados con números aleatorios). Solo aceptar exacto o E1+8.
       if (/^\d{8}$/.test(tracking)) {
-        const e1 = await this.executeWithTimeout('stock.picking', 'search_read', [[['carrier_tracking_ref', '=', 'E1' + tracking]]], {
-          fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1
-        }, 2000).catch(e => { console.warn('   ⏱️ Odoo E1-exact timeout (' + e.message + ')'); meta.timedOut = true; return []; });
+        const exE1 = this.exactDomainAndOrder('E1' + tracking);
+        const e1 = await this.executeWithTimeout('stock.picking', 'search_read', exE1.domain, exE1.order ? { fields: F, limit: 1, order: exE1.order } : { fields: F, limit: 1 },
+          3000).catch(e => { console.warn('   ⏱️ Odoo E1-exact timeout (' + e.message + ')'); meta.timedOut = true; return []; });
         if (e1.length > 0) { console.log('   🔍 Odoo E1-exact match: ' + (Date.now()-t0) + 'ms'); return e1[0]; }
         console.log('   🚫 8 dígitos sin match exacto en Odoo — no se intenta ilike (anti-falso-positivo)');
         return null;
@@ -1388,6 +1435,8 @@ function hasKnownCarrierShape(clean) {
   // ASENDIA (6C** embebido, #036: 10-11 dígitos, la etiqueta omite el check digit),
   // GLS (Z89), ASENDIA H1023 (H103+digits), SPRING (0626/0008 dentro)
   if (clean.length >= 12 && /(6C\d{10}|Z89[A-Z0-9]{5}|H103\d{4}|0626\d{8}|0008\d{8})/.test(clean)) return true;
+  // (#051) COLISSIMO 6A embebido sin dígito de control (ej. 0038280116A07857567858012502)
+  if (clean.length >= 12 && /6A\d{10}/.test(clean)) return true;
   return false;
 }
 
@@ -1433,6 +1482,63 @@ async function getCarrierFromTracking(tracking) {
         picking: { id: exact.pickingId, name: exact.pickingName, carrier_tracking_ref: exact.odooTracking, origin: exact.orderRef, partner_id: [null, exact.clientName] },
         source: 'index-exact', elapsed
       };
+    }
+  }
+
+  // (#051) COLISSIMO / familia 6A. El barcode largo de la etiqueta (ej.
+  // 0038280116A07857567858012502) lleva el tracking como 6A + 10 dígitos SIN el
+  // dígito de control, seguido del código de ruta (801…). El tracking real es
+  // 6A + 11 dígitos (13 chars: 246/246 en índice, 0 colisiones de prefijo-12 →
+  // completar el dígito es inequívoco). Mismo caso que ASENDIA 6C21 (#036).
+  // El carrier sale del ÍNDICE/Sendcloud, NUNCA del prefijo (6A = 238 ASENDIA / 8 SPRING).
+  {
+    const s6 = clean.replace(/[^A-Z0-9]/g, '');
+    if (s6.length >= 12 && !/^6A\d{11}$/.test(s6) && s6.indexOf('6A') >= 0) {
+      const re6 = /6A\d{10}/g; let m6; const pres = [];
+      while ((m6 = re6.exec(s6)) !== null) { pres.push(m6[0]); re6.lastIndex = m6.index + 1; }
+      for (const pre12 of pres) {
+        // 1) Índice: las 10 variantes del dígito de control (O(1) cada una)
+        const hits = [];
+        for (let d = 0; d <= 9; d++) {
+          const e = (trackingIndex.byTracking && trackingIndex.byTracking[pre12 + d]) ||
+                    (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[pre12 + d]);
+          if (e && e.pickingId) hits.push(e);
+        }
+        if (hits.length === 1) {
+          const e = hits[0];
+          const known = e.carrier && e.carrier !== 'DESCONOCIDO' ? e.carrier : null;
+          const sc = known ? null : findInSendcloudCache(e.odooTracking || e.tracking || '');
+          const c6 = known || (sc && sc.carrier ? overrideCarrier(sc.carrier, e.odooTracking || '') : null);
+          const elapsed = Date.now() - startTime;
+          console.log('   ⚡ Índice 6A (dígito completado): ' + (e.odooTracking || e.tracking) + ' → ' + (c6 || '?') + ' (' + elapsed + 'ms)');
+          return {
+            carrier: c6,
+            picking: { id: e.pickingId, name: e.pickingName, carrier_tracking_ref: e.odooTracking, origin: e.orderRef, partner_id: [null, e.clientName] },
+            source: 'index-6a', elapsed
+          };
+        }
+        // 2) Aún no indexada (recién impresa): Odoo '=like' prefijo-12 + 1 carácter (~170 ms)
+        try {
+          const r = await odooClient.executeWithTimeout('stock.picking', 'search_read',
+            [[['carrier_tracking_ref', '=like', pre12 + '_']]],
+            { fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 3, order: 'id desc' }, 4000);
+          const refs = new Set((r || []).map(x => x.carrier_tracking_ref));
+          if (r && r.length > 0 && refs.size === 1) {
+            const p = r[0];
+            const ref = p.carrier_tracking_ref;
+            let c6 = null;
+            const sc = findInSendcloudCache(ref);
+            if (sc && sc.carrier) c6 = overrideCarrier(sc.carrier, ref);
+            else {
+              const scd = await sendcloudClient.getParcelByTracking(ref);
+              if (scd && scd.carrier_code) c6 = overrideCarrier(sendcloudClient.normalizeCarrier(scd.carrier_code), ref);
+            }
+            const elapsed = Date.now() - startTime;
+            console.log('   ✅ 6A en Odoo (dígito completado): ' + ref + ' → ' + (c6 || 'carrier sin verificar') + ' (' + elapsed + 'ms)');
+            return { carrier: c6, picking: p, source: 'odoo-6a', elapsed };
+          }
+        } catch (e) { console.warn('   ⏱️ Odoo 6A: ' + e.message); }
+      }
     }
   }
 
