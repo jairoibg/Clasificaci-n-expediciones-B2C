@@ -2434,8 +2434,70 @@ medir con datos reales antes de fijar la regla.
 
 ---
 
+## 2026-10-05 · Etiquetas de la red Packeta (Speedy, ELTA, Overseas) (#053)
+
+### #053 · "No sale de qué compañía es" + falso INPOST en etiquetas Speedy
+
+**Síntoma (Pablo, 05-oct)**
+Al escanear etiquetas de **Speedy** (Bulgaria), **ELTA** (Grecia) y **Overseas**
+(Croacia) la PDA no dice de qué transportista son. Pedidos: DF1558888EU,
+DF1558130EU, CO561790 (Speedy), DF1560000EU (ELTA), DF1560016EU (Overseas).
+
+**Diagnóstico**
+- Son envíos **ASENDIA "Asendia e-PAQ Select"** que en destino reparte la red
+  **Packeta** (remitente "PACKETA INTERNATIONAL/ROMANIA", `ref2: Asendia_c/o_Spain`).
+  Sendcloud imprime la etiqueta del **transportista local**. En el sistema
+  (Odoo/Sendcloud/índice) el tracking es el **nº Packeta de 10 dígitos**, que en
+  la etiqueta va **solo como TEXTO** («ref1» / «REFERENCE» / «R1»). Sendcloud no
+  guarda el nº del transportista local (`awb_tracking_number`/`external_reference`
+  vacíos). 57 envíos así en el índice: BG 28, HR 10, GR 8, HU 5, RO 3, SE 2, CZ 1.
+- Decodificados los códigos de barras reales (Code128/Code39 con un decodificador
+  propio sobre el PDF de Sendcloud/la imagen): Speedy `1000637642443800020000000218`
+  (28 díg.); ELTA `YZ413823908GR` (Code39); Overseas `1910052024949617`,
+  `~0021465000191191005202494961700010001` y la ruta `021-30`. **Ningún código de
+  barras contiene el nº Packeta ni el pedido** → no hay forma de emparejarlos.
+- **Bug grave**: el Speedy de DF1558130EU (`…84630020…`) caía en la **ventana
+  INPOST** y se emparejaba con OTRO pedido (**INPOST DF1393058EU**): la PDA decía
+  "es de INPOST" (y en un palet INPOST lo habría metido como ese pedido).
+- El buscador de la PDA encontraba el pedido (DF…) pero **no el nº de 10 dígitos**.
+
+**Solución (`server.js`, `public/index.html`, `public/sw.js`)**
+- `packetaPartnerLabel()` (servidor y PDA): Speedy `^1000\d{24}$`, ELTA
+  `^[A-Z]{2}\d{9}GR$`, Overseas `^19\d{14}$` / `^~\d{20,}$` / `^\d{3}-\d{2}$`.
+  0 colisiones con las 23.936 etiquetas del índice.
+- `getCarrierFromTracking`: tras el match exacto, estos formatos devuelven
+  `source:'packeta-partner'` SIN ventana INPOST, ilike ni patrones (solo podían dar
+  un pedido equivocado). También en `hasNonInpostNumericPattern` (servidor y PDA).
+- `/api/scan`: `NO_ENCONTRADO` + mensaje "Etiqueta de Speedy (red Packeta): este
+  paquete es ASENDIA… escribe el nº de 10 dígitos «ref1»/«REFERENCE»/«R1» o el
+  pedido". Usa el código de error que TODAS las PDAs ya muestran con el buscador.
+  Mensaje genérico de "no reconocido" actualizado con la misma pista.
+- `/api/search-client`: primero busca **por etiqueta exacta** en el índice → el nº
+  de 10 dígitos ya da su pedido (antes 0 resultados).
+- PDA: estos formatos abren el buscador con el aviso, sin pitido de OK y sin la
+  búsqueda local aproximada. SW `v10`.
+
+**Pruebas (código real, índice real 05-oct, Odoo solo lectura)**: 7/7 códigos
+locales reconocidos y **sin emparejar ningún pedido** (incl. el falso INPOST);
+57/57 nº Packeta → su pedido ASENDIA; regresión 506/506; 0 colisiones; INPOST largo
+real sigue con su ventana; PDA 7/7 al buscador + regresión 23.936/23.936. **533 OK,
+0 fallos.** Regresión #051 (663 + 22.688) y #052 (519 + 13) intactas.
+
+**Mejora futura posible**: emparejar automáticamente descargando el PDF de la
+etiqueta de Sendcloud (el de Speedy/ELTA es vectorial con el nº local en texto; el
+de Overseas es imagen). Ver Pendientes.
+
+**Archivos**: `server.js`, `public/index.html`, `public/sw.js`, `CARRIER-RULES.md`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**: una heurística aproximada (ventana de 8 dígitos) sobre códigos que NO
+son nuestros solo puede acertar por casualidad: reconocer los formatos ajenos y
+excluirlos es más seguro que afinar la heurística.
+
+---
+
 ## Pendientes / Mejoras futuras
 
+- [ ] (#053) Etiquetas red Packeta (ASENDIA e-PAQ Select a BG/HR/GR/HU/RO…): emparejar el código del transportista local con el nº Packeta descargando el PDF de la etiqueta de Sendcloud (`/parcels/{id}/documents/label`; Speedy y ELTA son vectoriales con el nº en texto, Overseas es imagen). Hoy el operario teclea el nº «ref1» de 10 dígitos o el pedido. Faltan por ver los formatos de HU, RO, SE y CZ.
 - [ ] (#051) `data.json` crece sin límite (116 MB a 28-sep): archivar palets ya recogidos de >N días en ficheros aparte para que el guardado frecuente solo serialice lo vivo. Requiere cuidado (historial, `/api/pallets?date`, `rebuildGlobalScans`, cobertura).
 - [ ] (#052) Pedidos cancelados identificados por NOMBRE de `sale.order` (= `origin` del picking). Casos raros no cubiertos: `origin` fusionado ("DF1, DF2") o pedido cancelado y reimportado con el mismo nombre. Mejora: usar `sale_id` (el índice ya guarda `saleId`).
 - [ ] (#051) Regla de prefijo `^6A` → SPRING en `/api/odoo-outs` y en el fallback de `sync-full.js` es incorrecta para el 97 % (238 ASENDIA / 8 SPRING en índice): usar el carrier del índice/Sendcloud o mapear a ASENDIA. Afecta solo al reparto por transportista del informe de cobertura, no al escaneo.

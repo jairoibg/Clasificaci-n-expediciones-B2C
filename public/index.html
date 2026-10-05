@@ -1809,8 +1809,27 @@
     // Si sí, NUNCA hacemos sliding INPOST sobre él. Sin esto:
     //   DF126073SF (CRX 9300500...), DF1333089EU (SPRING 0621...),
     //   DF1339988EU (CTT 0003...) se clasificaban como INPOST por colisión.
+    // (#053) Etiquetas de la red PACKETA (Asendia e-PAQ Select a BG, HR, GR, HU, RO…): el
+    // código de barras es del transportista LOCAL y no está en el sistema; el nº que sí
+    // conocemos (Packeta, 10 dígitos) va impreso como texto «ref1»/«REFERENCE»/«R1».
+    // Misma regla que packetaPartnerLabel del servidor.
+    function packetaPartnerLabel(code) {
+      const s = String(code || '').toUpperCase().trim();
+      if (/^1000\d{24}$/.test(s)) return 'Speedy (Bulgaria)';
+      if (/^[A-Z]{2}\d{9}GR$/.test(s)) return 'ELTA (Grecia)';
+      if (/^19\d{14}$/.test(s) || /^~\d{20,}$/.test(s) || /^\d{3}-\d{2}$/.test(s)) return 'Overseas (Croacia)';
+      return null;
+    }
+    function packetaPartnerMessage(partner) {
+      return 'Etiqueta de ' + partner + ' (red Packeta): este paquete es ASENDIA.\n\n' +
+        'Ese código de barras es del transportista local y no está en el sistema. Escribe aquí el número de 10 dígitos ' +
+        'que pone «ref1», «REFERENCE» o «R1» en la etiqueta, o la referencia del pedido (DF…/CO…).';
+    }
+
     function hasNonInpostNumericPattern(clean) {
       if (!clean || !/^\d+$/.test(clean)) return null;
+      // (#053) Speedy (Packeta BG, 28 díg.) y Overseas (Packeta HR, 16 díg.)
+      if (/^1000\d{24}$/.test(clean) || /^19\d{14}$/.test(clean)) return 'PACKETA_PARTNER';
       // EAN-13 España (#033): código de producto, no envío — evita colisión sliding INPOST
       if (clean.length === 13 && /^84/.test(clean)) return 'EAN13_PRODUCTO';
       // (#035) Familias SPRING numéricas nuevas: 181+15d / 65480525+16d / 00373165+12d
@@ -1936,6 +1955,17 @@
       if (state.packages.find(p => p.tracking === clean)) {
         showToast('Ya escaneado', 'warning');
         document.getElementById('scanInput').focus();
+        return;
+      }
+
+      // (#053) Código del transportista local de la red Packeta (Speedy/ELTA/Overseas): salvo
+      // que sea una etiqueta exacta del índice, ni coincidencias aproximadas (la ventana INPOST
+      // emparejaba un Speedy con OTRO pedido) ni pitido de OK: buscador directo con el motivo.
+      const partner = packetaPartnerLabel(clean);
+      if (partner && !clientIndex.get(clean.replace(/[^A-Z0-9]/g, ''))) {
+        showSearchModal(clean, packetaPartnerMessage(partner));
+        playSound('error');
+        if (navigator.vibrate) navigator.vibrate([200,100,200]);
         return;
       }
 

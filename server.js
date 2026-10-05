@@ -1301,8 +1301,32 @@ function looksLikeSpringBarcode(clean) {
 //   - SPRING `0621...` (ej. DF1333089EU con tracking 06215292478046)
 //   - CTT `0003...` con 22 dígitos (ej. DF1339988EU con tracking 0003010003019701983513)
 // Devuelve el carrier detectado (string) o null si no matchea ningún patrón.
+// (#053) Etiquetas de la red PACKETA ("Asendia e-PAQ Select" a BG, HR, GR, HU, RO, SE, CZ…):
+// Sendcloud imprime la etiqueta del transportista LOCAL y sus códigos de barras NO están
+// en Odoo/Sendcloud. El sistema solo conoce el nº Packeta de 10 dígitos, impreso como
+// TEXTO («ref1» / «REFERENCE» / «R1»). Formatos verificados decodificando etiquetas reales
+// (05-oct-2026): Speedy BG = 1000 + 24 díg. (DF1558888EU, DF1558130EU, CO561790);
+// ELTA GR = XX#########GR en Code39 (DF1560000EU); Overseas HR = 19 + 14 díg., el largo
+// "~002…" y la ruta "###-##" (DF1560016EU). 0 colisiones con las 23.936 etiquetas del índice.
+// Peligro real: el de DF1558130EU contiene "84630020" y la ventana INPOST lo emparejaba
+// con OTRO pedido (INPOST DF1393058EU) → a estos formatos no se les aplica nada aproximado.
+function packetaPartnerLabel(code) {
+  const s = String(code || '').toUpperCase().trim();
+  if (/^1000\d{24}$/.test(s)) return 'Speedy (Bulgaria)';
+  if (/^[A-Z]{2}\d{9}GR$/.test(s)) return 'ELTA (Grecia)';
+  if (/^19\d{14}$/.test(s) || /^~\d{20,}$/.test(s) || /^\d{3}-\d{2}$/.test(s)) return 'Overseas (Croacia)';
+  return null;
+}
+function packetaPartnerMessage(partner) {
+  return 'Etiqueta de ' + partner + ' (red Packeta): este paquete es ASENDIA.\n\n' +
+    'Ese código de barras es del transportista local y no está en el sistema. Escribe aquí el número de 10 dígitos ' +
+    'que pone «ref1», «REFERENCE» o «R1» en la etiqueta, o la referencia del pedido (DF…/CO…).';
+}
+
 function hasNonInpostNumericPattern(clean) {
   if (!clean || !/^\d+$/.test(clean)) return null;
+  // (#053) Speedy (Packeta BG, 28 díg.) y Overseas (Packeta HR, 16 díg.): ver packetaPartnerLabel
+  if (/^1000\d{24}$/.test(clean) || /^19\d{14}$/.test(clean)) return 'PACKETA_PARTNER';
   // EAN-13 España (#033): los códigos de producto/factura españoles empiezan por 84
   // y sus ventanas de 8 dígitos colisionan con trackings INPOST reales del índice
   // (verificado: 8477128076710 → ventana 84771280 = tracking INPOST real).
@@ -1649,6 +1673,17 @@ async function getCarrierFromTracking(tracking) {
         picking: { id: exact.pickingId, name: exact.pickingName, carrier_tracking_ref: exact.odooTracking, origin: exact.orderRef, partner_id: [null, exact.clientName] },
         source: 'index-exact', elapsed
       };
+    }
+  }
+
+  // (#053) Código del transportista LOCAL de la red Packeta (Speedy, ELTA, Overseas…):
+  // no está en Odoo/Sendcloud. Tras el match exacto (arriba) NO se prueba nada aproximado
+  // (ventana INPOST, ilike, patrones): solo podrían dar un pedido EQUIVOCADO.
+  {
+    const partner = packetaPartnerLabel(clean);
+    if (partner) {
+      console.log('   📦 Etiqueta red Packeta (' + partner + '): código local, no está en el sistema');
+      return { carrier: null, picking: null, source: 'packeta-partner', partner, elapsed: Date.now() - startTime };
     }
   }
 
@@ -2394,6 +2429,14 @@ app.post('/api/scan', async (req, res) => {
         tracking: clean
       });
     }
+    // (#053) Etiqueta de la red Packeta (Speedy/ELTA/Overseas…): decir que es ASENDIA y
+    // cómo encontrarlo (nº de 10 dígitos «ref1/REFERENCE/R1» o el pedido). Va antes del
+    // timeout porque su código nunca estará en el sistema: reintentar no serviría.
+    const partner = det.partner || packetaPartnerLabel(clean);
+    if (partner) {
+      console.log('   📦 Etiqueta red Packeta (' + partner + ') — guiar a ref1 / pedido');
+      return res.json({ success: false, error: 'NO_ENCONTRADO', detectedCarrier: 'ASENDIA', packetaPartner: partner, message: packetaPartnerMessage(partner), tracking: clean });
+    }
     // Odoo no respondió a tiempo: el tracking puede ser válido. NO mandar al
     // operario a buscar por cliente — basta reintentar el escaneo en unos segundos.
     if (det.source === 'odoo_timeout') {
@@ -2406,7 +2449,7 @@ app.post('/api/scan', async (req, res) => {
       });
     }
     console.log('   ❌ No existe en Odoo');
-    return res.json({ success: false, error: 'NO_ENCONTRADO', message: 'Código no reconocido. En etiquetas internacionales escanea el código de barras ANCHO de abajo, o busca por la Referencia Pedido de la etiqueta (DF…/CO…/KA…).', tracking: clean });
+    return res.json({ success: false, error: 'NO_ENCONTRADO', message: 'Código no reconocido.\n\nEn etiquetas internacionales escanea el código de barras ANCHO de abajo. Si aun así no sale (p.ej. etiquetas de Speedy, ELTA, Overseas…), escribe aquí la Referencia Pedido (DF…/CO…/KA…) o el número «ref1»/«REFERENCE» de 10 dígitos de la etiqueta.', tracking: clean });
   }
 
   // (#052) Pedido u OUT CANCELADO en Odoo → NO se puede meter en un palet.
@@ -2528,8 +2571,24 @@ app.get('/api/search-client/:name', async (req, res) => {
   // 1. Buscar primero en el ÍNDICE LOCAL (instantáneo, O(1))
   let indexResults = [];
 
+  // (#053) Por ETIQUETA exacta: lo tecleado es un tracking del sistema. Caso típico: el
+  // nº Packeta de 10 dígitos («ref1»/«REFERENCE»/«R1») de las etiquetas Speedy/ELTA/
+  // Overseas, cuyo código de barras es del transportista local. Antes daba 0 resultados.
+  {
+    const tk = upperTerm.replace(/[^A-Z0-9]/g, '');
+    const e = tk.length >= 6 && ((trackingIndex.byTracking && trackingIndex.byTracking[tk]) ||
+                                 (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[tk]));
+    if (e && e.pickingId) {
+      indexResults = [{
+        id: e.pickingId, name: e.pickingName, tracking: e.odooTracking || e.tracking || tk,
+        client: e.clientName || 'Sin cliente', origin: e.orderRef || '', carrier: e.carrier,
+        state: e.state, source: 'index-tracking'
+      }];
+    }
+  }
+
   // Por ID del pedido CRX (note) — exacto
-  if (isCrxOrderId && trackingIndex.byCrxOrderId && trackingIndex.byCrxOrderId[searchTerm]) {
+  if (indexResults.length === 0 && isCrxOrderId && trackingIndex.byCrxOrderId && trackingIndex.byCrxOrderId[searchTerm]) {
     indexResults = trackingIndex.byCrxOrderId[searchTerm].map(e => ({
       id: e.pickingId,
       name: e.pickingName,

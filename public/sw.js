@@ -1,6 +1,6 @@
 // Cache version: BUMPEAR esta cifra cada vez que se haga un deploy
 // para forzar la invalidación de caché viejo en navegadores de operarios.
-const CACHE_NAME = 'expediciones-v9-2026-09-28-bloqueo-cancelados';
+const CACHE_NAME = 'expediciones-v10-2026-10-05-packeta';
 const urlsToCache = [
   '/',
   '/manifest.json'
