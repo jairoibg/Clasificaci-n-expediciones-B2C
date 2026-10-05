@@ -2495,9 +2495,59 @@ excluirlos es más seguro que afinar la heurística.
 
 ---
 
+## 2026-10-05 · Etiquetas Packeta SIN teclear: la app aprende sus códigos (#054)
+
+### #054 · Leer los códigos de barras del PDF de la etiqueta y aprenderlos
+
+**Petición (Jairo)**: "No quiero que tengan que teclear: que se registre todo de
+forma correcta." (#053 dejaba al operario tecleando el nº «ref1» o el pedido.)
+
+**Solución**
+- `packeta-labels.js` (nuevo, sin dependencias, solo zlib): lee los códigos de
+  barras del PDF de la etiqueta que genera Sendcloud. Soporta lo visto en las 57
+  etiquetas reales: barras vectoriales (`re f` y trazados `m l l l h f` con color y
+  `cm`, en página o Form XObject), barras en imagen FlateDecode (1 bit indexado,
+  gris/RGB 8 bits, predictor PNG) y código pintado con **fuente Code39** (`(*…*) Tj`,
+  ELTA). Decodifica **Code128 (checksum)** y **Code39 (* inicio/fin)**: si no valida,
+  no devuelve nada (nunca basura). Nunca lanza.
+- `server.js` · aprendizaje: `refreshPacketaMap()` al arrancar (20 s) y cada 2 min:
+  (1) etiquetas recién creadas en Sendcloud (`announced_after` desde el último
+  barrido), (2) candidatos del caché Sendcloud del sync aún sin procesar (máx. 40 por
+  barrido). Candidato = ASENDIA con tracking de 10 dígitos (nº Packeta). Descarga el
+  PDF (`/parcels/{id}/documents/label`), lee los códigos y guarda `código → nº Packeta`
+  (y su variante alfanumérica). Descarta códigos de RUTA (`###-##`, `…+…`, <8) y los
+  que salgan en 2 envíos (ambiguos). Persistido en `packeta-map.json` (volumen,
+  45 días). Fallos de descarga: hasta 3 reintentos. Estado en `/api/index-stats`.
+- `getCarrierFromTracking`: lo PRIMERO es el mapa → el código local se resuelve con
+  su nº Packeta (índice u Odoo) → ASENDIA + pedido correcto (`source:'packeta-map'`).
+- `/api/scan`: código sin identificar con pinta de Packeta/desconocido → aprende YA
+  las etiquetas nuevas (máx. 6 s, con freno de ritmo) y reintenta: funciona a la
+  primera aunque la etiqueta se haya impreso hace segundos.
+- Índice de la PDA: incluye los códigos aprendidos (match 0 ms) y su ETag lleva la
+  versión del mapa. PDA: a los códigos Packeta solo match exacto local; si no está,
+  lo resuelve el servidor (ya no abre el buscador). SW `v11`.
+- El aviso de #053 ("teclea ref1") queda solo como último recurso si una etiqueta no
+  se pudiera leer.
+
+**Pruebas (código real; Sendcloud, índice y Odoo reales, solo lectura)**
+Lector: 57/57 etiquetas de 7 países con códigos; Speedy+ELTA **36/36 iguales al
+número impreso**; 0 códigos compartidos. Aprendizaje de extremo a extremo: 57/57
+envíos aprendidos (+5 nuevos), **67/67 códigos → su nº Packeta**, **67/67 escaneos
+resueltos solos** (ASENDIA + pedido exacto), las 5 etiquetas de las fotos ✅
+(DF1558130EU ya no da falso INPOST), regresión 506/506, persistencia 84→0→84, código
+inventado → nada. **651 OK, 0 fallos.** Regresión #051/#052/#053 intacta.
+
+**Archivos**: `packeta-labels.js` (nuevo), `server.js`, `public/index.html`, `public/sw.js`, `CARRIER-RULES.md`, `FIXES-LOG.md`
+**Commit**: _pendiente_
+**Lección**: cuando el dato que falta está IMPRESO en la etiqueta, la etiqueta misma
+(su PDF) es la fuente: leerla en origen evita depender de que el operario teclee.
+
+---
+
 ## Pendientes / Mejoras futuras
 
-- [ ] (#053) Etiquetas red Packeta (ASENDIA e-PAQ Select a BG/HR/GR/HU/RO…): emparejar el código del transportista local con el nº Packeta descargando el PDF de la etiqueta de Sendcloud (`/parcels/{id}/documents/label`; Speedy y ELTA son vectoriales con el nº en texto, Overseas es imagen). Hoy el operario teclea el nº «ref1» de 10 dígitos o el pedido. Faltan por ver los formatos de HU, RO, SE y CZ.
+- [x] (#053→#054) Etiquetas red Packeta: emparejado automático leyendo el PDF de la etiqueta (hecho en #054, 7 países).
+- [ ] (#054) Si aparece un transportista Packeta con etiqueta JPEG (DCTDecode) o simbología distinta de Code128/Code39 (p.ej. ITF/EAN), `packeta-labels.js` no la leería: ver `packetaStatus` / log "0 códigos" y ampliar el lector.
 - [ ] (#051) `data.json` crece sin límite (116 MB a 28-sep): archivar palets ya recogidos de >N días en ficheros aparte para que el guardado frecuente solo serialice lo vivo. Requiere cuidado (historial, `/api/pallets?date`, `rebuildGlobalScans`, cobertura).
 - [ ] (#052) Pedidos cancelados identificados por NOMBRE de `sale.order` (= `origin` del picking). Casos raros no cubiertos: `origin` fusionado ("DF1, DF2") o pedido cancelado y reimportado con el mismo nombre. Mejora: usar `sale_id` (el índice ya guarda `saleId`).
 - [ ] (#051) Regla de prefijo `^6A` → SPRING en `/api/odoo-outs` y en el fallback de `sync-full.js` es incorrecta para el 97 % (238 ASENDIA / 8 SPRING en índice): usar el carrier del índice/Sendcloud o mapear a ASENDIA. Afecta solo al reparto por transportista del informe de cobertura, no al escaneo.

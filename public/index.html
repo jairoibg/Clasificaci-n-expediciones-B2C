@@ -1958,19 +1958,21 @@
         return;
       }
 
-      // (#053) Código del transportista local de la red Packeta (Speedy/ELTA/Overseas): salvo
-      // que sea una etiqueta exacta del índice, ni coincidencias aproximadas (la ventana INPOST
-      // emparejaba un Speedy con OTRO pedido) ni pitido de OK: buscador directo con el motivo.
+      // (#054) Código del transportista local de la red Packeta (Speedy/ELTA/Overseas…): el
+      // servidor aprende estos códigos leyendo la etiqueta y el índice local ya los trae →
+      // match EXACTO local. Si aún no está (etiqueta recién impresa), lo resuelve el servidor
+      // al momento. Nunca coincidencias aproximadas locales (la ventana INPOST emparejaba un
+      // Speedy con OTRO pedido).
       const partner = packetaPartnerLabel(clean);
-      if (partner && !clientIndex.get(clean.replace(/[^A-Z0-9]/g, ''))) {
-        showSearchModal(clean, packetaPartnerMessage(partner));
-        playSound('error');
-        if (navigator.vibrate) navigator.vibrate([200,100,200]);
-        return;
-      }
 
       // 2. LOOKUP LOCAL 0ms
-      const local = localLookup(clean);
+      let local;
+      if (partner) {
+        const v = clientIndex.get(clean) || clientIndex.get(clean.replace(/[^A-Z0-9]/g, ''));
+        local = v ? { ...v, source: 'client-packeta' } : null;
+      } else {
+        local = localLookup(clean);
+      }
 
       // (#052) Pedido CANCELADO → ni se añade ni pita OK (comprobado ANTES de todo).
       // Sin match local solo se puede mirar la etiqueta; el resto lo decide el servidor.

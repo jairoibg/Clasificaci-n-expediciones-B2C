@@ -4,6 +4,7 @@ const xmlrpc = require('xmlrpc');
 const path = require('path');
 const fs = require('fs');
 const zlib = require('zlib');
+const packetaLabels = require('./packeta-labels'); // (#054) lector de códigos de las etiquetas PDF
 const { spawn } = require('child_process');
 let compression;
 try { compression = require('compression'); } catch (e) { console.warn('⚠️ compression not installed'); }
@@ -475,6 +476,9 @@ function setupScheduledSync() {
   // espera creciente (90 s, 3, 6… máx 10 min) tras un fallo.
   refreshCancelled();
   setInterval(refreshCancelled, 15 * 1000);
+  // (#054) Aprendizaje de etiquetas Packeta: al arrancar (tras 20 s) y cada 2 min
+  setTimeout(() => refreshPacketaMap({ reason: 'arranque' }), 20 * 1000);
+  setInterval(() => refreshPacketaMap({ reason: 'timer' }), 2 * 60 * 1000);
   console.log('🚫 Lista de pedidos cancelados: refresco cada ~90 s (ventana ' + CANCELLED_WINDOW_DAYS + ' días)');
 }
 
@@ -1057,6 +1061,174 @@ function cancelledReason(picking, scanned) {
   return null;
 }
 
+// ============================================
+// (#054) APRENDIZAJE DE ETIQUETAS PACKETA (cero tecleo)
+// ============================================
+// Envíos ASENDIA "e-PAQ Select" que reparte la red Packeta (Speedy BG, ELTA GR,
+// Overseas HR, HU, RO, SE, CZ…): la etiqueta es del transportista LOCAL y sus códigos
+// de barras no están en Odoo/Sendcloud (el sistema solo conoce el nº Packeta de 10
+// dígitos). Este servicio descarga el PDF de cada etiqueta de Sendcloud, LEE sus
+// códigos de barras (packeta-labels.js) y aprende "código local → nº Packeta". Al
+// escanear la etiqueta, la app la resuelve sola a su pedido ASENDIA.
+// Verificado con las 57 etiquetas reales (05-oct-2026): 57/57 leídas, 7 países,
+// Speedy/ELTA 36/36 iguales al número impreso, 0 códigos compartidos entre envíos.
+let packetaMap = new Map();          // código leído (y su variante alfanumérica) → { tracking, parcelId, country, at }
+let packetaProcessed = new Map();    // parcelId → { at, n } etiquetas ya procesadas
+let packetaAmbiguous = new Set();    // códigos que aparecen en 2+ envíos → nunca se usan
+let packetaLastAnnounced = null;     // ISO: último barrido de etiquetas nuevas en Sendcloud
+let packetaVersion = 0;              // sube con cada cambio (ETag del índice de la PDA)
+let packetaRunning = null;           // promesa del barrido en curso (los demás esperan a ese)
+let packetaLastRunAt = 0;
+let packetaStatus = { at: null, ms: 0, codes: 0, parcels: 0, lastNew: 0, error: null };
+const packetaFailures = new Map();   // parcelId → nº de fallos de descarga (tras 3, se deja)
+const PACKETA_FILE = path.join(VOLUME_PATH, 'packeta-map.json');
+const PACKETA_KEEP_DAYS = 45;
+
+// Códigos de RUTA (compartidos por muchos envíos): jamás identifican un paquete
+function packetaIsRoutingCode(c) {
+  return c.length < 8 || /^\d{3}-\d{1,3}$/.test(c) || /\+/.test(c);
+}
+function packetaKeys(code) {
+  const raw = String(code || '').toUpperCase().trim();
+  const alnum = raw.replace(/[^A-Z0-9]/g, '');
+  return raw === alnum ? [raw] : [raw, alnum];
+}
+function packetaLookup(code) {
+  for (const k of packetaKeys(code)) { const v = packetaMap.get(k); if (v) return v; }
+  return null;
+}
+// ¿Es candidato? ASENDIA con tracking = nº Packeta de 10 dígitos
+function packetaIsCandidate(tracking, carrierCode) {
+  return /^\d{10}$/.test(String(tracking || '')) && String(carrierCode || '').toLowerCase().indexOf('asendia') >= 0;
+}
+
+function loadPacketaFromDisk() {
+  try {
+    if (!fs.existsSync(PACKETA_FILE)) return;
+    const j = JSON.parse(fs.readFileSync(PACKETA_FILE, 'utf8'));
+    packetaMap = new Map(Object.entries(j.map || {}));
+    packetaProcessed = new Map(Object.entries(j.processed || {}));
+    packetaAmbiguous = new Set(j.ambiguous || []);
+    packetaLastAnnounced = j.lastAnnounced || null;
+    packetaVersion = j.version || 1;
+    console.log('📦 Mapa Packeta cargado de disco: ' + packetaMap.size + ' códigos de ' + packetaProcessed.size + ' etiquetas');
+  } catch (e) { console.warn('⚠️ No se pudo leer ' + PACKETA_FILE + ': ' + e.message); }
+}
+loadPacketaFromDisk();
+
+function savePacketaToDisk() {
+  try {
+    const cutoff = Date.now() - PACKETA_KEEP_DAYS * 864e5;
+    for (const [k, v] of packetaMap) if (new Date(v.at).getTime() < cutoff) packetaMap.delete(k);
+    for (const [k, v] of packetaProcessed) if (new Date(v.at).getTime() < cutoff) packetaProcessed.delete(k);
+    atomicWriteFileSync(PACKETA_FILE, JSON.stringify({
+      version: packetaVersion, lastAnnounced: packetaLastAnnounced,
+      map: Object.fromEntries(packetaMap), processed: Object.fromEntries(packetaProcessed), ambiguous: [...packetaAmbiguous]
+    }));
+  } catch (e) { console.warn('⚠️ No se pudo guardar ' + PACKETA_FILE + ': ' + e.message); }
+}
+
+async function packetaFetch(url, ms, asBuffer) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(url, { headers: { Authorization: sendcloudClient.authHeader }, signal: ctl.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return asBuffer ? Buffer.from(await r.arrayBuffer()) : await r.json();
+  } finally { clearTimeout(t); }
+}
+
+// Descarga la etiqueta de un envío, lee sus códigos y los aprende. Devuelve nº de códigos nuevos.
+async function packetaLearnParcel(parcelId, tracking, country) {
+  const pdf = await packetaFetch(CONFIG.sendcloud.apiUrl + '/parcels/' + parcelId + '/documents/label', 15000, true);
+  const codes = packetaLabels.extractBarcodes(pdf);
+  let added = 0;
+  for (const c of codes) {
+    const code = String(c).toUpperCase().trim();
+    if (!code || code === tracking || packetaIsRoutingCode(code) || packetaAmbiguous.has(code)) continue;
+    for (const k of packetaKeys(code)) {
+      const prev = packetaMap.get(k);
+      if (prev && prev.tracking !== tracking) {           // mismo código en 2 envíos: no fiable
+        packetaAmbiguous.add(code); packetaMap.delete(k);
+        console.warn('⚠️ Código Packeta ambiguo (' + code + '): ' + prev.tracking + ' / ' + tracking + ' — descartado');
+        continue;
+      }
+      if (!prev) { packetaMap.set(k, { tracking, parcelId, country: country || null, at: new Date().toISOString() }); added++; }
+      try { negativeLookupCache.delete(k); } catch (_) {}
+    }
+  }
+  packetaProcessed.set(String(parcelId), { at: new Date().toISOString(), n: codes.length });
+  return added;
+}
+
+// Barrido: (1) etiquetas recién creadas en Sendcloud (announced_after) y (2) candidatos del
+// caché Sendcloud del sync aún no procesados. Si ya hay uno en marcha, se espera a ese.
+async function refreshPacketaMap(opts = {}) {
+  if (packetaRunning) return packetaRunning;
+  const minGap = opts.reason === 'scan' ? 15000 : 60000;
+  if (Date.now() - packetaLastRunAt < minGap) return;
+  packetaRunning = (async () => {
+    packetaLastRunAt = Date.now();
+    const t0 = Date.now(); let learned = 0, seen = 0;
+    try {
+      const todo = new Map(); // parcelId → { tracking, country }
+      // (1) etiquetas nuevas desde el último barrido (con 10 min de solape)
+      const since = new Date(Math.max(Date.now() - 2 * 864e5, (packetaLastAnnounced ? new Date(packetaLastAnnounced).getTime() : Date.now() - 864e5) - 10 * 60000)).toISOString();
+      const startedAt = new Date().toISOString();
+      let url = CONFIG.sendcloud.apiUrl + '/parcels?announced_after=' + encodeURIComponent(since) + '&limit=500';
+      for (let page = 0; url && page < 30; page++) {
+        const j = await packetaFetch(url, 15000, false);
+        for (const p of (j.parcels || [])) {
+          seen++;
+          if (packetaIsCandidate(p.tracking_number, p.carrier && p.carrier.code) && !packetaProcessed.has(String(p.id)))
+            todo.set(String(p.id), { tracking: p.tracking_number, country: p.country && p.country.iso_2 });
+        }
+        url = j.next || null;
+      }
+      packetaLastAnnounced = startedAt;
+      // (2) candidatos del caché del sync (cubre lo que se escapó mientras la app estaba parada)
+      if (opts.reason !== 'scan') {
+        const known = new Set([...packetaProcessed.values()].map(v => v.tracking).filter(Boolean));
+        let lookups = 0;
+        for (const p of Object.values((sendcloudCache && sendcloudCache.parcels) || {})) {
+          if (lookups >= 40) break; // como mucho 40 consultas por barrido
+          if (!packetaIsCandidate(p.tracking, p.carrierCode || p.carrier) || known.has(p.tracking)) continue;
+          if ([...todo.values()].some(v => v.tracking === p.tracking)) continue;
+          if ([...packetaMap.values()].some(v => v.tracking === p.tracking)) continue;
+          lookups++;
+          try {
+            const j = await packetaFetch(CONFIG.sendcloud.apiUrl + '/parcels?tracking_number=' + encodeURIComponent(p.tracking), 10000, false);
+            const par = (j.parcels || [])[0];
+            if (par && !packetaProcessed.has(String(par.id))) todo.set(String(par.id), { tracking: p.tracking, country: par.country && par.country.iso_2 });
+            else if (par) packetaProcessed.set(String(par.id), Object.assign({}, packetaProcessed.get(String(par.id)), { tracking: p.tracking }));
+          } catch (_) {}
+        }
+      }
+      // procesar etiquetas (de 2 en 2, con presupuesto de tiempo si es un escaneo esperando)
+      const list = [...todo.entries()];
+      const deadline = opts.budgetMs ? t0 + opts.budgetMs : Infinity;
+      for (let i = 0; i < list.length && Date.now() < deadline; i += 2) {
+        const chunk = list.slice(i, i + 2);
+        const res = await Promise.allSettled(chunk.map(([id, v]) => packetaLearnParcel(id, v.tracking, v.country)
+          .then(n => { const pr = packetaProcessed.get(id); if (pr) pr.tracking = v.tracking; return n; })));
+        res.forEach((r, k) => {
+          if (r.status === 'fulfilled') { learned += r.value; return; }
+          // fallo de descarga: reintentar en próximos barridos, pero no para siempre
+          const [id, v] = chunk[k]; const f = (packetaFailures.get(id) || 0) + 1; packetaFailures.set(id, f);
+          if (f >= 3) packetaProcessed.set(id, { at: new Date().toISOString(), n: -1, tracking: v.tracking, error: String(r.reason && r.reason.message || r.reason).slice(0, 80) });
+        });
+      }
+      if (learned > 0) { packetaVersion++; scanningIndexJsonCache = null; }
+      if (learned > 0 || list.length) savePacketaToDisk();
+      packetaStatus = { at: new Date().toISOString(), ms: Date.now() - t0, codes: packetaMap.size, parcels: packetaProcessed.size, lastNew: learned, pending: Math.max(0, list.length), seen, error: null };
+      if (learned) console.log('📦 Packeta: ' + learned + ' códigos nuevos aprendidos (' + list.length + ' etiquetas, ' + (Date.now() - t0) + 'ms' + (opts.reason ? ', ' + opts.reason : '') + ')');
+    } catch (e) {
+      packetaStatus = Object.assign({}, packetaStatus, { error: e.message, errorAt: new Date().toISOString() });
+      console.warn('⚠️ Barrido Packeta falló (' + e.message + ') — se reintenta en el próximo ciclo');
+    } finally { packetaRunning = null; }
+  })();
+  return packetaRunning;
+}
+
 // Respuesta de bloqueo para la PDA. SHIM de compatibilidad: error
 // 'TRANSPORTISTA_INCORRECTO' + detectedCarrier hace que las PDAs con el cliente
 // ≤v8 (sin la rama nueva) muestren un modal "Paquete de PEDIDO CANCELADO" en vez
@@ -1635,6 +1807,19 @@ async function getCarrierFromTracking(tracking) {
   const startTime = Date.now();
   const clean = tracking.trim().toUpperCase();
 
+  // (#054) Código de un transportista LOCAL de la red Packeta ya aprendido de su etiqueta
+  // (Speedy, ELTA, Overseas…) → resolver con el nº Packeta, que sí está en el sistema.
+  {
+    const pm = packetaLookup(clean);
+    if (pm && pm.tracking && pm.tracking !== clean) {
+      const r = await getCarrierFromTracking(pm.tracking);
+      if (r && r.picking) {
+        console.log('   📦 Etiqueta Packeta aprendida: ' + clean.slice(0, 24) + ' → ' + pm.tracking + ' (' + (r.picking.origin || '?') + ')');
+        return Object.assign({}, r, { source: 'packeta-map', packetaTracking: pm.tracking, elapsed: Date.now() - startTime });
+      }
+    }
+  }
+
   // FAST PATH 1: caché de negative lookups
   if (isNegativeCached(clean)) {
     console.log('   ⚡ Negative cache hit: ' + clean.slice(0, 20) + '... (' + (Date.now() - startTime) + 'ms)');
@@ -2118,7 +2303,7 @@ app.get('/api/cancelled', (req, res) => {
 
 app.get('/api/index-stats', (req, res) => {
   const age = trackingIndex.lastSync ? Math.round((Date.now() - new Date(trackingIndex.lastSync).getTime()) / 60000) : null;
-  res.json({ lastSync: trackingIndex.lastSync, ageMinutes: age, totalOdoo: trackingIndex.totalOdoo, totalSendcloud: trackingIndex.totalSendcloud, matched: trackingIndex.matched, unmatched: trackingIndex.unmatched || 0, byCarrier: trackingIndex.byCarrier || {}, syncInProgress, lastSyncAttempt, cancelled: cancelledStatus });
+  res.json({ lastSync: trackingIndex.lastSync, ageMinutes: age, totalOdoo: trackingIndex.totalOdoo, totalSendcloud: trackingIndex.totalSendcloud, matched: trackingIndex.matched, unmatched: trackingIndex.unmatched || 0, byCarrier: trackingIndex.byCarrier || {}, syncInProgress, lastSyncAttempt, cancelled: cancelledStatus, packeta: packetaStatus });
 });
 
 // Índice compacto para escaneo del lado del cliente (0ms matching)
@@ -2132,7 +2317,7 @@ let scanningIndexGzipCache = null;   // BUFFER gzip pre-comprimido (evita gzipea
 // event loop de Node; hacerlo una sola vez tras el sync evita ese bloqueo cuando
 // muchos operarios abren la app a la vez (causa del "Application failed to respond").
 function buildScanningIndexJson() {
-  const etag = '"' + (trackingIndex.lastSync || '0') + '-' + (trackingIndex.matched || 0) + '"';
+  const etag = '"' + (trackingIndex.lastSync || '0') + '-' + (trackingIndex.matched || 0) + '-p' + packetaVersion + '"';
   const entries = [];
   const seen = new Set();
   function addEntry(tracking, data) {
@@ -2144,6 +2329,11 @@ function buildScanningIndexJson() {
   }
   for (const [t, data] of Object.entries(trackingIndex.byTracking || {})) addEntry(t, data);
   for (const [t, data] of Object.entries(trackingIndex.byOdooTracking || {})) addEntry(t, data);
+  // (#054) códigos de etiquetas Packeta aprendidos → mismo pedido que su nº Packeta (match 0 ms en la PDA)
+  for (const [code, pm] of packetaMap) {
+    const data = (trackingIndex.byTracking && trackingIndex.byTracking[pm.tracking]) || (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[pm.tracking]);
+    if (data) addEntry(code, data);
+  }
   const result = { lastSync: trackingIndex.lastSync, count: entries.length, entries };
   scanningIndexJsonCache = JSON.stringify(result);
   try {
@@ -2161,7 +2351,7 @@ function buildScanningIndexJson() {
 
 app.get('/api/scanning-index', (req, res) => {
   const ifNoneMatch = req.headers['if-none-match'];
-  const etag = '"' + (trackingIndex.lastSync || '0') + '-' + (trackingIndex.matched || 0) + '"';
+  const etag = '"' + (trackingIndex.lastSync || '0') + '-' + (trackingIndex.matched || 0) + '-p' + packetaVersion + '"';
 
   if (ifNoneMatch === etag) {
     res.status(304).end();
@@ -2414,7 +2604,16 @@ app.post('/api/scan', async (req, res) => {
     });
   }
 
-  const det = await getCarrierFromTracking(clean);
+  let det = await getCarrierFromTracking(clean);
+
+  // (#054) Código desconocido que puede ser de una etiqueta Packeta recién impresa (aún
+  // no aprendida): aprender YA las etiquetas nuevas (máx. 6 s) y reintentar. Así funciona
+  // a la primera sin teclear nada. Solo para códigos sin identificar y con freno de ritmo.
+  if (!det.picking && clean.length >= 8 && !/^9300500\d/.test(clean) &&
+      (packetaPartnerLabel(clean) || ['no_shape', 'not_found', 'negative-cache', 'packeta-partner'].includes(det.source))) {
+    try { await Promise.race([refreshPacketaMap({ reason: 'scan', budgetMs: 6000 }), new Promise(r => setTimeout(r, 6500))]); } catch (_) {}
+    if (packetaLookup(clean)) det = await getCarrierFromTracking(clean);
+  }
 
   if (!det.picking) {
     // Caso especial CRX: detectamos el carrier por prefijo (9300500...) pero

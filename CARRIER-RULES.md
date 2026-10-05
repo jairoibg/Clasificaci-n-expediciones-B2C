@@ -106,6 +106,15 @@ actual y la evolución de cada uno.
   `^~\d{20,}$`, `^\d{3}-\d{2}$`. Tras el match exacto NO se les aplica nada aproximado
   (la ventana INPOST emparejaba un Speedy con otro pedido INPOST) → `NO_ENCONTRADO` con
   aviso "es ASENDIA, teclea el nº de 10 dígitos o el pedido". El buscador acepta el nº.
+- **#054 — aprendizaje automático (sin teclear)**: el servidor descarga el PDF de cada
+  etiqueta de Sendcloud (`/parcels/{id}/documents/label`), lee sus códigos de barras
+  (`packeta-labels.js`: Code128/Code39 en vectores, imágenes Flate o fuente Code39) y
+  guarda `código local → nº Packeta` (`packeta-map.json`). Lo primero que consulta
+  `getCarrierFromTracking` es ese mapa → ASENDIA + pedido. Barrido al arrancar y cada
+  2 min (+ al momento si se escanea un código desconocido). Los códigos aprendidos van
+  en el índice de la PDA. Rutas (`###-##`, `…+…`) y códigos repetidos NO se aprenden.
+  Verificado: 57/57 etiquetas (BG, HR, GR, HU, RO, SE, CZ), 67/67 escaneos resueltos.
+  El aviso de #053 queda como último recurso si una etiqueta no se pudiera leer.
 
 ### Matching Sendcloud↔Odoo
 
@@ -128,6 +137,7 @@ actual y la evolución de cada uno.
 | 2026-07-13 | **#036 — nuevo prefijo `6C21`** (2.977 en índice, sustituye a 6C20) **+ etiqueta SIN check digit**: el barcode (`%0094140116C2105250900802250`) y el QR llevan el tracking en 12 chars (sin dígito de control) seguido del código de ruta `802…`. Generalizado TODO a familia `6C**`: extractor `/6C\d{10,11}/`, shape `^6C\d{2}` + embebido `/6C\d{10}/`, prefijo-12 en P2.3 (`^6C\d\d`), sliding frontend con fallback prefijo-12 client-side. Prefijo→ASENDIA: `^6C2[01]` (6C16 queda fuera: Sendcloud la da como SPRING). Caso real verificado: DF1441749EU (`6C21052509006`). | _pendiente_ | #036 |
 | 2026-09-28 | **#051 — Colissimo `6A` (La Poste) desde el barcode largo**: el barcode (`0038280116A07857567858012502`) lleva `6A`+10 dígitos SIN dígito de control + ruta `801…`; tracking real `6A`+11 (13 chars). Se prueban las 10 variantes del dígito en el índice (solo 1 coincidencia; 0 colisiones en 246) y, si no está indexada, Odoo `=like 'prefijo12_'`. Carrier del índice/Sendcloud: **6A = 238 ASENDIA / 8 SPRING** → nunca por prefijo. Server (`getCarrierFromTracking`, `hasKnownCarrierShape`) + cliente (`localLookup`). Verificado: 246/246, foto real → DF156883SF ASENDIA. | _pendiente_ | #051 |
 | 2026-10-05 | **#053 — Etiquetas red Packeta (Speedy BG / ELTA GR / Overseas HR)**: envíos Asendia e-PAQ Select con tracking = nº Packeta de 10 dígitos (solo texto en la etiqueta). Códigos locales reconocidos y excluidos de toda búsqueda aproximada (el Speedy de DF1558130EU daba falso INPOST DF1393058EU); aviso "es ASENDIA, teclea ref1 o el pedido"; el buscador acepta el nº de 10 dígitos. Verificado con las 5 etiquetas reales. | _pendiente_ | #053 |
+| 2026-10-05 | **#054 — Etiquetas Packeta sin teclear**: el servidor lee los códigos de barras del PDF de cada etiqueta (Sendcloud) y aprende `código local → nº Packeta`; al escanear Speedy/ELTA/Overseas/HU/RO/SE/CZ se registra solo como ASENDIA con su pedido. 57/57 etiquetas reales, 67/67 escaneos resueltos, 0 fallos. | _pendiente_ | #054 |
 
 ---
 
